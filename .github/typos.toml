@@ -21,8 +21,21 @@ extend-exclude = [
 locale = "en-us"
 
 [default.extend-words]
-# プロジェクト固有語を whitelist する。
+# プロジェクト固有語・ドメイン用語を whitelist する。
 NNDD = "NNDD"
 nndd = "nndd"
 niconico = "niconico"
 yajuvideo = "yajuvideo"
+# MP4 ボックスタイプ (ISO/IEC 14496-12) — 4 文字 atom 名なので
+# typos が "trak→track" "trun→turn" と誤検出する。
+trak = "trak"
+trun = "trun"
+moov = "moov"
+moof = "moof"
+mvex = "mvex"
+mdat = "mdat"
+# HTML5 <video> の標準イベント名。`Seeked`/`onseeked` は web 仕様準拠で
+# typos が "Sought" を提案するが web 互換のため変更不可。
+seeked = "seeked"
+Seeked = "Seeked"
+onseeked = "onseeked"
