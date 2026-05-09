@@ -135,8 +135,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # actionlint v1.7.12 にピン留め。
+      # Codex review (P2): mutable head reference は merge gate で危険。
       - name: Run actionlint
-        uses: docker://rhysd/actionlint:latest
+        uses: docker://rhysd/actionlint:1.7.12
         with:
           args: -color
 
@@ -151,8 +153,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # ludeeus/action-shellcheck v2.0.0 (commit pin)
       - name: Run shellcheck
-        uses: ludeeus/action-shellcheck@master
+        uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38
         with:
           severity: warning
           scandir: scripts
@@ -168,8 +171,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # crate-ci/typos v1.46.1 (commit pin)
       - name: Run typos
-        uses: crate-ci/typos@master
+        uses: crate-ci/typos@5374cbf686e897b15713110e233094e2874de7ef
         with:
           config: .github/typos.toml
 

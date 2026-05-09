@@ -9,8 +9,8 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag (e.g. v0.1.0). 空ならドラフトのみ。"
-        required: false
+        description: "Release tag (e.g. v0.1.0). 必ず指定。"
+        required: true
         type: string
       draft:
         description: "draft release として作るか"
@@ -106,19 +106,24 @@ jobs:
         shell: bash
         run: bash scripts/fetch-binaries.sh
 
+      # tag push → inputs.tag は空 (= ref_name のタグ)
+      # workflow_dispatch → inputs.tag は required で必ず値が入る
       - name: Tauri build
-        uses: tauri-apps/tauri-action@v0
+        # action-v0.6.2 にピン留め (Codex review: P2 / 不変参照を要求)
+        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
-          releaseName: "Re:NNDD ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
+          tagName: ${{ inputs.tag || github.ref_name }}
+          releaseName: "Re:NNDD ${{ inputs.tag || github.ref_name }}"
           releaseBody: |
             ## Re:NNDD バンドルリリース
 
             自動生成された各プラットフォーム向け Tauri バンドル。
             yt-dlp / ffmpeg のサイドカーバイナリは同梱されています。
-          releaseDraft: ${{ github.event_name == 'workflow_dispatch' && inputs.draft || true }}
+          # tag push は常に draft、dispatch は inputs.draft を尊重 (false 指定が
+          # `A && B || true` で潰れていたバグ修正: P1 codex review)
+          releaseDraft: ${{ github.event_name != 'workflow_dispatch' || inputs.draft }}
           prerelease: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease || false }}
           args: --target ${{ matrix.platform.target }}
 

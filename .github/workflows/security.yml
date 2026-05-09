@@ -73,8 +73,9 @@ jobs:
       - name: Generate Cargo.lock (gitignored in this repo)
         run: cargo generate-lockfile
 
+      # EmbarkStudios/cargo-deny-action v2.0.17 (commit pin)
       - name: cargo-deny check
-        uses: EmbarkStudios/cargo-deny-action@v2
+        uses: EmbarkStudios/cargo-deny-action@91bf2b620e09e18d6eb78b92e7861937469acedb
         with:
           command: check
           arguments: --workspace --all-features
