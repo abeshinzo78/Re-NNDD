@@ -1,0 +1,41 @@
+# crate-ci/typos の設定。
+# 生成物・サードパーティ・バイナリ系を除外する。
+[files]
+extend-exclude = [
+  "package-lock.json",
+  "build/",
+  "dist/",
+  ".svelte-kit/",
+  "target/",
+  "src-tauri/target/",
+  "src-tauri/gen/",
+  "src-tauri/binaries/",
+  "*.lock",
+  "*.lockb",
+  "*.min.js",
+  "*.min.css",
+]
+
+[default]
+# 日本語混在ファイルでの誤検出を抑える。
+locale = "en-us"
+
+[default.extend-words]
+# プロジェクト固有語・ドメイン用語を whitelist する。
+NNDD = "NNDD"
+nndd = "nndd"
+niconico = "niconico"
+yajuvideo = "yajuvideo"
+# MP4 ボックスタイプ (ISO/IEC 14496-12) — 4 文字 atom 名なので
+# typos が "trak→track" "trun→turn" と誤検出する。
+trak = "trak"
+trun = "trun"
+moov = "moov"
+moof = "moof"
+mvex = "mvex"
+mdat = "mdat"
+# HTML5 <video> の標準イベント名。`Seeked`/`onseeked` は web 仕様準拠で
+# typos が "Sought" を提案するが web 互換のため変更不可。
+seeked = "seeked"
+Seeked = "Seeked"
+onseeked = "onseeked"

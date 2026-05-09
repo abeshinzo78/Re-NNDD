@@ -1,0 +1,208 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - "claude/**"
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  CARGO_NET_RETRY: "10"
+  RUSTUP_MAX_RETRIES: "10"
+  RUST_BACKTRACE: "1"
+  NODE_VERSION: "20"
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # フロントエンド: Svelte 5 / TypeScript / Vitest / Vite
+  # ──────────────────────────────────────────────────────────────────────────
+  frontend:
+    name: Frontend (lint / type / test / build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies (npm ci)
+        run: npm ci --no-audit --no-fund
+
+      - name: svelte-kit sync
+        run: npx svelte-kit sync
+
+      - name: Prettier (format check)
+        run: npx prettier --check .
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: svelte-check (type check)
+        run: npm run check
+
+      - name: Vitest (unit / component tests)
+        run: npm test -- --reporter=verbose
+
+      - name: Vite production build
+        run: npm run build
+
+      - name: Upload SvelteKit build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-build-${{ github.sha }}
+          path: build/
+          if-no-files-found: error
+          retention-days: 7
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Rust: Tauri 2 ワークスペース (fmt / clippy / test / build)
+  # ──────────────────────────────────────────────────────────────────────────
+  rust:
+    name: Rust (fmt / clippy / test / build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies for Tauri 2 (Linux)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libgtk-3-dev \
+            libssl-dev \
+            build-essential \
+            pkg-config
+
+      - name: Setup Rust toolchain (stable + rustfmt + clippy)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo registry / target
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: tauri-linux
+          cache-on-failure: true
+
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy (workspace, all-targets, deny warnings)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: cargo test (workspace)
+        run: cargo test --workspace --all-targets
+
+      - name: cargo build (workspace, debug)
+        run: cargo build --workspace --all-targets
+
+      - name: cargo doc (no-deps, warnings as errors)
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+        run: cargo doc --workspace --no-deps --document-private-items
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # GitHub Actions ワークフロー自体の lint
+  # ──────────────────────────────────────────────────────────────────────────
+  actionlint:
+    name: actionlint (workflow files)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # actionlint v1.7.12 にピン留め。
+      # Codex review (P2): mutable head reference は merge gate で危険。
+      - name: Run actionlint
+        uses: docker://rhysd/actionlint:1.7.12
+        with:
+          args: -color
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # shell スクリプト lint (scripts/fetch-binaries.sh など)
+  # ──────────────────────────────────────────────────────────────────────────
+  shellcheck:
+    name: shellcheck (scripts/**)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ludeeus/action-shellcheck v2.0.0 (commit pin)
+      - name: Run shellcheck
+        uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38
+        with:
+          severity: warning
+          scandir: scripts
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # タイポ検出 (コード/ドキュメント全般)
+  # ──────────────────────────────────────────────────────────────────────────
+  typos:
+    name: typos (spell check)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # crate-ci/typos v1.46.1 (commit pin)
+      - name: Run typos
+        uses: crate-ci/typos@5374cbf686e897b15713110e233094e2874de7ef
+        with:
+          config: .github/typos.toml
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # マージゲート: 全部 green じゃないと通さない
+  # ブランチ保護では "ci-success" 1 件だけを required にすればよい
+  # ──────────────────────────────────────────────────────────────────────────
+  ci-success:
+    name: CI success
+    if: ${{ always() }}
+    needs:
+      - frontend
+      - rust
+      - actionlint
+      - shellcheck
+      - typos
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify all required jobs succeeded
+        env:
+          NEEDS_JSON: ${{ toJson(needs) }}
+        run: |
+          echo "$NEEDS_JSON"
+          echo "$NEEDS_JSON" | python3 -c '
+          import json, sys
+          data = json.load(sys.stdin)
+          failed = [name for name, info in data.items() if info.get("result") != "success"]
+          if failed:
+              print(f"Failed/skipped jobs: {failed}")
+              sys.exit(1)
+          print("All required CI jobs succeeded.")
+          '
