@@ -34,7 +34,6 @@
 | データベース | **SQLite** (rusqlite + FTS5) | ライブラリ・コメ・NG・履歴 |
 | コメ描画 | **niconicomments** (npm) | 公式互換コメレンダラ |
 | 動画再生 | HTML5 `<video>` + 透過 `<canvas>` オーバーレイ | 別レイヤー再生 |
-| HLS | Rust 自前実装 (reqwest + aes) | AES-128-CBC 復号対応 |
 | 焼き込み出力 | **WebCodecs + mp4-muxer** | エクスポート専用、WebView 内で実行 |
 | ロギング | **tracing** | Rust 側構造化ログ |
 | エラー | **thiserror** + **anyhow** | ライブラリ層は thiserror、アプリ層は anyhow |
