@@ -16,14 +16,6 @@ Tauri 2 + Rust + Svelte 5 で実装するデスクトップアーカイブクラ
 - ローカル保存動画の再生（内蔵 HTTP Range 配信）
 - ライブラリ動画削除、設定保存、ストレージ掃除、環境情報表示
 
-## 進捗
-
-=======
-ニコニコ動画専用クライアント NNDD の精神的後継。  
-Tauri 2 + Rust + Svelte 5 で実装するデスクトップアーカイブクライアントです。
-
-設計仕様の正典は [`CLAUDE.md`](./CLAUDE.md) を参照してください。
-
 ## 現在できること
 
 - スナップショット検索 API 経由の動画検索
@@ -38,7 +30,6 @@ Tauri 2 + Rust + Svelte 5 で実装するデスクトップアーカイブクラ
 
 ## 進捗
 
->>>>>>> 09db6c6 (Fix downloader cancellation and review findings)
 - Phase 1.0: SQLite スキーマ/マイグレーション実装済み
 - Phase 1.1: Snapshot Search API 実装済み
 - Phase 1.2: ダウンロードキュー CRUD + HLS パーサ実装済み
