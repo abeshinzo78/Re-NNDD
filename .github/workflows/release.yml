@@ -1,0 +1,132 @@
+name: Release (Tauri bundle)
+
+# タグ push (v*) または手動 dispatch で各 OS 向けに Tauri バンドルをビルドする。
+# 通常 PR / push では走らない。
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v0.1.0). 空ならドラフトのみ。"
+        required: false
+        type: string
+      draft:
+        description: "draft release として作るか"
+        required: false
+        type: boolean
+        default: true
+      prerelease:
+        description: "prerelease として作るか"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  NODE_VERSION: "20"
+
+jobs:
+  bundle:
+    name: Tauri bundle (${{ matrix.platform.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - name: linux-x86_64
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - name: macos-x86_64
+            os: macos-13
+            target: x86_64-apple-darwin
+          - name: macos-aarch64
+            os: macos-14
+            target: aarch64-apple-darwin
+          - name: windows-x86_64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.platform.os }}
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Setup Rust (stable, ${{ matrix.platform.target }})
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform.target }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: tauri-release-${{ matrix.platform.target }}
+          cache-on-failure: true
+
+      - name: Install Linux deps (Tauri 2)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libgtk-3-dev \
+            libssl-dev \
+            build-essential \
+            pkg-config \
+            patchelf
+
+      - name: Install npm dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Fetch sidecar binaries (yt-dlp / ffmpeg)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: bash scripts/fetch-binaries.sh
+
+      - name: Fetch sidecar binaries (Windows / Git Bash)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: bash scripts/fetch-binaries.sh
+
+      - name: Tauri build
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          releaseName: "Re:NNDD ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
+          releaseBody: |
+            ## Re:NNDD バンドルリリース
+
+            自動生成された各プラットフォーム向け Tauri バンドル。
+            yt-dlp / ffmpeg のサイドカーバイナリは同梱されています。
+          releaseDraft: ${{ github.event_name == 'workflow_dispatch' && inputs.draft || true }}
+          prerelease: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease || false }}
+          args: --target ${{ matrix.platform.target }}
+
+      - name: Upload bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tauri-${{ matrix.platform.name }}
+          path: |
+            src-tauri/target/${{ matrix.platform.target }}/release/bundle/**
+          if-no-files-found: warn
+          retention-days: 14

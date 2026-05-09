@@ -1,0 +1,77 @@
+version: 2
+updates:
+  # ─── npm (Svelte / Vite / Vitest 系) ───
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "03:00"
+      timezone: Asia/Tokyo
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - frontend
+    groups:
+      svelte:
+        patterns:
+          - "svelte*"
+          - "@sveltejs/*"
+      tauri-js:
+        patterns:
+          - "@tauri-apps/*"
+      lint-format:
+        patterns:
+          - "eslint*"
+          - "@eslint/*"
+          - "prettier*"
+          - "typescript-eslint"
+          - "globals"
+      dev-tools:
+        patterns:
+          - "vite"
+          - "vitest"
+          - "@testing-library/*"
+          - "jsdom"
+          - "typescript"
+          - "tslib"
+          - "@types/*"
+
+  # ─── Cargo (Rust ワークスペース) ───
+  - package-ecosystem: cargo
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "03:00"
+      timezone: Asia/Tokyo
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - rust
+    groups:
+      tauri:
+        patterns:
+          - "tauri*"
+      tokio:
+        patterns:
+          - "tokio*"
+      tracing:
+        patterns:
+          - "tracing*"
+      serde:
+        patterns:
+          - "serde*"
+
+  # ─── GitHub Actions 自身 ───
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "03:00"
+      timezone: Asia/Tokyo
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - ci

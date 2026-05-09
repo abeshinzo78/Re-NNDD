@@ -1,0 +1,81 @@
+name: Security audit
+
+on:
+  schedule:
+    # 毎週月曜 03:00 UTC (= JST 12:00) に走らせる
+    - cron: "0 3 * * 1"
+  push:
+    branches: [main, master]
+    paths:
+      - "package.json"
+      - "package-lock.json"
+      - "Cargo.toml"
+      - "src-tauri/Cargo.toml"
+      - ".github/workflows/security.yml"
+  pull_request:
+    paths:
+      - "package.json"
+      - "package-lock.json"
+      - "Cargo.toml"
+      - "src-tauri/Cargo.toml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  npm-audit:
+    name: npm audit (high+)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: npm ci
+        run: npm ci --no-audit --no-fund
+
+      - name: npm audit (production deps, level=high)
+        run: npm audit --omit=dev --audit-level=high
+
+  cargo-deny:
+    name: cargo-deny (advisories / bans / licenses / sources)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux deps for Tauri 2
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libgtk-3-dev \
+            libssl-dev \
+            build-essential \
+            pkg-config
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Generate Cargo.lock (gitignored in this repo)
+        run: cargo generate-lockfile
+
+      - name: cargo-deny check
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+          arguments: --workspace --all-features
+          log-level: warn
