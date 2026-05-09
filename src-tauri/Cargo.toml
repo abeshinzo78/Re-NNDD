@@ -1,0 +1,73 @@
+[package]
+name = "nndd-next"
+description = "Re:NNDD — niconico desktop archive client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "nndd_next_lib"
+path = "src/lib.rs"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "nndd-next"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["protocol-asset"] }
+tauri-plugin-shell = "2"
+
+# Async / runtime
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "fs", "io-util", "process"] }
+async-trait = "0.1"
+
+# Serde
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+
+# HTTP
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "gzip"] }
+url = "2"
+
+# Persistence
+rusqlite = { version = "0.32", features = ["bundled", "serde_json"] }
+
+# Errors / logging
+thiserror = "1"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+# Time
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+
+# Niconico watch page scraping
+regex = "1"
+parking_lot = "0.12"
+rand = "0.8"
+
+# HLS AES-128-CBC 復号 (downloader/aes.rs)
+aes = "0.8"
+cbc = "0.1"
+
+# 内蔵 HTTP サーバー (local_server.rs)
+# WebKitGTK の <video> は Blob URL だと後方 seek で GOP リセットがうまく
+# 走らずガビガビになる。実 HTTP + Range で配信すると WebKit の HTTP fetcher
+# 経由で GStreamer がちゃんと seek できる。
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
+tower-http = { version = "0.6", features = ["fs"] }
+tower = "0.5"
+
+[dev-dependencies]
+tempfile = "3"
+mockito = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "test-util"] }
+
+[lints]
+workspace = true

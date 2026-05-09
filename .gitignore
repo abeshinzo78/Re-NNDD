@@ -1,0 +1,51 @@
+# Rust / Cargo
+/target/
+**/*.rs.bk
+Cargo.lock
+
+# Tauri
+/src-tauri/target/
+/src-tauri/gen/
+/src-tauri/WixTools/
+# サイドカーバイナリ (yt-dlp / ffmpeg) は git に入れない。
+# 開発時は scripts/fetch-binaries.sh で取得。
+/src-tauri/binaries/*
+!/src-tauri/binaries/.gitkeep
+
+# Node / npm
+/node_modules/
+/.svelte-kit/
+/build/
+/dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.npm/
+.pnpm-store/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*.swo
+*~
+
+# Local data and secrets
+.env
+.env.*
+!.env.example
+*.log
+
+# Test coverage
+/coverage/
+*.lcov
+
+# Local agent/tool state
+.agents/
+.claude/
+.crush/
+.codex

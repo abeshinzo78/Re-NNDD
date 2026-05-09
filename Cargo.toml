@@ -1,0 +1,35 @@
+[workspace]
+members = ["src-tauri"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/abeshinzo78/Re-NNDD"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true
+
+# Dev profile is tuned for size. Full debuginfo on a Tauri tree balloons
+# `target/` to 8 GB+; line tables keep stack traces useful while dropping
+# the heaviest DWARF data. Build scripts get no debuginfo at all.
+[profile.dev]
+debug = "line-tables-only"
+incremental = true
+
+[profile.dev.build-override]
+debug = false
+opt-level = 0
