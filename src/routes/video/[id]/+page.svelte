@@ -134,7 +134,11 @@
             const reveal = () => {
               relatedVisibleCount += 3;
               if (relatedVisibleCount < hits.length) {
-                (window.requestIdleCallback ?? setTimeout)(reveal, 200);
+                if (window.requestIdleCallback) {
+                  window.requestIdleCallback(reveal, { timeout: 200 });
+                } else {
+                  setTimeout(reveal, 200);
+                }
               }
             };
             reveal();

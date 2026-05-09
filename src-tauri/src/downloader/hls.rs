@@ -264,12 +264,13 @@ fn parse_key(rest: &str, base: &Url) -> Result<Option<KeyInfo>, ApiError> {
 
 fn parse_iv(s: &str) -> Option<[u8; 16]> {
     let hex = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X"))?;
-    if hex.len() != 32 {
+    if hex.is_empty() || hex.len() > 32 {
         return None;
     }
+    let padded = format!("{hex:0>32}");
     let mut out = [0u8; 16];
     for (i, byte) in out.iter_mut().enumerate() {
-        let pair = &hex[i * 2..i * 2 + 2];
+        let pair = &padded[i * 2..i * 2 + 2];
         *byte = u8::from_str_radix(pair, 16).ok()?;
     }
     Some(out)
@@ -319,7 +320,8 @@ fn parse_attrs(s: &str) -> std::collections::BTreeMap<String, String> {
             }
             continue;
         }
-        chars.next(); // '='
+        // '='
+        chars.next();
         // value: 引用符ありなら閉じ引用符まで、なしならカンマまで
         let mut val = String::new();
         if chars.peek() == Some(&'"') {
@@ -473,6 +475,13 @@ mod tests {
         assert_eq!(k0.iv.unwrap()[15], 0x0F);
         assert!(p.segments[1].key.is_some());
         assert!(p.segments[2].key.is_none());
+    }
+
+    #[test]
+    fn parse_media_iv_short_hex_is_left_padded() {
+        let iv = parse_iv("0x1").unwrap();
+        assert_eq!(iv[..15], [0; 15]);
+        assert_eq!(iv[15], 1);
     }
 
     #[test]

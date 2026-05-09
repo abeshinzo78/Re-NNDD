@@ -67,7 +67,10 @@ mod tests {
     fn set_then_get_round_trips() {
         let conn = setup();
         set(&conn, "playback.resume_enabled", "true").unwrap();
-        assert_eq!(get(&conn, "playback.resume_enabled").unwrap().as_deref(), Some("true"));
+        assert_eq!(
+            get(&conn, "playback.resume_enabled").unwrap().as_deref(),
+            Some("true")
+        );
     }
 
     #[test]

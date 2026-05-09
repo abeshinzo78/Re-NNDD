@@ -1,12 +1,14 @@
 //! Tauri invoke handlers. Thin glue between the frontend and the Rust modules;
 //! domain logic lives under `api/`, `library/`, etc.
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use reqwest::header;
 use serde::{Deserialize, Serialize};
 use tauri::State;
+use tokio::sync::watch;
 
 use crate::api::auth::{login_with_password, LoginOutcome, SessionStore};
 use crate::api::comment::{Comment, CommentApi, ThreadsClient};
@@ -21,6 +23,35 @@ use crate::library::queue::{self, DownloadQueueItem};
 use crate::library::settings;
 use crate::library::videos::{self, CommentRecord, IngestPayload, TagRecord, VideoRecord};
 use crate::local_server::LocalServer;
+
+#[derive(Clone, Default)]
+pub struct DownloadTasks {
+    inner: Arc<Mutex<HashMap<i64, watch::Sender<bool>>>>,
+}
+
+impl DownloadTasks {
+    fn insert(&self, id: i64, tx: watch::Sender<bool>) {
+        if let Ok(mut tasks) = self.inner.lock() {
+            if let Some(old) = tasks.insert(id, tx) {
+                let _ = old.send(true);
+            }
+        }
+    }
+
+    fn cancel(&self, id: i64) {
+        if let Ok(mut tasks) = self.inner.lock() {
+            if let Some(tx) = tasks.remove(&id) {
+                let _ = tx.send(true);
+            }
+        }
+    }
+
+    fn remove(&self, id: i64) {
+        if let Ok(mut tasks) = self.inner.lock() {
+            tasks.remove(&id);
+        }
+    }
+}
 
 #[tauri::command]
 pub fn get_app_version() -> &'static str {
@@ -105,7 +136,7 @@ pub struct PlaybackPayload {
     pub owner: Option<WatchOwner>,
     pub hls_url: String,
     pub picked_quality: PickedQuality,
-  pub all_qualities: Vec<PickedQuality>,
+    pub all_qualities: Vec<PickedQuality>,
     /// NvComment setup — frontend passes this to `fetch_video_comments`.
     pub nv_comment: Option<NvCommentSetup>,
     /// JWT used to call `access-rights/hls`. Front-end keeps this so it can
@@ -200,7 +231,10 @@ pub async fn fetch_video_comments(
 ) -> Result<Vec<Comment>> {
     let session = Arc::clone(&store);
     let client = ThreadsClient::new(session).map_err(AppError::from)?;
-    let comments = client.fetch_comments(&nv_comment).await.map_err(AppError::from)?;
+    let comments = client
+        .fetch_comments(&nv_comment)
+        .await
+        .map_err(AppError::from)?;
     Ok(comments)
 }
 
@@ -298,7 +332,10 @@ pub async fn fetch_hls_resource(
         .header("sec-fetch-mode", "cors")
         .header("sec-fetch-site", "same-site")
         .header("sec-fetch-dest", "empty")
-        .header("sec-ch-ua", "\"Chromium\";v=\"130\", \"Not?A_Brand\";v=\"99\"")
+        .header(
+            "sec-ch-ua",
+            "\"Chromium\";v=\"130\", \"Not?A_Brand\";v=\"99\"",
+        )
         .header("sec-ch-ua-mobile", "?0")
         .header("sec-ch-ua-platform", "\"Linux\"");
     if let Some(cookie) = store.cookie_header() {
@@ -567,16 +604,16 @@ pub async fn fetch_user_videos(
             .as_str()
             .or_else(|| v["startTime"].as_str())
             .map(String::from);
-        let uid = v["owner"]["id"]
-            .as_str()
-            .and_then(|s| s.parse::<i64>().ok())
-            .or_else(|| v["userId"].as_i64());
+        let parse_id = |value: &serde_json::Value| {
+            value
+                .as_i64()
+                .or_else(|| value.as_str().and_then(|s| s.parse::<i64>().ok()))
+        };
+        let uid = parse_id(&v["owner"]["id"]).or_else(|| parse_id(&v["userId"]));
         let cid = if v["owner"]["ownerType"].as_str() == Some("channel")
             || v["owner"]["type"].as_str() == Some("channel")
         {
-            v["owner"]["id"]
-                .as_str()
-                .and_then(|s| s.parse::<i64>().ok())
+            parse_id(&v["owner"]["id"])
         } else {
             None
         };
@@ -632,16 +669,16 @@ pub async fn list_downloads(
 pub async fn cancel_download(
     id: i64,
     library: State<'_, Arc<LibraryHandle>>,
+    tasks: State<'_, DownloadTasks>,
 ) -> Result<bool> {
+    tasks.cancel(id);
     let conn = library.lock().await;
     let removed = queue::cancel(&conn, id).map_err(AppError::from)?;
     Ok(removed > 0)
 }
 
 #[tauri::command]
-pub async fn clear_finished_downloads(
-    library: State<'_, Arc<LibraryHandle>>,
-) -> Result<usize> {
+pub async fn clear_finished_downloads(library: State<'_, Arc<LibraryHandle>>) -> Result<usize> {
     let conn = library.lock().await;
     let removed = queue::clear_finished(&conn).map_err(AppError::from)?;
     Ok(removed)
@@ -660,6 +697,7 @@ pub async fn start_download(
     id: i64,
     session: State<'_, Arc<crate::api::auth::SessionStore>>,
     library: State<'_, Arc<LibraryHandle>>,
+    tasks: State<'_, DownloadTasks>,
     app: tauri::AppHandle,
 ) -> Result<()> {
     use tauri::Manager;
@@ -677,8 +715,12 @@ pub async fn start_download(
         item.video_id
     };
 
+    let (cancel_tx, cancel_rx) = watch::channel(false);
+    tasks.insert(id, cancel_tx);
+
     let session = Arc::clone(&session);
     let library = Arc::clone(&library);
+    let tasks = tasks.inner().clone();
     let app_data_dir = app
         .path()
         .app_data_dir()
@@ -686,7 +728,16 @@ pub async fn start_download(
     let app_for_task = app.clone();
 
     tokio::spawn(async move {
-        let result = run_one_download(&app_for_task, &session, &video_id, &app_data_dir, &library, id).await;
+        let result = run_one_download(
+            &app_for_task,
+            &session,
+            &video_id,
+            &app_data_dir,
+            &library,
+            id,
+            cancel_rx,
+        )
+        .await;
         let conn = library.lock().await;
         match result {
             Ok(()) => {
@@ -696,12 +747,17 @@ pub async fn start_download(
             }
             Err(e) => {
                 let msg = e.to_string();
+                if msg == "download canceled" {
+                    let _ = tokio::fs::remove_dir_all(app_data_dir.join("videos").join(&video_id))
+                        .await;
+                }
                 tracing::warn!(error = %msg, queue_id = id, video = %video_id, "download failed");
                 if let Err(e2) = queue::mark_error(&conn, id, &msg) {
                     tracing::error!(error = %e2, queue_id = id, "failed to mark error");
                 }
             }
         }
+        tasks.remove(id);
     });
 
     Ok(())
@@ -714,9 +770,10 @@ async fn run_one_download(
     app_data_dir: &std::path::Path,
     library: &Arc<LibraryHandle>,
     queue_id: i64,
+    cancel: watch::Receiver<bool>,
 ) -> std::result::Result<(), crate::error::ApiError> {
-    use crate::api::comment::ThreadsClient;
     use crate::api::comment::CommentApi;
+    use crate::api::comment::ThreadsClient;
     use crate::downloader::ytdlp;
     use crate::error::ApiError;
 
@@ -737,11 +794,28 @@ async fn run_one_download(
             let _ = queue::update_progress(&conn, queue_id_copy, pct);
         }
     });
-    let result = ytdlp::download(Some(app), &url, &video_dir, cookie, move |p| {
-        let _ = tx.send(p);
-    })
+    let result = ytdlp::download_with_cancel(
+        Some(app),
+        &url,
+        &video_dir,
+        cookie,
+        move |p| {
+            let _ = tx.send(p);
+        },
+        cancel,
+    )
     .await?;
     let _ = progress_handle.await;
+
+    {
+        let conn = library.lock().await;
+        if queue::get_by_id(&conn, queue_id)
+            .map_err(|e| ApiError::Downloader(format!("queue lookup failed: {e}")))?
+            .is_none()
+        {
+            return Err(ApiError::Downloader("download canceled".into()));
+        }
+    }
 
     // 2) 出力ファイルを我々の慣例の名前にリネーム。
     // yt-dlp の `video.info.json` は 1-2MB あり、欲しい情報は DB の
@@ -823,18 +897,27 @@ async fn run_one_download(
             id: video_id.to_string(),
             title: info["title"].as_str().unwrap_or(video_id).to_string(),
             description: info["description"].as_str().map(String::from),
-            uploader_id: info["uploader_id"].as_str().map(String::from)
+            uploader_id: info["uploader_id"]
+                .as_str()
+                .map(String::from)
                 .or_else(|| info["channel_id"].as_str().map(String::from)),
-            uploader_name: info["uploader"].as_str().map(String::from)
+            uploader_name: info["uploader"]
+                .as_str()
+                .map(String::from)
                 .or_else(|| info["channel"].as_str().map(String::from)),
             uploader_type: if info["channel_id"].is_string() {
                 Some("channel".into())
             } else {
                 Some("user".into())
             },
-            category: info["categories"].as_array().and_then(|a| a.first()).and_then(|v| v.as_str()).map(String::from),
+            category: info["categories"]
+                .as_array()
+                .and_then(|a| a.first())
+                .and_then(|v| v.as_str())
+                .map(String::from),
             duration_sec: info["duration"].as_f64().map(|d| d as i64).unwrap_or(0),
-            posted_at: info["timestamp"].as_i64()
+            posted_at: info["timestamp"]
+                .as_i64()
                 .or_else(|| info["release_timestamp"].as_i64())
                 .or_else(|| info["upload_date"].as_str().and_then(yt_dlp_date_to_unix)),
             view_count: info["view_count"].as_i64(),
@@ -850,14 +933,21 @@ async fn run_one_download(
         p.video
             .tags
             .iter()
-            .map(|t| TagRecord { name: t.name.clone(), is_locked: t.is_locked })
+            .map(|t| TagRecord {
+                name: t.name.clone(),
+                is_locked: t.is_locked,
+            })
             .collect()
     } else {
-        info["tags"].as_array()
+        info["tags"]
+            .as_array()
             .map(|arr| {
                 arr.iter()
                     .filter_map(|v| v.as_str())
-                    .map(|name| TagRecord { name: name.to_string(), is_locked: false })
+                    .map(|name| TagRecord {
+                        name: name.to_string(),
+                        is_locked: false,
+                    })
                     .collect()
             })
             .unwrap_or_default()
@@ -868,7 +958,11 @@ async fn run_one_download(
             no: c.no,
             vpos_ms: c.vpos_ms,
             content: c.content.clone(),
-            mail: if c.mail.is_empty() { None } else { Some(c.mail.clone()) },
+            mail: if c.mail.is_empty() {
+                None
+            } else {
+                Some(c.mail.clone())
+            },
             user_hash: c.user_id.clone(),
             is_owner: c.is_owner,
             posted_at: c.posted_at.as_deref().and_then(parse_iso8601_to_unix),
@@ -877,6 +971,12 @@ async fn run_one_download(
 
     {
         let mut guard = library.lock().await;
+        if queue::get_by_id(&guard, queue_id)
+            .map_err(|e| ApiError::Downloader(format!("queue lookup failed: {e}")))?
+            .is_none()
+        {
+            return Err(ApiError::Downloader("download canceled".into()));
+        }
         videos::ingest_downloaded(
             &mut guard,
             &IngestPayload {
@@ -927,7 +1027,9 @@ fn yt_dlp_date_to_unix(yyyymmdd: &str) -> Option<i64> {
 /// "2024-01-02T03:04:05+09:00" や "2024-01-02T03:04:05Z" を unix epoch (秒) に。
 /// 失敗時は None。
 fn parse_iso8601_to_unix(s: &str) -> Option<i64> {
-    chrono::DateTime::parse_from_rfc3339(s).ok().map(|dt| dt.timestamp())
+    chrono::DateTime::parse_from_rfc3339(s)
+        .ok()
+        .map(|dt| dt.timestamp())
 }
 
 /// 既存 DL 物の重い sidecar (旧 yt-dlp info.json 等) を一括掃除する。
@@ -961,7 +1063,9 @@ pub async fn cleanup_storage(app: tauri::AppHandle) -> Result<u64> {
         };
         while let Ok(Some(file)) = sub.next_entry().await {
             let fp = file.path();
-            let Some(name) = fp.file_name().and_then(|s| s.to_str()) else { continue };
+            let Some(name) = fp.file_name().and_then(|s| s.to_str()) else {
+                continue;
+            };
             if keep.contains(&name) {
                 continue;
             }
@@ -1026,7 +1130,10 @@ pub fn local_audio_url(video_id: String, server: State<'_, LocalServer>) -> Stri
 
 #[tauri::command]
 pub fn local_thumbnail_url(video_id: String, server: State<'_, LocalServer>) -> String {
-    format!("http://127.0.0.1:{}/v/{}/thumbnail.jpg", server.port, video_id)
+    format!(
+        "http://127.0.0.1:{}/v/{}/thumbnail.jpg",
+        server.port, video_id
+    )
 }
 
 /// ローカルファイルの中身をバイナリとして JS 側へ返す。
@@ -1035,19 +1142,16 @@ pub fn local_thumbnail_url(video_id: String, server: State<'_, LocalServer>) -> 
 ///
 /// セキュリティ: `app_data_dir` 配下のファイルしか返さない。
 #[tauri::command]
-pub async fn read_local_file(
-    path: String,
-    app: tauri::AppHandle,
-) -> Result<tauri::ipc::Response> {
+pub async fn read_local_file(path: String, app: tauri::AppHandle) -> Result<tauri::ipc::Response> {
     use tauri::Manager;
     let app_data_dir = app
         .path()
         .app_data_dir()
         .map_err(|e| AppError::Other(format!("app_data_dir: {e}")))?;
     let abs = std::path::PathBuf::from(&path);
-    let canonical = abs.canonicalize().map_err(|e| {
-        AppError::Other(format!("canonicalize {}: {e}", abs.display()))
-    })?;
+    let canonical = abs
+        .canonicalize()
+        .map_err(|e| AppError::Other(format!("canonicalize {}: {e}", abs.display())))?;
     let canonical_root = app_data_dir
         .canonicalize()
         .map_err(|e| AppError::Other(format!("canonicalize app_data_dir: {e}")))?;
@@ -1066,10 +1170,7 @@ pub async fn read_local_file(
 /// 既存の `videos/{id}/video.mp4` (+ `audio.mp4`) を ffmpeg で remux し直す。
 /// 旧バージョンで DL した CMAF 単独ファイルを `<video>` 互換にしたい時に使う。
 #[tauri::command]
-pub async fn remux_local_video(
-    video_id: String,
-    app: tauri::AppHandle,
-) -> Result<String> {
+pub async fn remux_local_video(video_id: String, app: tauri::AppHandle) -> Result<String> {
     use tauri::Manager;
     let app_data_dir = app
         .path()
@@ -1088,17 +1189,20 @@ pub async fn remux_local_video(
     // 入力を一旦 .src.mp4 に退避してから ffmpeg で video.mp4 へ書き戻す。
     let src_video = dir.join(".src-video.mp4");
     let src_audio = dir.join(".src-audio.mp4");
-    tokio::fs::rename(&video_path, &src_video).await
+    tokio::fs::rename(&video_path, &src_video)
+        .await
         .map_err(|e| AppError::Other(format!("rename video.mp4: {e}")))?;
     let audio_arg = if audio_path.exists() {
-        tokio::fs::rename(&audio_path, &src_audio).await
+        tokio::fs::rename(&audio_path, &src_audio)
+            .await
             .map_err(|e| AppError::Other(format!("rename audio.mp4: {e}")))?;
         Some(src_audio.as_path())
     } else {
         None
     };
 
-    let outcome = crate::downloader::ffmpeg::remux(Some(&app), &src_video, audio_arg, &video_path).await?;
+    let outcome =
+        crate::downloader::ffmpeg::remux(Some(&app), &src_video, audio_arg, &video_path).await?;
     match outcome {
         crate::downloader::ffmpeg::MuxOutcome::Success => {
             let _ = tokio::fs::remove_file(&src_video).await;
@@ -1180,12 +1284,9 @@ pub async fn list_library_videos(
             let id: String = row.get(0)?;
             let video_path: Option<String> = row.get(9)?;
             let resolution: Option<String> = row.get(10)?;
-            let local_video_abs = video_path.as_deref().map(|p| {
-                app_data_dir
-                    .join(p)
-                    .to_string_lossy()
-                    .into_owned()
-            });
+            let local_video_abs = video_path
+                .as_deref()
+                .map(|p| app_data_dir.join(p).to_string_lossy().into_owned());
             let local_thumb_abs = {
                 let p = app_data_dir.join("videos").join(&id).join("thumbnail.jpg");
                 if p.exists() {
@@ -1344,8 +1445,12 @@ pub async fn prepare_local_playback(
             },
         )
         .ok();
-    let Some(row) = video_row else { return Ok(None); };
-    let Some(video_rel_path) = row.12 else { return Ok(None); };
+    let Some(row) = video_row else {
+        return Ok(None);
+    };
+    let Some(video_rel_path) = row.12 else {
+        return Ok(None);
+    };
 
     let abs_video = app_data_dir.join(&video_rel_path);
     if !abs_video.exists() {
@@ -1353,11 +1458,22 @@ pub async fn prepare_local_playback(
     }
     let abs_audio = {
         let p = app_data_dir.join("videos").join(&row.0).join("audio.mp4");
-        if p.exists() { Some(p.to_string_lossy().into_owned()) } else { None }
+        if p.exists() {
+            Some(p.to_string_lossy().into_owned())
+        } else {
+            None
+        }
     };
     let thumb_abs = {
-        let p = app_data_dir.join("videos").join(&row.0).join("thumbnail.jpg");
-        if p.exists() { Some(p.to_string_lossy().into_owned()) } else { None }
+        let p = app_data_dir
+            .join("videos")
+            .join(&row.0)
+            .join("thumbnail.jpg");
+        if p.exists() {
+            Some(p.to_string_lossy().into_owned())
+        } else {
+            None
+        }
     };
 
     // タグ
@@ -1395,10 +1511,8 @@ pub async fn prepare_local_playback(
             .query_map(rusqlite::params![sid], |r| {
                 let mail: Option<String> = r.get(4)?;
                 let mail_str = mail.unwrap_or_default();
-                let commands: Vec<String> = mail_str
-                    .split_whitespace()
-                    .map(|s| s.to_string())
-                    .collect();
+                let commands: Vec<String> =
+                    mail_str.split_whitespace().map(|s| s.to_string()).collect();
                 let is_owner = r.get::<_, i64>(6)? != 0;
                 // niconicomments は fork="owner" / "main" / "easy" でスレを
                 // 分けて挙動を変える。投稿者コメは必ず "owner" にしないと
@@ -1468,10 +1582,7 @@ pub async fn set_setting(
 }
 
 #[tauri::command]
-pub async fn delete_setting(
-    key: String,
-    library: State<'_, Arc<LibraryHandle>>,
-) -> Result<()> {
+pub async fn delete_setting(key: String, library: State<'_, Arc<LibraryHandle>>) -> Result<()> {
     let conn = library.lock().await;
     settings::delete(&conn, &key).map_err(AppError::from)?;
     Ok(())
@@ -1573,7 +1684,14 @@ async fn check_tool_version(cmd: &str, version_arg: &str) -> (bool, Option<Strin
         Ok(out) if out.status.success() => {
             let s = String::from_utf8_lossy(&out.stdout);
             let first_line = s.lines().next().unwrap_or("").trim().to_string();
-            (true, if first_line.is_empty() { None } else { Some(first_line) })
+            (
+                true,
+                if first_line.is_empty() {
+                    None
+                } else {
+                    Some(first_line)
+                },
+            )
         }
         _ => (false, None),
     }
@@ -1582,7 +1700,9 @@ async fn check_tool_version(cmd: &str, version_arg: &str) -> (bool, Option<Strin
 /// ディレクトリの累計バイト数（再帰）。失敗時は 0。
 async fn dir_size(path: &std::path::Path) -> u64 {
     let path = path.to_path_buf();
-    tokio::task::spawn_blocking(move || sync_dir_size(&path)).await.unwrap_or(0)
+    tokio::task::spawn_blocking(move || sync_dir_size(&path))
+        .await
+        .unwrap_or(0)
 }
 
 fn sync_dir_size(path: &std::path::Path) -> u64 {

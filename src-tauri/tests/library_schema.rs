@@ -3,7 +3,7 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use nndd_next_lib::library::schema::run_migrations;
+use nndd_next_lib::library::schema::{run_migrations, MIGRATIONS};
 use rusqlite::{params, Connection};
 use tempfile::TempDir;
 
@@ -120,6 +120,6 @@ fn idempotent_across_restarts() {
         let count: i64 = conn
             .query_row("SELECT COUNT(*) FROM schema_version", [], |r| r.get(0))
             .expect("count");
-        assert_eq!(count, 1);
+        assert_eq!(count, MIGRATIONS.len() as i64);
     }
 }

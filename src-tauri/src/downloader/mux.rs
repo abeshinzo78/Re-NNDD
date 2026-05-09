@@ -54,15 +54,12 @@ pub fn mux_bytes(video_bytes: &[u8], audio_bytes: &[u8]) -> Result<Vec<u8>, ApiE
     let video_top = iter_boxes(video_bytes)?;
     let audio_top = iter_boxes(audio_bytes)?;
 
-    let video_ftyp = find_top(&video_top, b"ftyp").ok_or_else(|| {
-        ApiError::ResponseShape("video file missing ftyp".into())
-    })?;
-    let video_moov = find_top(&video_top, b"moov").ok_or_else(|| {
-        ApiError::ResponseShape("video file missing moov".into())
-    })?;
-    let audio_moov = find_top(&audio_top, b"moov").ok_or_else(|| {
-        ApiError::ResponseShape("audio file missing moov".into())
-    })?;
+    let video_ftyp = find_top(&video_top, b"ftyp")
+        .ok_or_else(|| ApiError::ResponseShape("video file missing ftyp".into()))?;
+    let video_moov = find_top(&video_top, b"moov")
+        .ok_or_else(|| ApiError::ResponseShape("video file missing moov".into()))?;
+    let audio_moov = find_top(&audio_top, b"moov")
+        .ok_or_else(|| ApiError::ResponseShape("audio file missing moov".into()))?;
 
     let combined_moov = build_combined_moov(video_moov.payload, audio_moov.payload)?;
 
@@ -102,24 +99,19 @@ fn find_top<'a>(boxes: &'a [BoxRef<'a>], typ: &[u8; 4]) -> Option<BoxRef<'a>> {
     boxes.iter().find(|b| &b.box_type == typ).copied()
 }
 
-fn build_combined_moov(
-    video_moov: &[u8],
-    audio_moov: &[u8],
-) -> Result<Vec<u8>, ApiError> {
+fn build_combined_moov(video_moov: &[u8], audio_moov: &[u8]) -> Result<Vec<u8>, ApiError> {
     let mvhd = find_child(video_moov, b"mvhd")
         .ok_or_else(|| ApiError::ResponseShape("video moov missing mvhd".into()))?
         .payload
         .to_vec();
     let updated_mvhd = update_mvhd_next_track_id(&mvhd, AUDIO_TRACK_ID + 1)?;
 
-    let video_trak = find_child(video_moov, b"trak").ok_or_else(|| {
-        ApiError::ResponseShape("video moov missing trak".into())
-    })?;
+    let video_trak = find_child(video_moov, b"trak")
+        .ok_or_else(|| ApiError::ResponseShape("video moov missing trak".into()))?;
     let video_trak_renum = rewrite_track_id_in_trak(video_trak.payload, VIDEO_TRACK_ID)?;
 
-    let audio_trak = find_child(audio_moov, b"trak").ok_or_else(|| {
-        ApiError::ResponseShape("audio moov missing trak".into())
-    })?;
+    let audio_trak = find_child(audio_moov, b"trak")
+        .ok_or_else(|| ApiError::ResponseShape("audio moov missing trak".into()))?;
     let audio_trak_renum = rewrite_track_id_in_trak(audio_trak.payload, AUDIO_TRACK_ID)?;
 
     // mvex 統合
@@ -171,8 +163,10 @@ fn rewrite_track_id_in_trak(trak_payload: &[u8], new_id: u32) -> Result<Vec<u8>,
             new_children.push((child.box_type, child.payload.to_vec()));
         }
     }
-    let refs: Vec<(&[u8; 4], &[u8])> =
-        new_children.iter().map(|(t, p)| (t, p.as_slice())).collect();
+    let refs: Vec<(&[u8; 4], &[u8])> = new_children
+        .iter()
+        .map(|(t, p)| (t, p.as_slice()))
+        .collect();
     Ok(write_container_payload(&refs))
 }
 
@@ -192,7 +186,9 @@ fn rewrite_tkhd_track_id(tkhd_payload: &[u8], new_id: u32) -> Result<Vec<u8>, Ap
         0 => 4 + 4 + 4,
         1 => 4 + 8 + 8,
         v => {
-            return Err(ApiError::ResponseShape(format!("unsupported tkhd version {v}")));
+            return Err(ApiError::ResponseShape(format!(
+                "unsupported tkhd version {v}"
+            )));
         }
     };
     if tkhd_payload.len() < track_id_offset + 4 {
@@ -207,9 +203,7 @@ fn rewrite_tkhd_track_id(tkhd_payload: &[u8], new_id: u32) -> Result<Vec<u8>, Ap
 
 fn rewrite_track_id_in_trex(trex_payload: &[u8], new_id: u32) -> Result<Vec<u8>, ApiError> {
     if trex_payload.len() < 8 {
-        return Err(ApiError::ResponseShape(
-            "trex payload too short".into(),
-        ));
+        return Err(ApiError::ResponseShape("trex payload too short".into()));
     }
     // [version: 1][flags: 3][track_ID: 4]...
     let mut out = trex_payload.to_vec();
@@ -219,9 +213,7 @@ fn rewrite_track_id_in_trex(trex_payload: &[u8], new_id: u32) -> Result<Vec<u8>,
 
 fn update_mvhd_next_track_id(mvhd_payload: &[u8], next_id: u32) -> Result<Vec<u8>, ApiError> {
     if mvhd_payload.len() < 4 {
-        return Err(ApiError::ResponseShape(
-            "mvhd payload too short".into(),
-        ));
+        return Err(ApiError::ResponseShape("mvhd payload too short".into()));
     }
     // next_track_ID は payload の最後の 4 byte。
     let mut out = mvhd_payload.to_vec();
@@ -240,8 +232,10 @@ fn rewrite_track_id_in_moof(moof_payload: &[u8], new_id: u32) -> Result<Vec<u8>,
             new_children.push((child.box_type, child.payload.to_vec()));
         }
     }
-    let refs: Vec<(&[u8; 4], &[u8])> =
-        new_children.iter().map(|(t, p)| (t, p.as_slice())).collect();
+    let refs: Vec<(&[u8; 4], &[u8])> = new_children
+        .iter()
+        .map(|(t, p)| (t, p.as_slice()))
+        .collect();
     Ok(write_container_payload(&refs))
 }
 
@@ -260,11 +254,12 @@ fn rewrite_track_id_in_traf(traf_payload: &[u8], new_id: u32) -> Result<Vec<u8>,
             new_children.push((child.box_type, child.payload.to_vec()));
         }
     }
-    let refs: Vec<(&[u8; 4], &[u8])> =
-        new_children.iter().map(|(t, p)| (t, p.as_slice())).collect();
+    let refs: Vec<(&[u8; 4], &[u8])> = new_children
+        .iter()
+        .map(|(t, p)| (t, p.as_slice()))
+        .collect();
     Ok(write_container_payload(&refs))
 }
-
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
@@ -296,7 +291,7 @@ mod tests {
         payload.extend_from_slice(&track_id.to_be_bytes()); // track_ID
         payload.extend_from_slice(&[0u8; 4]); // reserved
         payload.extend_from_slice(&100u32.to_be_bytes()); // duration
-        // pad to typical tkhd size
+                                                          // pad to typical tkhd size
         payload.extend_from_slice(&[0u8; 60]);
         b(b"tkhd", &payload)
     }
@@ -305,7 +300,7 @@ mod tests {
         let mut payload = Vec::new();
         payload.push(0); // version
         payload.extend_from_slice(&[0, 0, 0]); // flags
-        // dummy fields total 96 bytes, then next_track_ID at the very end
+                                               // dummy fields total 96 bytes, then next_track_ID at the very end
         payload.extend_from_slice(&[0u8; 96]);
         payload.extend_from_slice(&999u32.to_be_bytes()); // next_track_ID
         b(b"mvhd", &payload)

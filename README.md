@@ -1,5 +1,6 @@
 # Re:NNDD
 
+<<<<<<< HEAD
 ニコニコ動画専用クライアント NNDD の精神的後継を目指したい。  
 Tauri 2 + Rust + Svelte 5 で実装するデスクトップアーカイブクライアントです。
 現在開發途中です。
@@ -17,6 +18,27 @@ Tauri 2 + Rust + Svelte 5 で実装するデスクトップアーカイブクラ
 
 ## 進捗
 
+=======
+ニコニコ動画専用クライアント NNDD の精神的後継。  
+Tauri 2 + Rust + Svelte 5 で実装するデスクトップアーカイブクライアントです。
+
+設計仕様の正典は [`CLAUDE.md`](./CLAUDE.md) を参照してください。
+
+## 現在できること
+
+- スナップショット検索 API 経由の動画検索
+- ログイン（メール/パスワード、`user_session` Cookie 直入力）
+- 動画ページ情報の取得と HLS 再生準備
+- コメント threads API 取得と再生連携
+- ユーザー/チャンネル投稿動画一覧の取得
+- ダウンロードキューの管理（追加・一覧・開始・キャンセル・完了削除）
+- `yt-dlp` + `ffmpeg` を使った動画保存とライブラリ取り込み
+- ローカル保存動画の再生（内蔵 HTTP Range 配信）
+- ライブラリ動画削除、設定保存、ストレージ掃除、環境情報表示
+
+## 進捗
+
+>>>>>>> 09db6c6 (Fix downloader cancellation and review findings)
 - Phase 1.0: SQLite スキーマ/マイグレーション実装済み
 - Phase 1.1: Snapshot Search API 実装済み
 - Phase 1.2: ダウンロードキュー CRUD + HLS パーサ実装済み

@@ -33,6 +33,7 @@ pub fn run() {
 
     if let Err(err) = tauri::Builder::default()
         .manage(session)
+        .manage(commands::DownloadTasks::default())
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
             // app_data_dir() は実行プロファイル（dev/prod）と OS で
@@ -50,10 +51,9 @@ pub fn run() {
 
             // ローカル HTTP サーバを起動（DL 済み動画の Range 配信用）
             let videos_root = data_dir.join("videos");
-            std::fs::create_dir_all(&videos_root)
-                .map_err(|e| format!("create videos dir: {e}"))?;
-            let port = local_server::start(videos_root)
-                .map_err(|e| format!("local server start: {e}"))?;
+            std::fs::create_dir_all(&videos_root).map_err(|e| format!("create videos dir: {e}"))?;
+            let port =
+                local_server::start(videos_root).map_err(|e| format!("local server start: {e}"))?;
             app.manage(LocalServer { port });
             Ok(())
         })

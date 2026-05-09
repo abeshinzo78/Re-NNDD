@@ -36,7 +36,10 @@ pub enum Progress {
     /// 1 segment の DL 完了（順序保証なし、index は m3u8 内の順序）。
     SegmentDone { index: usize, bytes: u64 },
     /// 全 segment 完了。最終的に書き出されたファイルサイズ。
-    Finished { output_path: PathBuf, total_bytes: u64 },
+    Finished {
+        output_path: PathBuf,
+        total_bytes: u64,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -66,9 +69,10 @@ pub async fn pick_video_and_audio(
     let master_text = client.get_text(master_url).await?;
     let master = parse_master(&master_text, &master_url_parsed)?;
 
-    let variant = master.variants.first().ok_or_else(|| {
-        ApiError::ResponseShape("master playlist has no video variant".into())
-    })?;
+    let variant = master
+        .variants
+        .first()
+        .ok_or_else(|| ApiError::ResponseShape("master playlist has no video variant".into()))?;
 
     let audio_url = variant
         .audio_group
@@ -192,7 +196,10 @@ where
             .await
             .map_err(|e| ApiError::Downloader(format!("segment task panicked: {e}")))??;
         let len = bytes.len() as u64;
-        on_progress(Progress::SegmentDone { index: idx, bytes: len });
+        on_progress(Progress::SegmentDone {
+            index: idx,
+            bytes: len,
+        });
         buffered.insert(idx, bytes);
         while let Some(b) = buffered.remove(&next_to_write) {
             file.write_all(&b).await?;
@@ -219,7 +226,11 @@ async fn fetch_one_segment(
     let raw = match segment.byte_range {
         Some(br) => {
             client
-                .get_range(&segment.uri, Some(br.offset), Some(br.offset + br.length - 1))
+                .get_range(
+                    &segment.uri,
+                    Some(br.offset),
+                    Some(br.offset + br.length - 1),
+                )
                 .await?
         }
         None => client.get_bytes(&segment.uri).await?,
@@ -232,9 +243,9 @@ async fn fetch_one_segment(
                     "unsupported HLS key method: {method}"
                 )));
             }
-            let key_uri = uri.as_deref().ok_or_else(|| {
-                ApiError::ResponseShape("AES-128 key without URI".into())
-            })?;
+            let key_uri = uri
+                .as_deref()
+                .ok_or_else(|| ApiError::ResponseShape("AES-128 key without URI".into()))?;
             let key_bytes = fetch_key(client, key_uri, key_cache).await?;
             let iv_bytes = iv.unwrap_or_else(|| super::aes::iv_from_media_sequence(index as u64));
             decrypt_aes_128_cbc(&key_bytes, &iv_bytes, &raw)
@@ -380,7 +391,10 @@ mod tests {
         expected.extend_from_slice(&seg1);
         expected.extend_from_slice(&seg2);
         assert_eq!(written, expected);
-        assert!(matches!(events.first().unwrap(), Progress::Started { total_segments: 3 }));
+        assert!(matches!(
+            events.first().unwrap(),
+            Progress::Started { total_segments: 3 }
+        ));
         assert!(matches!(events.last().unwrap(), Progress::Finished { .. }));
     }
 
@@ -499,7 +513,11 @@ mod tests {
             .await
             .unwrap();
         assert!(picked.video_media_url.ends_with("/hi/v.m3u8"));
-        assert!(picked.audio_media_url.as_deref().unwrap().ends_with("/audio.m3u8"));
+        assert!(picked
+            .audio_media_url
+            .as_deref()
+            .unwrap()
+            .ends_with("/audio.m3u8"));
         assert_eq!(picked.resolution, Some((1920, 1080)));
     }
 }

@@ -57,23 +57,28 @@ pub async fn remux(
 
     let mut cmd = tokio::process::Command::new(&ff.command);
     cmd.arg("-hide_banner")
-        .arg("-loglevel").arg("error")
+        .arg("-loglevel")
+        .arg("error")
         .arg("-y")
-        .arg("-i").arg(video);
+        .arg("-i")
+        .arg(video);
     if let Some(a) = audio {
         cmd.arg("-i").arg(a);
     }
-    cmd.arg("-c").arg("copy")
+    cmd.arg("-c")
+        .arg("copy")
         // moov を先頭に。`<video>` のロード初動が早い。
-        .arg("-movflags").arg("+faststart");
+        .arg("-movflags")
+        .arg("+faststart");
     if audio.is_some() {
         cmd.arg("-map").arg("0:v:0").arg("-map").arg("1:a:0");
     }
     cmd.arg(output);
 
-    let result = cmd.output().await.map_err(|e| {
-        ApiError::Downloader(format!("failed to spawn ffmpeg: {e}"))
-    })?;
+    let result = cmd
+        .output()
+        .await
+        .map_err(|e| ApiError::Downloader(format!("failed to spawn ffmpeg: {e}")))?;
 
     if result.status.success() {
         Ok(MuxOutcome::Success)

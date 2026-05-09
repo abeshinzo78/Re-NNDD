@@ -100,10 +100,7 @@ pub fn set_video_path(
     )?)
 }
 
-pub fn get_video(
-    conn: &Connection,
-    video_id: &str,
-) -> Result<Option<VideoRecord>, LibraryError> {
+pub fn get_video(conn: &Connection, video_id: &str) -> Result<Option<VideoRecord>, LibraryError> {
     let row = conn
         .query_row(
             "SELECT id, title, description, uploader_id, uploader_name, uploader_type, \
@@ -164,7 +161,7 @@ fn upsert_video_with_tx(
             status = 'active', \
             status_checked_at = excluded.status_checked_at, \
             downloaded_at = COALESCE(videos.downloaded_at, excluded.downloaded_at), \
-            video_path = COALESCE(excluded.video_path, videos.video_path), \
+            video_path = excluded.video_path, \
             raw_meta_json = COALESCE(excluded.raw_meta_json, videos.raw_meta_json), \
             resolution = COALESCE(excluded.resolution, videos.resolution)",
         params![
@@ -285,8 +282,14 @@ mod tests {
 
     fn sample_tags() -> Vec<TagRecord> {
         vec![
-            TagRecord { name: "VOCALOID".into(), is_locked: true },
-            TagRecord { name: "初音ミク".into(), is_locked: false },
+            TagRecord {
+                name: "VOCALOID".into(),
+                is_locked: true,
+            },
+            TagRecord {
+                name: "初音ミク".into(),
+                is_locked: false,
+            },
         ]
     }
 
@@ -344,7 +347,10 @@ mod tests {
             .map(|r| r.unwrap())
             .collect();
         tag_names.sort();
-        assert_eq!(tag_names, vec!["VOCALOID".to_string(), "初音ミク".to_string()]);
+        assert_eq!(
+            tag_names,
+            vec!["VOCALOID".to_string(), "初音ミク".to_string()]
+        );
 
         // snapshot
         let (is_initial, comment_count): (i64, i64) = conn
@@ -387,12 +393,22 @@ mod tests {
 
         let s1 = ingest_downloaded(
             &mut conn,
-            &IngestPayload { video: &v, tags: &t, comments: &c },
-        ).unwrap();
+            &IngestPayload {
+                video: &v,
+                tags: &t,
+                comments: &c,
+            },
+        )
+        .unwrap();
         let s2 = ingest_downloaded(
             &mut conn,
-            &IngestPayload { video: &v, tags: &t, comments: &c },
-        ).unwrap();
+            &IngestPayload {
+                video: &v,
+                tags: &t,
+                comments: &c,
+            },
+        )
+        .unwrap();
         assert_ne!(s1, s2);
 
         let initials: i64 = conn
@@ -436,7 +452,10 @@ mod tests {
             &mut conn,
             &IngestPayload {
                 video: &v,
-                tags: &[TagRecord { name: "新タグ".into(), is_locked: false }],
+                tags: &[TagRecord {
+                    name: "新タグ".into(),
+                    is_locked: false,
+                }],
                 comments: &[],
             },
         )
@@ -464,15 +483,25 @@ mod tests {
         let mut v = sample_video();
         ingest_downloaded(
             &mut conn,
-            &IngestPayload { video: &v, tags: &[], comments: &[] },
-        ).unwrap();
+            &IngestPayload {
+                video: &v,
+                tags: &[],
+                comments: &[],
+            },
+        )
+        .unwrap();
 
         v.title = "新タイトル".into();
         v.view_count = Some(99999);
         ingest_downloaded(
             &mut conn,
-            &IngestPayload { video: &v, tags: &[], comments: &[] },
-        ).unwrap();
+            &IngestPayload {
+                video: &v,
+                tags: &[],
+                comments: &[],
+            },
+        )
+        .unwrap();
 
         let stored = get_video(&conn, "sm9").unwrap().unwrap();
         assert_eq!(stored.title, "新タイトル");
@@ -486,11 +515,45 @@ mod tests {
         v.video_path = None;
         ingest_downloaded(
             &mut conn,
-            &IngestPayload { video: &v, tags: &[], comments: &[] },
-        ).unwrap();
+            &IngestPayload {
+                video: &v,
+                tags: &[],
+                comments: &[],
+            },
+        )
+        .unwrap();
 
         set_video_path(&conn, "sm9", Some("videos/sm9/video.mp4")).unwrap();
         let stored = get_video(&conn, "sm9").unwrap().unwrap();
         assert_eq!(stored.video_path.as_deref(), Some("videos/sm9/video.mp4"));
+    }
+
+    #[test]
+    fn ingest_can_clear_video_path() {
+        let mut conn = setup();
+        let mut v = sample_video();
+        ingest_downloaded(
+            &mut conn,
+            &IngestPayload {
+                video: &v,
+                tags: &[],
+                comments: &[],
+            },
+        )
+        .unwrap();
+
+        v.video_path = None;
+        ingest_downloaded(
+            &mut conn,
+            &IngestPayload {
+                video: &v,
+                tags: &[],
+                comments: &[],
+            },
+        )
+        .unwrap();
+
+        let stored = get_video(&conn, "sm9").unwrap().unwrap();
+        assert_eq!(stored.video_path, None);
     }
 }

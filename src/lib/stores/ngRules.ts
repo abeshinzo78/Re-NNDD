@@ -244,13 +244,12 @@ export function isCommentBlocked(rules: NgRule[], c: CommentLike): { blocked: bo
   return { blocked: false };
 }
 
-/** Filter + record hits in one pass. */
+/** Pure filtering helper. Hit counters must be updated outside derived/render calculations. */
 export function filterSearchHits<T extends SearchHitLike>(rules: NgRule[], hits: T[]): T[] {
   const out: T[] = [];
   for (const h of hits) {
     const r = isHitBlocked(rules, h);
     if (r.blocked) {
-      if (r.ruleId) recordHit(r.ruleId);
       continue;
     }
     out.push(h);
@@ -263,7 +262,6 @@ export function filterComments<T extends CommentLike>(rules: NgRule[], comments:
   for (const c of comments) {
     const r = isCommentBlocked(rules, c);
     if (r.blocked) {
-      if (r.ruleId) recordHit(r.ruleId);
       continue;
     }
     out.push(c);

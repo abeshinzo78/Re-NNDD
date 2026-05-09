@@ -66,15 +66,11 @@ pub fn enqueue(
         params![video_id, scheduled_at],
     )?;
     let id = conn.last_insert_rowid();
-    get_by_id(conn, id)?.ok_or_else(|| {
-        LibraryError::Integrity(format!("inserted row {id} could not be re-read"))
-    })
+    get_by_id(conn, id)?
+        .ok_or_else(|| LibraryError::Integrity(format!("inserted row {id} could not be re-read")))
 }
 
-pub fn get_by_id(
-    conn: &Connection,
-    id: i64,
-) -> Result<Option<DownloadQueueItem>, LibraryError> {
+pub fn get_by_id(conn: &Connection, id: i64) -> Result<Option<DownloadQueueItem>, LibraryError> {
     let row = conn
         .query_row(
             &format!("SELECT {SELECT_COLS} FROM download_queue WHERE id = ?1"),
@@ -112,11 +108,7 @@ pub fn list_pending(conn: &Connection) -> Result<Vec<DownloadQueueItem>, Library
 
 /// status を遷移させる。`"downloading"` 遷移時は started_at を、`"done"` 遷移
 /// 時は finished_at を必ず埋める。
-pub fn mark_status(
-    conn: &Connection,
-    id: i64,
-    status: &str,
-) -> Result<usize, LibraryError> {
+pub fn mark_status(conn: &Connection, id: i64, status: &str) -> Result<usize, LibraryError> {
     let now = now_unix();
     let updated = match status {
         "downloading" => conn.execute(
@@ -138,11 +130,7 @@ pub fn mark_status(
 }
 
 /// 進捗 0.0..=1.0 を更新。範囲外はクランプ。
-pub fn update_progress(
-    conn: &Connection,
-    id: i64,
-    progress: f64,
-) -> Result<usize, LibraryError> {
+pub fn update_progress(conn: &Connection, id: i64, progress: f64) -> Result<usize, LibraryError> {
     let p = progress.clamp(0.0, 1.0);
     let updated = conn.execute(
         "UPDATE download_queue SET progress = ?1 WHERE id = ?2",
@@ -151,11 +139,7 @@ pub fn update_progress(
     Ok(updated)
 }
 
-pub fn mark_error(
-    conn: &Connection,
-    id: i64,
-    message: &str,
-) -> Result<usize, LibraryError> {
+pub fn mark_error(conn: &Connection, id: i64, message: &str) -> Result<usize, LibraryError> {
     let now = now_unix();
     let updated = conn.execute(
         "UPDATE download_queue SET status = 'error', error_message = ?1, finished_at = ?2 \

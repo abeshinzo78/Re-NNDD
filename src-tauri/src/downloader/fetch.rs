@@ -39,9 +39,8 @@ impl DomandClient {
 
     pub async fn get_text(&self, url: &str) -> Result<String, ApiError> {
         let bytes = self.get_bytes(url).await?;
-        String::from_utf8(bytes).map_err(|e| {
-            ApiError::ResponseShape(format!("non-UTF8 playlist body: {e}"))
-        })
+        String::from_utf8(bytes)
+            .map_err(|e| ApiError::ResponseShape(format!("non-UTF8 playlist body: {e}")))
     }
 
     /// HTTP Range 付き GET。`end` は **inclusive** （RFC 7233）。
@@ -60,7 +59,10 @@ impl DomandClient {
             .header("sec-fetch-mode", "cors")
             .header("sec-fetch-site", "same-site")
             .header("sec-fetch-dest", "empty")
-            .header("sec-ch-ua", "\"Chromium\";v=\"130\", \"Not?A_Brand\";v=\"99\"")
+            .header(
+                "sec-ch-ua",
+                "\"Chromium\";v=\"130\", \"Not?A_Brand\";v=\"99\"",
+            )
             .header("sec-ch-ua-mobile", "?0")
             .header("sec-ch-ua-platform", "\"Linux\"");
         if let Some(cookie) = self.session.cookie_header() {

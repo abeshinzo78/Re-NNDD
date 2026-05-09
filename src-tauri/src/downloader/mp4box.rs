@@ -67,9 +67,7 @@ pub fn iter_children(payload: &[u8]) -> Result<Vec<BoxRef<'_>>, ApiError> {
 /// total_len は size フィールドの値（ヘッダ込みのバイト総数）。
 pub fn read_box_header(bytes: &[u8]) -> Result<(usize, usize, [u8; 4]), ApiError> {
     if bytes.len() < 8 {
-        return Err(ApiError::ResponseShape(
-            "mp4 box header < 8 bytes".into(),
-        ));
+        return Err(ApiError::ResponseShape("mp4 box header < 8 bytes".into()));
     }
     let size = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
     let mut box_type = [0u8; 4];

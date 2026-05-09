@@ -10,7 +10,7 @@ use std::process::Stdio;
 
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 
 use crate::downloader::tools;
 use crate::error::ApiError;
@@ -50,6 +50,42 @@ pub async fn download<F>(
 where
     F: FnMut(f64) + Send,
 {
+    download_inner(app, url, output_dir, extra_cookie, &mut on_progress, None).await
+}
+
+pub async fn download_with_cancel<F>(
+    app: Option<&tauri::AppHandle>,
+    url: &str,
+    output_dir: &Path,
+    extra_cookie: Option<String>,
+    mut on_progress: F,
+    cancel: watch::Receiver<bool>,
+) -> Result<YtdlpResult, ApiError>
+where
+    F: FnMut(f64) + Send,
+{
+    download_inner(
+        app,
+        url,
+        output_dir,
+        extra_cookie,
+        &mut on_progress,
+        Some(cancel),
+    )
+    .await
+}
+
+async fn download_inner<F>(
+    app: Option<&tauri::AppHandle>,
+    url: &str,
+    output_dir: &Path,
+    extra_cookie: Option<String>,
+    on_progress: &mut F,
+    mut cancel: Option<watch::Receiver<bool>>,
+) -> Result<YtdlpResult, ApiError>
+where
+    F: FnMut(f64) + Send,
+{
     let yt = tools::ytdlp(app);
     if matches!(yt.source, tools::BinarySource::NotFound) {
         return Err(ApiError::Downloader(
@@ -85,16 +121,23 @@ where
         .arg("--no-colors")
         .arg("--no-mtime")
         .arg("--no-playlist")
-        .arg("-P").arg(output_dir)
-        .arg("-o").arg("video.%(ext)s")
-        .arg("-f").arg("bv*+ba/b")
-        .arg("--merge-output-format").arg("mp4")
+        .arg("-P")
+        .arg(output_dir)
+        .arg("-o")
+        .arg("video.%(ext)s")
+        .arg("-f")
+        .arg("bv*+ba/b")
+        .arg("--merge-output-format")
+        .arg("mp4")
         .arg("--write-info-json")
         .arg("--write-thumbnail")
         .arg("--write-description")
-        .arg("--convert-thumbnails").arg("jpg")
-        .arg("--postprocessor-args").arg("ffmpeg:-movflags +faststart")
-        .arg("--progress-template").arg("nndd-progress:%(progress._percent_str)s");
+        .arg("--convert-thumbnails")
+        .arg("jpg")
+        .arg("--postprocessor-args")
+        .arg("ffmpeg:-movflags +faststart")
+        .arg("--progress-template")
+        .arg("nndd-progress:%(progress._percent_str)s");
 
     // バンドル ffmpeg を yt-dlp に明示。PATH の ffmpeg は無視させる。
     let ff = tools::ffmpeg(app);
@@ -106,9 +149,7 @@ where
         cmd.arg("--cookies").arg(p);
     }
 
-    cmd.arg(url)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+    cmd.arg(url).stdout(Stdio::piped()).stderr(Stdio::piped());
 
     let mut child = cmd
         .spawn()
@@ -145,29 +186,45 @@ where
     });
 
     let mut stderr_buf = String::new();
-    while let Some((kind, line)) = line_rx.recv().await {
-        if let Some(pct) = parse_progress_line(&line) {
-            on_progress(pct);
-        } else if !line.is_empty() {
-            tracing::debug!(target: "ytdlp", stream = ?kind, "{line}");
+    let status = loop {
+        tokio::select! {
+            line = line_rx.recv() => {
+                if let Some((kind, line)) = line {
+                    if let Some(pct) = parse_progress_line(&line) {
+                        on_progress(pct);
+                    } else if !line.is_empty() {
+                        tracing::debug!(target: "ytdlp", stream = ?kind, "{line}");
+                    }
+                    if matches!(kind, StreamKind::Stderr) && !line.is_empty() {
+                        stderr_buf.push_str(&line);
+                        stderr_buf.push('\n');
+                    }
+                }
+            }
+            status = child.wait() => {
+                break status.map_err(|e| ApiError::Downloader(format!("yt-dlp wait failed: {e}")))?;
+            }
+            changed = async {
+                match cancel.as_mut() {
+                    Some(rx) => rx.changed().await,
+                    None => std::future::pending().await,
+                }
+            } => {
+                if changed.is_ok() && cancel.as_ref().is_some_and(|rx| *rx.borrow()) {
+                    let _ = child.kill().await;
+                    let _ = stdout_handle.await;
+                    let _ = stderr_handle.await;
+                    cleanup_cookies(cookies_file.as_ref()).await;
+                    return Err(ApiError::Downloader("download canceled".into()));
+                }
+            }
         }
-        if matches!(kind, StreamKind::Stderr) && !line.is_empty() {
-            stderr_buf.push_str(&line);
-            stderr_buf.push('\n');
-        }
-    }
+    };
     let _ = stdout_handle.await;
     let _ = stderr_handle.await;
 
-    let status = child
-        .wait()
-        .await
-        .map_err(|e| ApiError::Downloader(format!("yt-dlp wait failed: {e}")))?;
-
     // 一時 cookie ファイルは用済み。残しても害は少ないが念のため削除。
-    if let Some(p) = cookies_file.as_ref() {
-        let _ = tokio::fs::remove_file(p).await;
-    }
+    cleanup_cookies(cookies_file.as_ref()).await;
 
     if !status.success() {
         return Err(ApiError::Downloader(format!(
@@ -196,11 +253,19 @@ where
     };
     let thumbnail_path = {
         let p = output_dir.join("video.jpg");
-        if p.exists() { Some(p) } else { None }
+        if p.exists() {
+            Some(p)
+        } else {
+            None
+        }
     };
     let description_path = {
         let p = output_dir.join("video.description");
-        if p.exists() { Some(p) } else { None }
+        if p.exists() {
+            Some(p)
+        } else {
+            None
+        }
     };
 
     Ok(YtdlpResult {
@@ -210,6 +275,12 @@ where
         thumbnail_path,
         description_path,
     })
+}
+
+async fn cleanup_cookies(path: Option<&PathBuf>) {
+    if let Some(p) = path {
+        let _ = tokio::fs::remove_file(p).await;
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -228,16 +299,16 @@ fn build_netscape_cookies(cookie_header: &str) -> String {
     let exp = "2147483647";
     for kv in cookie_header.split(';') {
         let kv = kv.trim();
-        let Some((k, v)) = kv.split_once('=') else { continue };
+        let Some((k, v)) = kv.split_once('=') else {
+            continue;
+        };
         let k = k.trim();
         let v = v.trim();
         if k.is_empty() {
             continue;
         }
         // domain  flag  path  secure  expiration  name  value (TAB 区切り)
-        out.push_str(&format!(
-            ".nicovideo.jp\tTRUE\t/\tTRUE\t{exp}\t{k}\t{v}\n"
-        ));
+        out.push_str(&format!(".nicovideo.jp\tTRUE\t/\tTRUE\t{exp}\t{k}\t{v}\n"));
     }
     out
 }
@@ -280,10 +351,8 @@ mod tests {
             parse_progress_line("[download]   0.0% of ~  120.00MiB at  Unknown B/s ETA Unknown"),
             Some(0.0)
         );
-        let pct = parse_progress_line(
-            "[download]  42.5% of ~120.00MiB at    5.20MiB/s ETA 00:12",
-        )
-        .unwrap();
+        let pct = parse_progress_line("[download]  42.5% of ~120.00MiB at    5.20MiB/s ETA 00:12")
+            .unwrap();
         assert!((pct - 0.425).abs() < 1e-9);
     }
 
