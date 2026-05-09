@@ -54,7 +54,7 @@ rand = "0.8"
 
 # HLS AES-128-CBC 復号 (downloader/aes.rs)
 aes = "0.8"
-cbc = "0.1"
+cbc = "0.2"
 
 # 内蔵 HTTP サーバー (local_server.rs)
 # WebKitGTK の <video> は Blob URL だと後方 seek で GOP リセットがうまく
