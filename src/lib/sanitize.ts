@@ -91,17 +91,31 @@ function sanitizeNode(node: Node, out: Node, doc: Document): void {
  * 信頼できない HTML 文字列を、許可リスト方式でサニタイズした HTML 文字列に
  * 変換する。`{@html}` に渡しても XSS にならないことを目標に書いてある。
  *
- * SSR 中（DOMParser が無い）はタグを全部落とした素のテキストを返す。
+ * SSR 中（DOMParser が無い）は全文字をエンティティ化して安全な
+ * プレーンテキストに倒す（`<[^>]*>` のような単発正規表現で剥がそうと
+ * すると `<<script>script>` のような入れ子で 1 段だけ消えて残りが
+ * 復活する CodeQL の "incomplete multi-character sanitization" にハマる）。
  */
 export function sanitizeDescriptionHtml(input: string | null | undefined): string {
   if (!input) return '';
   if (typeof DOMParser === 'undefined') {
-    // SSR フォールバック: タグを全部剥がす。
-    return input.replace(/<[^>]*>/g, '');
+    return escapeHtmlEntities(input);
   }
   const doc = new DOMParser().parseFromString(`<!doctype html><body>${input}`, 'text/html');
   const body = doc.body;
   const out = doc.createElement('div');
   sanitizeNode(body, out, doc);
   return out.innerHTML;
+}
+
+const HTML_ENTITY_MAP: Record<string, string> = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;',
+};
+
+function escapeHtmlEntities(input: string): string {
+  return input.replace(/[&<>"']/g, (c) => HTML_ENTITY_MAP[c] ?? c);
 }

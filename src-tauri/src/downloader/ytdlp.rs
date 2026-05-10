@@ -120,11 +120,9 @@ where
     // 殺せるように、yt-dlp 自身を新しいプロセスグループのリーダにする。
     // こうしておけば kill_process_tree() で `-pgid` 宛に SIGKILL を投げる
     // だけで子孫まで一括停止できる。
+    // `tokio::process::Command::process_group` は tokio 1.27 以降の API。
     #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt as _;
-        cmd.process_group(0);
-    }
+    cmd.process_group(0);
     cmd.arg("--no-warnings")
         .arg("--newline")
         .arg("--no-colors")
