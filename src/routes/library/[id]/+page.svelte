@@ -16,6 +16,7 @@
   import { filterComments, listNgRules, subscribeNgRules, type NgRule } from '$lib/stores/ngRules';
   import { addHistory } from '$lib/stores/history';
   import { getBool, loadSettings } from '$lib/stores/settings.svelte';
+  import { sanitizeDescriptionHtml } from '$lib/sanitize';
 
   let local = $state<LocalPlaybackPayload | null>(null);
   let localSrc = $state<string | null>(null);
@@ -337,8 +338,10 @@
         {#if lp.description}
           <details>
             <summary>説明文</summary>
+            <!-- 説明文の HTML はサニタイズ済みのものだけを `{@html}` に渡す。
+                 詳細は src/lib/sanitize.ts のコメントを参照。 -->
             <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-            <p class="desc">{@html lp.description}</p>
+            <p class="desc">{@html sanitizeDescriptionHtml(lp.description)}</p>
           </details>
         {/if}
       </div>

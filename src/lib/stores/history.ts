@@ -18,7 +18,13 @@ export function getHistory(): HistoryItem[] {
   if (typeof window === 'undefined') return [];
   try {
     const data = localStorage.getItem(HISTORY_KEY);
-    return data ? JSON.parse(data) : [];
+    if (!data) return [];
+    const parsed = JSON.parse(data);
+    // localStorage が手動編集されたり、別バージョンが書いた壊れた値が
+    // 入っていたりすると `JSON.parse` がオブジェクトを返してくる事がある。
+    // 配列でなければ空配列に倒さないと、後続の `.filter` 等で
+    // TypeError を吐いて履歴ページが真っ白になる。
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }

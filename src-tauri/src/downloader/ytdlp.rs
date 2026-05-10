@@ -116,6 +116,13 @@ where
     };
 
     let mut cmd = Command::new(&yt.command);
+    // Unix: yt-dlp が裏で立ち上げる ffmpeg (mp4 マージ用) も道連れに
+    // 殺せるように、yt-dlp 自身を新しいプロセスグループのリーダにする。
+    // こうしておけば kill_process_tree() で `-pgid` 宛に SIGKILL を投げる
+    // だけで子孫まで一括停止できる。
+    // `tokio::process::Command::process_group` は tokio 1.27 以降の API。
+    #[cfg(unix)]
+    cmd.process_group(0);
     cmd.arg("--no-warnings")
         .arg("--newline")
         .arg("--no-colors")
@@ -211,6 +218,14 @@ where
                 }
             } => {
                 if changed.is_ok() && cancel.as_ref().is_some_and(|rx| *rx.borrow()) {
+                    // child.kill() は yt-dlp 本体しか殺さないので、
+                    // mp4 マージ中の ffmpeg が孤児として生き残り、出力
+                    // ファイルをロックして「キャンセルしたのにファイルが
+                    // 消せない / 次回 DL が失敗する」事故になる。
+                    // 子孫まで道連れにするために kill_process_tree を使う。
+                    if let Some(pid) = child.id() {
+                        kill_process_tree(pid);
+                    }
                     let _ = child.kill().await;
                     let _ = stdout_handle.await;
                     let _ = stderr_handle.await;
@@ -280,6 +295,40 @@ where
 async fn cleanup_cookies(path: Option<&PathBuf>) {
     if let Some(p) = path {
         let _ = tokio::fs::remove_file(p).await;
+    }
+}
+
+/// `pid` を起点としたプロセス木全体に SIGKILL 相当を送る。
+///
+/// - Unix: spawn 時に `process_group(0)` で yt-dlp を pgid=pid のリーダに
+///   しているので、`kill -KILL -<pid>` で子孫（マージ用 ffmpeg を含む）
+///   まで一括停止できる。
+/// - Windows: `taskkill /F /T` が同じ役割（プロセス木の強制終了）。
+///
+/// ユーティリティ系コマンドは PATH に必ずある前提だが、無くても害はない
+/// ので失敗は無視する。
+fn kill_process_tree(pid: u32) {
+    #[cfg(unix)]
+    {
+        let _ = std::process::Command::new("kill")
+            .arg("-KILL")
+            .arg(format!("-{pid}"))
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+    }
+    #[cfg(windows)]
+    {
+        let _ = std::process::Command::new("taskkill")
+            .args(["/F", "/T", "/PID"])
+            .arg(pid.to_string())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = pid;
     }
 }
 

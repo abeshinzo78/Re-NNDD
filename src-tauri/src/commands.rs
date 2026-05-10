@@ -58,6 +58,27 @@ pub fn get_app_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
 
+/// `video_id` が `app_data_dir/videos/{video_id}` のサブディレクトリ名として
+/// 安全に使える形式かを検証する。
+///
+/// niconico の watch ID は `sm12345` `nm67890` `so11111` のように
+/// 英数字 + ハイフン + アンダースコアだけ。`/`, `\`, `..`, NUL 等が混ざった
+/// `video_id` を弾くことで、フロントエンド側に XSS が入っても
+/// `delete_library_video("../../../")` のようなディレクトリトラバーサルで
+/// 任意ディレクトリを破壊されないようにする。
+fn validate_video_id(video_id: &str) -> std::result::Result<(), AppError> {
+    if video_id.is_empty() || video_id.len() > 64 {
+        return Err(AppError::Other(format!("invalid video_id: {video_id:?}")));
+    }
+    if !video_id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err(AppError::Other(format!("invalid video_id: {video_id:?}")));
+    }
+    Ok(())
+}
+
 /// Forward a WebView console message to the Rust tracing pipeline.
 /// Called from a `console.*` shim in the frontend so devs without the
 /// WebKit inspector can still see browser-side logs in `/tmp/tauri-dev.log`.
@@ -651,6 +672,7 @@ pub async fn enqueue_download(
     scheduled_at: Option<i64>,
     library: State<'_, Arc<LibraryHandle>>,
 ) -> Result<DownloadQueueItem> {
+    validate_video_id(&video_id)?;
     let conn = library.lock().await;
     let item = queue::enqueue(&conn, &video_id, scheduled_at).map_err(AppError::from)?;
     Ok(item)
@@ -709,6 +731,11 @@ pub async fn start_download(
         if item.status == "downloading" {
             return Err(AppError::Other("既に DL 中です".into()));
         }
+        // enqueue_download を経由しない経路（旧バージョンが入れた行など）で
+        // 不正な ID が DB に入っていた場合に備えて、状態を `downloading` に
+        // する前に弾く。後で弾くと、行が `downloading` のまま固まって
+        // 「既に DL 中です」で永久に再起動できなくなる（キューデッドロック）。
+        validate_video_id(&item.video_id)?;
         queue::mark_status(&conn, id, "downloading").map_err(AppError::from)?;
         // 進捗を 0 に戻す（再試行ケース）
         let _ = queue::update_progress(&conn, id, 0.0);
@@ -1090,6 +1117,7 @@ pub async fn delete_library_video(
     app: tauri::AppHandle,
 ) -> Result<()> {
     use tauri::Manager;
+    validate_video_id(&video_id)?;
     let app_data_dir = app
         .path()
         .app_data_dir()
@@ -1119,21 +1147,30 @@ pub async fn delete_library_video(
 /// `<video src=...>` にこれを渡すと Range/206 が効いて WebKitGTK でも
 /// 後方シークが正しく動く（Blob URL では NG）。
 #[tauri::command]
-pub fn local_video_url(video_id: String, server: State<'_, LocalServer>) -> String {
-    format!("http://127.0.0.1:{}/v/{}/video.mp4", server.port, video_id)
+pub fn local_video_url(video_id: String, server: State<'_, LocalServer>) -> Result<String> {
+    validate_video_id(&video_id)?;
+    Ok(format!(
+        "http://127.0.0.1:{}/v/{}/video.mp4",
+        server.port, video_id
+    ))
 }
 
 #[tauri::command]
-pub fn local_audio_url(video_id: String, server: State<'_, LocalServer>) -> String {
-    format!("http://127.0.0.1:{}/v/{}/audio.mp4", server.port, video_id)
+pub fn local_audio_url(video_id: String, server: State<'_, LocalServer>) -> Result<String> {
+    validate_video_id(&video_id)?;
+    Ok(format!(
+        "http://127.0.0.1:{}/v/{}/audio.mp4",
+        server.port, video_id
+    ))
 }
 
 #[tauri::command]
-pub fn local_thumbnail_url(video_id: String, server: State<'_, LocalServer>) -> String {
-    format!(
+pub fn local_thumbnail_url(video_id: String, server: State<'_, LocalServer>) -> Result<String> {
+    validate_video_id(&video_id)?;
+    Ok(format!(
         "http://127.0.0.1:{}/v/{}/thumbnail.jpg",
         server.port, video_id
-    )
+    ))
 }
 
 /// ローカルファイルの中身をバイナリとして JS 側へ返す。
@@ -1172,6 +1209,7 @@ pub async fn read_local_file(path: String, app: tauri::AppHandle) -> Result<taur
 #[tauri::command]
 pub async fn remux_local_video(video_id: String, app: tauri::AppHandle) -> Result<String> {
     use tauri::Manager;
+    validate_video_id(&video_id)?;
     let app_data_dir = app
         .path()
         .app_data_dir()
@@ -1413,6 +1451,7 @@ pub async fn prepare_local_playback(
     app: tauri::AppHandle,
 ) -> Result<Option<LocalPlaybackPayload>> {
     use tauri::Manager;
+    validate_video_id(&video_id)?;
     let app_data_dir = app
         .path()
         .app_data_dir()
@@ -1722,4 +1761,36 @@ fn sync_dir_size(path: &std::path::Path) -> u64 {
         }
     }
     total
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_video_id_accepts_niconico_ids() {
+        assert!(validate_video_id("sm12345").is_ok());
+        assert!(validate_video_id("nm67890").is_ok());
+        assert!(validate_video_id("so11111").is_ok());
+        assert!(validate_video_id("watch_id-1_2-3").is_ok());
+    }
+
+    #[test]
+    fn validate_video_id_rejects_path_traversal() {
+        assert!(validate_video_id("..").is_err());
+        assert!(validate_video_id("../etc").is_err());
+        assert!(validate_video_id("../../foo").is_err());
+        assert!(validate_video_id("a/b").is_err());
+        assert!(validate_video_id("a\\b").is_err());
+        assert!(validate_video_id("").is_err());
+        assert!(validate_video_id(".").is_err());
+        assert!(validate_video_id("foo bar").is_err());
+        assert!(validate_video_id("foo\0bar").is_err());
+    }
+
+    #[test]
+    fn validate_video_id_rejects_overlong() {
+        let long = "a".repeat(65);
+        assert!(validate_video_id(&long).is_err());
+    }
 }
