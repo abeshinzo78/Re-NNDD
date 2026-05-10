@@ -14,6 +14,7 @@
   import { filterComments, listNgRules, subscribeNgRules, type NgRule } from '$lib/stores/ngRules';
   import { addHistory } from '$lib/stores/history';
   import { getBool, loadSettings } from '$lib/stores/settings.svelte';
+  import { sanitizeDescriptionHtml } from '$lib/sanitize';
 
   // この route は **オンライン視聴専用**。ローカル再生は /library/[id] で行う。
   // 別ルートに分けることで、ネット接続が要らないときに偶発的に niconico を
@@ -378,8 +379,11 @@
         {#if payload.video.description}
           <details>
             <summary>説明文</summary>
+            <!-- niconico API の説明文は外部入力。`{@html}` 前に許可リストで
+                 サニタイズして XSS（→ Tauri invoke 経由の任意ファイル削除など）
+                 を遮断する。 -->
             <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-            <p class="desc">{@html payload.video.description}</p>
+            <p class="desc">{@html sanitizeDescriptionHtml(payload.video.description)}</p>
           </details>
         {/if}
       </div>
