@@ -56,15 +56,36 @@
   let dragStartX = 0;
   let dragStartWidth = 0;
 
-  // Choose the back-link target based on whether the user came from a search.
+  // Choose the back-link target based on referrer info (from query param).
   $effect(() => {
-    const prev = loadSearchState();
-    if (prev?.lastQuery) {
-      backHref = '/search';
-      backLabel = `← 「${prev.lastQuery}」の検索結果に戻る`;
+    const from = page.url.searchParams.get('from');
+    if (from === 'history') {
+      backHref = '/history';
+      backLabel = '← 履歴に戻る';
+    } else if (from === 'user') {
+      const uid = page.url.searchParams.get('uid');
+      const kind = page.url.searchParams.get('kind') ?? 'user';
+      const name = page.url.searchParams.get('name') ?? '';
+      const icon = page.url.searchParams.get('icon') ?? '';
+      if (uid) {
+        const params = new URLSearchParams({ kind });
+        if (name) params.set('name', name);
+        if (icon) params.set('icon', icon);
+        backHref = `/user/${uid}?${params}`;
+        backLabel = `← ${name || uid} の投稿動画に戻る`;
+      } else {
+        backHref = '/search';
+        backLabel = '← 検索に戻る';
+      }
     } else {
-      backHref = '/search';
-      backLabel = '← 検索に戻る';
+      const prev = loadSearchState();
+      if (prev?.lastQuery) {
+        backHref = '/search';
+        backLabel = `← 「${prev.lastQuery}」の検索結果に戻る`;
+      } else {
+        backHref = '/search';
+        backLabel = '← 検索に戻る';
+      }
     }
   });
 

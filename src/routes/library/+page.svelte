@@ -117,7 +117,7 @@
     <div class="grid">
       {#each items as item (item.id)}
         <div class="card-wrap">
-          <a class="card" href={`/library/${item.id}`}>
+          <a class="card" href={`/library/${item.id}?from=library`}>
             <div class="thumb-wrap">
               {#if thumbSrc(item)}
                 <img class="thumb" src={thumbSrc(item)} alt="" loading="lazy" />

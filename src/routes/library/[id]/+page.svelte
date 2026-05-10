@@ -45,6 +45,20 @@
   let dragStartX = 0;
   let dragStartWidth = 0;
 
+  let backHref = $state('/library');
+  let backLabel = $state('← ライブラリに戻る');
+
+  $effect(() => {
+    const from = page.url.searchParams.get('from');
+    if (from === 'history') {
+      backHref = '/history';
+      backLabel = '← 履歴に戻る';
+    } else {
+      backHref = '/library';
+      backLabel = '← ライブラリに戻る';
+    }
+  });
+
   function tagSearchHref(tag: string): string {
     return `/search?q=${encodeURIComponent(tag)}&targets=tagsExact`;
   }
@@ -196,7 +210,7 @@
 
 <section class="page">
   <div class="head">
-    <a class="back" href="/library">← ライブラリに戻る</a>
+    <a class="back" href={backHref}>{backLabel}</a>
     <h2>{local?.title ?? videoId}</h2>
     {#if local}
       <span class="local-badge">ローカル再生</span>

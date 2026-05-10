@@ -39,8 +39,8 @@
 
   function hrefFor(item: HistoryItem): string {
     return (item.source ?? 'online') === 'local'
-      ? `/library/${item.videoId}`
-      : `/video/${item.videoId}`;
+      ? `/library/${item.videoId}?from=history`
+      : `/video/${item.videoId}?from=history`;
   }
 </script>
 

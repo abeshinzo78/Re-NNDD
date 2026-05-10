@@ -83,7 +83,14 @@
   }
 
   function videoHref(id: string): string {
-    return `/video/${id}`;
+    const params = new URLSearchParams({
+      from: 'user',
+      uid: userId,
+      kind,
+    });
+    if (nickname) params.set('name', nickname);
+    if (iconUrl) params.set('icon', iconUrl);
+    return `/video/${id}?${params}`;
   }
 </script>
 
