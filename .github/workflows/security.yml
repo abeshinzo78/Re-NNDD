@@ -3,21 +3,21 @@ name: Security audit
 on:
   schedule:
     # 毎週月曜 03:00 UTC (= JST 12:00) に走らせる
-    - cron: "0 3 * * 1"
+    - cron: '0 3 * * 1'
   push:
     branches: [main, master]
     paths:
-      - "package.json"
-      - "package-lock.json"
-      - "Cargo.toml"
-      - "src-tauri/Cargo.toml"
-      - ".github/workflows/security.yml"
+      - 'package.json'
+      - 'package-lock.json'
+      - 'Cargo.toml'
+      - 'src-tauri/Cargo.toml'
+      - '.github/workflows/security.yml'
   pull_request:
     paths:
-      - "package.json"
-      - "package-lock.json"
-      - "Cargo.toml"
-      - "src-tauri/Cargo.toml"
+      - 'package.json'
+      - 'package-lock.json'
+      - 'Cargo.toml'
+      - 'src-tauri/Cargo.toml'
   workflow_dispatch:
 
 permissions:
@@ -38,7 +38,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: '20'
           cache: npm
 
       - name: npm ci

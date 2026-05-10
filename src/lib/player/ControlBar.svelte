@@ -68,7 +68,9 @@
   // 速度ピッカーは <select> だと全画面プレイヤーの下端で popup が画面外
   // (= 隠れる) になるので、自前で「上方向に開く」ポップアップにする。
   let rateOpen = $state(false);
-  function toggleRate() { rateOpen = !rateOpen; }
+  function toggleRate() {
+    rateOpen = !rateOpen;
+  }
   function pickRate(s: number) {
     onRate(s);
     rateOpen = false;
@@ -194,14 +196,14 @@
     </div>
 
     <div class="rate-picker">
-      <label class="rate-label">速度</label>
+      <span class="rate-label">速度</span>
       <button
         type="button"
         class="rate-btn"
         aria-haspopup="listbox"
         aria-expanded={rateOpen}
-        onclick={toggleRate}
-      >{rateLabel(playbackRate)} ▾</button>
+        onclick={toggleRate}>{rateLabel(playbackRate)} ▾</button
+      >
       {#if rateOpen}
         <div class="rate-menu" role="listbox">
           {#each speeds as s (s)}
@@ -210,8 +212,8 @@
               role="option"
               aria-selected={s === playbackRate}
               class:current={s === playbackRate}
-              onclick={() => pickRate(s)}
-            >{rateLabel(s)}</button>
+              onclick={() => pickRate(s)}>{rateLabel(s)}</button
+            >
           {/each}
         </div>
       {/if}
@@ -220,7 +222,10 @@
     {#if uniqueLevels.length > 1}
       <label class="select">
         画質
-        <select value={displayLevel} onchange={(e) => onQuality(Number((e.currentTarget as HTMLSelectElement).value))}>
+        <select
+          value={displayLevel}
+          onchange={(e) => onQuality(Number((e.currentTarget as HTMLSelectElement).value))}
+        >
           {#each uniqueLevels as { index, level } (index)}
             <option value={index}>{qualityLabel(level)}</option>
           {/each}
@@ -248,8 +253,8 @@
         class="btn"
         class:active={commentsEnabled}
         onclick={onToggleComments}
-        title="コメ表示 (C)"
-      >コメ {commentsEnabled ? 'ON' : 'OFF'}</button>
+        title="コメ表示 (C)">コメ {commentsEnabled ? 'ON' : 'OFF'}</button
+      >
       <input
         type="range"
         min="0.1"
@@ -262,7 +267,13 @@
     </div>
 
     <button type="button" class="btn" onclick={onFullscreen} title="全画面 (F)">⛶</button>
-    <button type="button" class="btn loop-btn" class:active={loop} onclick={onToggleLoop} title="リピート再生">
+    <button
+      type="button"
+      class="btn loop-btn"
+      class:active={loop}
+      onclick={onToggleLoop}
+      title="リピート再生"
+    >
       ループ
     </button>
   </div>
@@ -273,7 +284,7 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
-    background: linear-gradient(0deg, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0.0) 100%);
+    background: linear-gradient(0deg, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0) 100%);
     padding: 24px 12px 12px;
     position: relative;
     z-index: 10;
@@ -405,7 +416,7 @@
   }
   .rate-menu {
     position: absolute;
-    bottom: calc(100% + 4px);  /* 上に開く - 全画面の下端でも切れない */
+    bottom: calc(100% + 4px); /* 上に開く - 全画面の下端でも切れない */
     right: 0;
     background: #1a1a1a;
     border: 1px solid #2f2f2f;

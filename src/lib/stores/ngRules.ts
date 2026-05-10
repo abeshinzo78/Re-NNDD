@@ -191,7 +191,10 @@ export type SearchHitLike = {
 };
 
 /** Returns true if the hit should be HIDDEN under the search scope. */
-export function isHitBlocked(rules: NgRule[], hit: SearchHitLike): { blocked: boolean; ruleId?: string } {
+export function isHitBlocked(
+  rules: NgRule[],
+  hit: SearchHitLike,
+): { blocked: boolean; ruleId?: string } {
   for (const r of rules) {
     if (!r.enabled || !r.scopeSearch) continue;
     const match = compileRule(r);
@@ -215,7 +218,12 @@ export function isHitBlocked(rules: NgRule[], hit: SearchHitLike): { blocked: bo
         value = hit.categoryTags ?? hit.genre;
         break;
       case 'uploader':
-        value = hit.userId != null ? `user/${hit.userId}` : hit.channelId != null ? `channel/${hit.channelId}` : undefined;
+        value =
+          hit.userId != null
+            ? `user/${hit.userId}`
+            : hit.channelId != null
+              ? `channel/${hit.channelId}`
+              : undefined;
         break;
       default:
         continue;
@@ -230,7 +238,10 @@ export type CommentLike = {
   userId?: string;
 };
 
-export function isCommentBlocked(rules: NgRule[], c: CommentLike): { blocked: boolean; ruleId?: string } {
+export function isCommentBlocked(
+  rules: NgRule[],
+  c: CommentLike,
+): { blocked: boolean; ruleId?: string } {
   for (const r of rules) {
     if (!r.enabled || !r.scopeComment) continue;
     const match = compileRule(r);

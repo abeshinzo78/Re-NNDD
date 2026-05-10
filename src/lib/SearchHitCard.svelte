@@ -27,16 +27,16 @@
     hit.userId != null
       ? `user/${hit.userId}`
       : hit.channelId != null
-      ? `channel/${hit.channelId}`
-      : null,
+        ? `channel/${hit.channelId}`
+        : null,
   );
-  
+
   let uploaderHref = $derived(
     hit.userId != null
       ? `/user/${hit.userId}?kind=user`
       : hit.channelId != null
-      ? `/user/${hit.channelId}?kind=channel`
-      : null,
+        ? `/user/${hit.channelId}?kind=channel`
+        : null,
   );
 
   function showToast(msg: string) {
@@ -104,12 +104,20 @@
         {hit.title ?? '(無題)'}
       {/if}
       {#if externalHref}
-        <a class="external" href={externalHref} target="_blank" rel="noreferrer noopener" title="ニコニコで開く">↗</a>
+        <a
+          class="external"
+          href={externalHref}
+          target="_blank"
+          rel="noreferrer noopener"
+          title="ニコニコで開く">↗</a
+        >
       {/if}
     </div>
     <div class="row-meta muted">
       <span>{hit.contentId ?? ''}</span>
-      {#if hit.lengthSeconds != null}<span class="dot">·</span><span>{formatDuration(hit.lengthSeconds)}</span>{/if}
+      {#if hit.lengthSeconds != null}<span class="dot">·</span><span
+          >{formatDuration(hit.lengthSeconds)}</span
+        >{/if}
       {#if hit.startTime}<span class="dot">·</span><span>{formatDate(hit.startTime)}</span>{/if}
     </div>
     <div class="row-meta">
@@ -149,8 +157,8 @@
       aria-label="NG メニュー"
       aria-haspopup="true"
       aria-expanded={menuOpen}
-      title="NG に追加"
-    >⋯</button>
+      title="NG に追加">⋯</button
+    >
     {#if menuOpen}
       <div class="menu" bind:this={menuEl} role="menu">
         <div class="menu-head">NG に追加</div>
@@ -160,7 +168,10 @@
           </button>
         {/if}
         {#if hit.title}
-          <button type="button" onclick={() => ng('video_title', hit.title!, `タイトル「${hit.title}」`)}>
+          <button
+            type="button"
+            onclick={() => ng('video_title', hit.title!, `タイトル「${hit.title}」`)}
+          >
             このタイトルで NG（部分一致）
           </button>
         {/if}
@@ -170,9 +181,7 @@
           </button>
         {/if}
         {#if uploaderHref}
-          <a href={uploaderHref} class="menu-link">
-            投稿者の動画一覧
-          </a>
+          <a href={uploaderHref} class="menu-link"> 投稿者の動画一覧 </a>
         {/if}
         {#if tagsList.length > 0}
           <div class="menu-sep">タグ</div>
@@ -339,7 +348,8 @@
     border-bottom: 1px solid #2a2a2a;
     margin-bottom: 4px;
   }
-  .menu button, .menu .menu-link {
+  .menu button,
+  .menu .menu-link {
     display: block;
     text-align: left;
     background: transparent;
@@ -351,7 +361,8 @@
     cursor: pointer;
     text-decoration: none;
   }
-  .menu button:hover, .menu .menu-link:hover {
+  .menu button:hover,
+  .menu .menu-link:hover {
     background: #2a2a2a;
   }
   .menu-sep {

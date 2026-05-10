@@ -110,11 +110,7 @@
         {#each mylists as m (m.id)}
           <li>
             <label>
-              <input
-                type="checkbox"
-                checked={memberOf.has(m.id)}
-                onchange={() => toggle(m.id)}
-              />
+              <input type="checkbox" checked={memberOf.has(m.id)} onchange={() => toggle(m.id)} />
               <span class="name">{m.name}</span>
               {#if m.builtin}<span class="badge">標準</span>{/if}
               <span class="count">{m.items.length}</span>
@@ -129,12 +125,7 @@
           createAndAdd();
         }}
       >
-        <input
-          type="text"
-          placeholder="新しいマイリスト名"
-          bind:value={newName}
-          maxlength="60"
-        />
+        <input type="text" placeholder="新しいマイリスト名" bind:value={newName} maxlength="60" />
         <button type="submit" disabled={!newName.trim()}>作成</button>
       </form>
     </div>

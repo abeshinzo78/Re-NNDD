@@ -11,7 +11,12 @@
     sortByPopularity,
     type SortKey,
   } from '$lib/stores/searchState';
-  import { filterSearchHits, listNgRules, subscribeNgRules, type NgRule } from '$lib/stores/ngRules';
+  import {
+    filterSearchHits,
+    listNgRules,
+    subscribeNgRules,
+    type NgRule,
+  } from '$lib/stores/ngRules';
 
   let query = $state('');
   let targets = $state<Set<SearchTarget>>(new Set<SearchTarget>(['title']));

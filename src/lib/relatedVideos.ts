@@ -28,16 +28,24 @@ export async function fetchRelatedVideos(
     q,
     targets: ['title', 'tags'],
     fields: [
-      'contentId', 'title', 'viewCounter', 'commentCounter',
-      'mylistCounter', 'lengthSeconds', 'thumbnailUrl', 'startTime',
-      'userId', 'channelId',
+      'contentId',
+      'title',
+      'viewCounter',
+      'commentCounter',
+      'mylistCounter',
+      'lengthSeconds',
+      'thumbnailUrl',
+      'startTime',
+      'userId',
+      'channelId',
     ],
     sort: { field: 'viewCounter', direction: 'desc' },
     limit: Math.min(50, limit + 5),
     offset: 0,
   });
 
-  return sortByPopularity(
-    resp.data.filter((h) => h.contentId && h.contentId !== videoId),
-  ).slice(0, limit);
+  return sortByPopularity(resp.data.filter((h) => h.contentId && h.contentId !== videoId)).slice(
+    0,
+    limit,
+  );
 }

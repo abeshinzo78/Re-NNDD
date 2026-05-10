@@ -28,10 +28,8 @@
     <h1 class="brand">Re:NNDD</h1>
     <nav>
       {#each sections as section (section.href)}
-        <a
-          class="nav-item"
-          class:active={page.url.pathname === section.href}
-          href={section.href}>{section.label}</a
+        <a class="nav-item" class:active={page.url.pathname === section.href} href={section.href}
+          >{section.label}</a
         >
       {/each}
     </nav>
@@ -55,12 +53,7 @@
     background: #000;
     color: #eaeaea;
     font-family:
-      -apple-system,
-      BlinkMacSystemFont,
-      'Segoe UI',
-      Roboto,
-      'Hiragino Sans',
-      'Yu Gothic',
+      -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Hiragino Sans', 'Yu Gothic',
       sans-serif;
   }
   /* <select> の popup (option) は **黒文字 / 白背景** にする。

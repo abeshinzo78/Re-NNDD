@@ -2,11 +2,11 @@ version: 2
 updates:
   # ─── npm (Svelte / Vite / Vitest 系) ───
   - package-ecosystem: npm
-    directory: "/"
+    directory: '/'
     schedule:
       interval: weekly
       day: monday
-      time: "03:00"
+      time: '03:00'
       timezone: Asia/Tokyo
     open-pull-requests-limit: 5
     labels:
@@ -15,35 +15,35 @@ updates:
     groups:
       svelte:
         patterns:
-          - "svelte*"
-          - "@sveltejs/*"
+          - 'svelte*'
+          - '@sveltejs/*'
       tauri-js:
         patterns:
-          - "@tauri-apps/*"
+          - '@tauri-apps/*'
       lint-format:
         patterns:
-          - "eslint*"
-          - "@eslint/*"
-          - "prettier*"
-          - "typescript-eslint"
-          - "globals"
+          - 'eslint*'
+          - '@eslint/*'
+          - 'prettier*'
+          - 'typescript-eslint'
+          - 'globals'
       dev-tools:
         patterns:
-          - "vite"
-          - "vitest"
-          - "@testing-library/*"
-          - "jsdom"
-          - "typescript"
-          - "tslib"
-          - "@types/*"
+          - 'vite'
+          - 'vitest'
+          - '@testing-library/*'
+          - 'jsdom'
+          - 'typescript'
+          - 'tslib'
+          - '@types/*'
 
   # ─── Cargo (Rust ワークスペース) ───
   - package-ecosystem: cargo
-    directory: "/"
+    directory: '/'
     schedule:
       interval: weekly
       day: monday
-      time: "03:00"
+      time: '03:00'
       timezone: Asia/Tokyo
     open-pull-requests-limit: 5
     labels:
@@ -52,24 +52,24 @@ updates:
     groups:
       tauri:
         patterns:
-          - "tauri*"
+          - 'tauri*'
       tokio:
         patterns:
-          - "tokio*"
+          - 'tokio*'
       tracing:
         patterns:
-          - "tracing*"
+          - 'tracing*'
       serde:
         patterns:
-          - "serde*"
+          - 'serde*'
 
   # ─── GitHub Actions 自身 ───
   - package-ecosystem: github-actions
-    directory: "/"
+    directory: '/'
     schedule:
       interval: weekly
       day: monday
-      time: "03:00"
+      time: '03:00'
       timezone: Asia/Tokyo
     open-pull-requests-limit: 5
     labels:

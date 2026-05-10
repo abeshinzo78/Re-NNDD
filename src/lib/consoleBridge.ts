@@ -55,7 +55,10 @@ export function installConsoleBridge() {
     }).catch(() => undefined);
   });
   window.addEventListener('unhandledrejection', (event) => {
-    const reason = event.reason instanceof Error ? event.reason.stack ?? event.reason.message : String(event.reason);
+    const reason =
+      event.reason instanceof Error
+        ? (event.reason.stack ?? event.reason.message)
+        : String(event.reason);
     void invoke('web_log', {
       level: 'error',
       message: `[unhandledrejection] ${reason}`,

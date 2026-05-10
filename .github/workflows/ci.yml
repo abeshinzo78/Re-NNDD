@@ -5,7 +5,7 @@ on:
     branches:
       - main
       - master
-      - "claude/**"
+      - 'claude/**'
   pull_request:
   workflow_dispatch:
 
@@ -18,11 +18,11 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  CARGO_INCREMENTAL: "0"
-  CARGO_NET_RETRY: "10"
-  RUSTUP_MAX_RETRIES: "10"
-  RUST_BACKTRACE: "1"
-  NODE_VERSION: "20"
+  CARGO_INCREMENTAL: '0'
+  CARGO_NET_RETRY: '10'
+  RUSTUP_MAX_RETRIES: '10'
+  RUST_BACKTRACE: '1'
+  NODE_VERSION: '20'
 
 jobs:
   # ──────────────────────────────────────────────────────────────────────────
@@ -121,7 +121,7 @@ jobs:
 
       - name: cargo doc (no-deps, warnings as errors)
         env:
-          RUSTDOCFLAGS: "-D warnings"
+          RUSTDOCFLAGS: '-D warnings'
         run: cargo doc --workspace --no-deps --document-private-items
 
   # ──────────────────────────────────────────────────────────────────────────

@@ -108,11 +108,11 @@
     controlsVisible = true;
     if (hideTimer) clearTimeout(hideTimer);
     if (!paused) {
-      hideTimer = setTimeout(() => { controlsVisible = false; }, 3000);
+      hideTimer = setTimeout(() => {
+        controlsVisible = false;
+      }, 3000);
     }
   }
-
-  let isFirstLoad = true;
 
   async function loadFreshSource(forceRefresh = false) {
     const inflight = hls;
@@ -131,7 +131,6 @@
       }
     }
     if (hls !== inflight) return;
-    isFirstLoad = false;
     inflight.loadSource(url);
   }
 
@@ -213,8 +212,9 @@
         let targetIdx = -1;
         if (initialQualityLabel && hls.levels) {
           targetIdx = hls.levels.findIndex(
-            (l) => l.height?.toString() === initialQualityLabel?.replace('p', '')
-              || l.name === initialQualityLabel,
+            (l) =>
+              l.height?.toString() === initialQualityLabel?.replace('p', '') ||
+              l.name === initialQualityLabel,
           );
         }
         if (targetIdx < 0 && hls.levels && hls.levels.length > 0) {
@@ -230,7 +230,8 @@
         console.log(
           '[Player] MANIFEST_PARSED levels=',
           hls.levels?.map((l, i) => `${i}:${l.height}p/${Math.round((l.bitrate ?? 0) / 1000)}kbps`),
-          'locked=', targetIdx,
+          'locked=',
+          targetIdx,
         );
       });
       hls.on(Hls.Events.LEVEL_SWITCHED, (_e, data) => {
@@ -246,8 +247,12 @@
       hls.on(Hls.Events.FRAG_LOADED, () => {
         consecutiveLoadedFrags += 1;
         if (consecutiveLoadedFrags >= RESET_AFTER_LOADED_FRAGS) {
-          if (reissueAttempts > 0 || networkRecoveryAttempts > 0
-              || mediaRecoveryAttempts > 0 || stallRecoveryAttempts > 0) {
+          if (
+            reissueAttempts > 0 ||
+            networkRecoveryAttempts > 0 ||
+            mediaRecoveryAttempts > 0 ||
+            stallRecoveryAttempts > 0
+          ) {
             reissueAttempts = 0;
             networkRecoveryAttempts = 0;
             mediaRecoveryAttempts = 0;
@@ -270,11 +275,21 @@
             if (stallNudgeTimer) clearTimeout(stallNudgeTimer);
             stallNudgeTimer = setTimeout(() => {
               if (!hls || !video) return;
-              try { hls.startLoad(); } catch { /* */ }
+              try {
+                hls.startLoad();
+              } catch {
+                /* */
+              }
               // micro-nudge: わずかにシークして decoder を起こす
-              try { video.currentTime = video.currentTime + 0.01; } catch { /* */ }
+              try {
+                video.currentTime = video.currentTime + 0.01;
+              } catch {
+                /* */
+              }
             }, 200);
-            showNonFatal(`バッファ停止 — 再開中 (${stallRecoveryAttempts}/${MAX_RECOVERY_ATTEMPTS})`);
+            showNonFatal(
+              `バッファ停止 — 再開中 (${stallRecoveryAttempts}/${MAX_RECOVERY_ATTEMPTS})`,
+            );
             return;
           }
         }
@@ -295,9 +310,9 @@
         const responseText = typeof data.response?.text === 'string' ? data.response.text : '';
         const reasonText = typeof data.reason === 'string' ? data.reason : '';
         const looksLikeExpiry =
-          (data.details === 'manifestLoadError'
-            || data.details === 'levelLoadError'
-            || data.details === 'fragLoadError') &&
+          (data.details === 'manifestLoadError' ||
+            data.details === 'levelLoadError' ||
+            data.details === 'fragLoadError') &&
           (data.response?.code === 403 ||
             responseText.includes('403') ||
             reasonText.includes('403'));
@@ -323,7 +338,13 @@
               loadingMessage = `通信エラー — 再試行中 (${networkRecoveryAttempts}/${MAX_RECOVERY_ATTEMPTS})…`;
               // 指数バックオフ: 0.5s, 1s, 2s
               const delay = 500 * Math.pow(2, networkRecoveryAttempts - 1);
-              setTimeout(() => { try { hls?.startLoad(); } catch { /* */ } }, delay);
+              setTimeout(() => {
+                try {
+                  hls?.startLoad();
+                } catch {
+                  /* */
+                }
+              }, delay);
               return;
             }
             break;
@@ -352,7 +373,9 @@
         if (refreshHlsUrl && reissueAttempts < MAX_HLS_REISSUE_RETRIES + 1) {
           reissueAttempts += 1;
           loadingMessage = `致命的エラー — 完全再接続中 (${reissueAttempts})…`;
-          setTimeout(() => { attachHls(); }, 300);
+          setTimeout(() => {
+            attachHls();
+          }, 300);
           return;
         }
 
@@ -467,10 +490,11 @@
       }
     } catch (e) {
       // fastSeek 失敗時は currentTime にフォールバック
-      // eslint-disable-next-line no-console
+
       console.error('[Player] seekTo failed, falling back', e, 'target=', target);
-      try { video.currentTime = target; } catch (e2) {
-        // eslint-disable-next-line no-console
+      try {
+        video.currentTime = target;
+      } catch (e2) {
         console.error('[Player] currentTime fallback also failed', e2);
       }
     }
@@ -528,19 +552,26 @@
     video.currentTime += forward ? 1 / 30 : -1 / 30;
   }
 
+  type FullscreenDocument = Document & {
+    webkitFullscreenElement?: Element | null;
+    webkitExitFullscreen?: () => Promise<void> | void;
+  };
+  type FullscreenElement = HTMLElement & {
+    webkitRequestFullscreen?: () => Promise<void> | void;
+  };
   function getFullscreenEl(): Element | null {
-    return (document as any).fullscreenElement
-      ?? (document as any).webkitFullscreenElement
-      ?? null;
+    const d = document as FullscreenDocument;
+    return d.fullscreenElement ?? d.webkitFullscreenElement ?? null;
   }
   function exitFullscreen() {
-    const d = document as any;
+    const d = document as FullscreenDocument;
     if (d.exitFullscreen) void d.exitFullscreen();
     else if (d.webkitExitFullscreen) void d.webkitExitFullscreen();
   }
   function requestFullscreen(el: HTMLElement) {
-    if (el.requestFullscreen) void el.requestFullscreen();
-    else if ((el as any).webkitRequestFullscreen) void (el as any).webkitRequestFullscreen();
+    const e = el as FullscreenElement;
+    if (e.requestFullscreen) void e.requestFullscreen();
+    else if (e.webkitRequestFullscreen) void e.webkitRequestFullscreen();
   }
   function toggleFullscreen() {
     if (!stage) return;
@@ -737,15 +768,16 @@
     <div>{errorMessage}</div>
     {#if errorMessage.includes('decode') || errorMessage.includes('DECODE') || errorMessage.includes('SRC_NOT_SUPPORTED')}
       <div class="fatal-tip">
-        💡 ストリーミング再生でデコード失敗するケースは、niconico の最新コーデック (AV1 等)
-        を WebView の GStreamer が食えてないことが多いです。
-        <strong>ダウンロードしてローカル再生</strong>すると yt-dlp + ffmpeg が
-        H.264/AAC に変換して保存するので、ほぼ解決します。
+        💡 ストリーミング再生でデコード失敗するケースは、niconico の最新コーデック (AV1 等) を
+        WebView の GStreamer が食えてないことが多いです。
+        <strong>ダウンロードしてローカル再生</strong>すると yt-dlp + ffmpeg が H.264/AAC
+        に変換して保存するので、ほぼ解決します。
       </div>
     {/if}
   </div>
 {/if}
 
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="player"
   class:fullscreen={isFullscreen}
@@ -756,7 +788,6 @@
   {#if isSeeking}
     <div class="seek-mask" aria-hidden="true"></div>
   {/if}
-  <!-- svelte-ignore a11y_media_has_caption -->
   <video
     bind:this={video}
     style:visibility={isSeeking ? 'hidden' : 'visible'}
@@ -779,7 +810,7 @@
         4: 'MEDIA_ERR_SRC_NOT_SUPPORTED',
       };
       const detail = video?.error?.message || codeMap[code] || `code ${code}`;
-      // eslint-disable-next-line no-console
+
       console.warn('[Player] <video> error:', detail, 'src=', video?.currentSrc);
 
       // SRC_NOT_SUPPORTED は本質的に詰みなので即表示。
@@ -802,13 +833,12 @@
     playsinline
   ></video>
   {#if localAudioSrc}
-    <!-- svelte-ignore a11y_media_has_caption -->
     <audio
       bind:this={audioEl}
       preload="auto"
       onerror={() => {
         const code = audioEl?.error?.code ?? 0;
-        // eslint-disable-next-line no-console
+
         console.error('[Player] <audio> error: code', code, 'src=', audioEl?.currentSrc);
       }}
       style="display:none"
@@ -848,7 +878,9 @@
       onSetAbOut={setAbOut}
       onToggleAb={toggleAbLoop}
       onClearAb={clearAb}
-      onToggleLoop={() => { loop = !loop; }}
+      onToggleLoop={() => {
+        loop = !loop;
+      }}
       onFullscreen={toggleFullscreen}
       onQuality={setQuality}
     />
