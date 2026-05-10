@@ -54,7 +54,7 @@
       const t = params.get('targets');
       if (t) {
         const parts = t.split(',').filter(Boolean) as SearchTarget[];
-        if (parts.length) targets = new Set(parts);
+        if (parts.length) targets = new SvelteSet(parts);
       }
       const sort = params.get('sort') as SortKey | null;
       if (sort) sortField = sort;
