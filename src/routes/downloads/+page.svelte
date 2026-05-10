@@ -134,7 +134,7 @@
   <header class="head">
     <h2>ダウンロード</h2>
     <p class="muted">
-      「DL 開始」で <code>{"app_data_dir/videos/{videoId}/"}</code> 配下に
+      「DL 開始」で <code>{'app_data_dir/videos/{videoId}/'}</code> 配下に
       <code>video.mp4</code> / <code>audio.mp4</code> / <code>thumbnail.jpg</code> /
       <code>description.txt</code> / <code>meta.json</code> を保存し、初期コメ スナップショットをライブラリに取り込みます。AES-128
       暗号化セグメントも対応。
