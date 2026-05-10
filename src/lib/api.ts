@@ -93,9 +93,11 @@ export async function preparePlayback(videoId: string): Promise<PlaybackPayload>
   return invoke<PlaybackPayload>('prepare_playback', { videoId });
 }
 
-export async function fetchVideoComments(
-  nvComment: { server: string; threadKey: string; params: unknown },
-): Promise<PlayerComment[]> {
+export async function fetchVideoComments(nvComment: {
+  server: string;
+  threadKey: string;
+  params: unknown;
+}): Promise<PlayerComment[]> {
   return invoke<PlayerComment[]>('fetch_video_comments', { nvComment });
 }
 
@@ -166,18 +168,18 @@ export async function fetchUserVideos(
   sortOrder: string,
 ): Promise<UserVideosResponse> {
   return invoke<UserVideosResponse>('fetch_user_videos', {
-    ownerKind, ownerId, page, pageSize, sortKey, sortOrder,
+    ownerKind,
+    ownerId,
+    page,
+    pageSize,
+    sortKey,
+    sortOrder,
   });
 }
 
 // =================== ダウンロードキュー ===================
 
-export type DownloadStatus =
-  | 'pending'
-  | 'downloading'
-  | 'done'
-  | 'error'
-  | 'paused';
+export type DownloadStatus = 'pending' | 'downloading' | 'done' | 'error' | 'paused';
 
 export type DownloadQueueItem = {
   id: number;
@@ -279,9 +281,7 @@ export async function listLibraryVideos(): Promise<LibraryVideoItem[]> {
   return invoke<LibraryVideoItem[]>('list_library_videos');
 }
 
-export async function prepareLocalPlayback(
-  videoId: string,
-): Promise<LocalPlaybackPayload | null> {
+export async function prepareLocalPlayback(videoId: string): Promise<LocalPlaybackPayload | null> {
   return invoke<LocalPlaybackPayload | null>('prepare_local_playback', { videoId });
 }
 

@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 /// Snapshot Search v2 request.
 ///
 /// Validation (offset ≤ 100_000, limit ≤ 100, q non-empty, targets non-empty)
-/// is enforced by [`crate::api::search::SnapshotSearchClient::search`] before
+/// is enforced by [`SearchApi::search`](crate::api::search::SearchApi::search) before
 /// the HTTP call to keep the API server from rejecting predictable mistakes.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchQuery {

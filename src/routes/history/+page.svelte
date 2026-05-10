@@ -1,6 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { clearHistory, getHistory, type HistoryItem, type HistorySource } from '$lib/stores/history';
+  import {
+    clearHistory,
+    getHistory,
+    type HistoryItem,
+    type HistorySource,
+  } from '$lib/stores/history';
   import { formatDuration } from '$lib/format';
 
   let history = $state<HistoryItem[]>([]);
@@ -49,22 +54,22 @@
           role="tab"
           aria-selected={filter === 'all'}
           class:active={filter === 'all'}
-          onclick={() => (filter = 'all')}
-        >すべて ({counts.all})</button>
+          onclick={() => (filter = 'all')}>すべて ({counts.all})</button
+        >
         <button
           type="button"
           role="tab"
           aria-selected={filter === 'online'}
           class:active={filter === 'online'}
-          onclick={() => (filter = 'online')}
-        >オンライン ({counts.online})</button>
+          onclick={() => (filter = 'online')}>オンライン ({counts.online})</button
+        >
         <button
           type="button"
           role="tab"
           aria-selected={filter === 'local'}
           class:active={filter === 'local'}
-          onclick={() => (filter = 'local')}
-        >ローカル ({counts.local})</button>
+          onclick={() => (filter = 'local')}>ローカル ({counts.local})</button
+        >
       </div>
       <button type="button" class="clear-btn" onclick={handleClear} disabled={history.length === 0}>
         履歴をクリア
@@ -101,7 +106,9 @@
             </div>
             <div class="meta muted">
               <span>{item.videoId}</span>
-              {#if item.duration}<span class="dot">·</span><span>{formatDuration(item.duration)}</span>{/if}
+              {#if item.duration}<span class="dot">·</span><span
+                  >{formatDuration(item.duration)}</span
+                >{/if}
               {#if item.uploaderName}<span class="dot">·</span><span>{item.uploaderName}</span>{/if}
             </div>
             <div class="meta muted">
@@ -148,9 +155,16 @@
     font-size: 12px;
     border-right: 1px solid #1f1f1f;
   }
-  .tabs button:last-child { border-right: none; }
-  .tabs button:hover { background: #1f1f1f; }
-  .tabs button.active { background: #1f2a44; color: #93c5fd; }
+  .tabs button:last-child {
+    border-right: none;
+  }
+  .tabs button:hover {
+    background: #1f1f1f;
+  }
+  .tabs button.active {
+    background: #1f2a44;
+    color: #93c5fd;
+  }
   .clear-btn {
     background: #2a1212;
     color: #f5b3b3;
@@ -160,9 +174,16 @@
     cursor: pointer;
     font-size: 13px;
   }
-  .clear-btn:hover:not(:disabled) { background: #3a1a1a; }
-  .clear-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-  .muted { color: #9a9a9a; }
+  .clear-btn:hover:not(:disabled) {
+    background: #3a1a1a;
+  }
+  .clear-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .muted {
+    color: #9a9a9a;
+  }
   .list {
     list-style: none;
     padding: 0;
@@ -186,7 +207,9 @@
     border-radius: 4px;
     background: #0a0a0a;
   }
-  .thumb.placeholder { border: 1px dashed #2a2a2a; }
+  .thumb.placeholder {
+    border: 1px dashed #2a2a2a;
+  }
   .info {
     display: flex;
     flex-direction: column;
@@ -204,7 +227,9 @@
     text-decoration: none;
     font-weight: 600;
   }
-  .title:hover { text-decoration: underline; }
+  .title:hover {
+    text-decoration: underline;
+  }
   .src-tag {
     display: inline-block;
     padding: 1px 8px;
@@ -228,5 +253,7 @@
     display: flex;
     gap: 4px;
   }
-  .dot { color: #555; }
+  .dot {
+    color: #555;
+  }
 </style>

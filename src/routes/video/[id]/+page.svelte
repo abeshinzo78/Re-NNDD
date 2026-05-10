@@ -3,12 +3,7 @@
   import { page } from '$app/state';
   import Player from '$lib/player/Player.svelte';
   import CommentList from '$lib/player/CommentList.svelte';
-  import {
-    fetchVideoComments,
-    issueHlsUrl,
-    preparePlayback,
-    type SearchHit,
-  } from '$lib/api';
+  import { fetchVideoComments, issueHlsUrl, preparePlayback, type SearchHit } from '$lib/api';
   import { quickDownload } from '$lib/quickDownload';
   import { formatDate, formatDuration, formatNumber, videoUrl } from '$lib/format';
   import type { PlaybackPayload, PlayerComment } from '$lib/player/types';
@@ -32,7 +27,6 @@
 
   let related = $state<SearchHit[]>([]);
   let relatedLoading = $state(false);
-  let relatedReady = $state(false);
   let relatedVisibleCount = $state(0);
   let relatedError = $state<string | null>(null);
 
@@ -150,7 +144,6 @@
           .finally(() => {
             if (loadingFor === id) {
               relatedLoading = false;
-              relatedReady = true;
             }
           });
       }, 3000);
@@ -173,12 +166,16 @@
     if (!getBool('playback.resume_enabled')) return 0;
     try {
       return Number(localStorage.getItem(`resume:${id}`)) || 0;
-    } catch { return 0; }
+    } catch {
+      return 0;
+    }
   }
   function saveResumePosition(id: string, t: number) {
     try {
       localStorage.setItem(`resume:${id}`, String(Math.floor(t)));
-    } catch { /* */ }
+    } catch {
+      /* */
+    }
   }
 
   function handleTimeUpdate(time: number) {
@@ -212,7 +209,10 @@
   function showDlMsg(kind: 'ok' | 'error', text: string) {
     dlMsg = { kind, text };
     if (dlMsgTimer) clearTimeout(dlMsgTimer);
-    dlMsgTimer = setTimeout(() => { dlMsg = null; dlMsgTimer = null; }, 4000);
+    dlMsgTimer = setTimeout(() => {
+      dlMsg = null;
+      dlMsgTimer = null;
+    }, 4000);
   }
   async function onDownload(id: string) {
     dlPending = true;
@@ -223,7 +223,6 @@
       dlPending = false;
     }
   }
-
 </script>
 
 <svelte:window onmousemove={onMove} onmouseup={stopDrag} />
@@ -265,8 +264,8 @@
   {:else if error}
     <div class="error">エラー: {error}</div>
     <p class="muted">
-      ログインが必要な動画の場合は <a href="/settings">設定</a> で <code>user_session</code> Cookie を入れてください。
-      DL 済みなら <a href={`/library/${videoId}`}>ローカル再生</a> に切り替えてください。
+      ログインが必要な動画の場合は <a href="/settings">設定</a> で <code>user_session</code> Cookie
+      を入れてください。 DL 済みなら <a href={`/library/${videoId}`}>ローカル再生</a> に切り替えてください。
     </p>
   {:else if payload}
     {@const p = payload}
@@ -286,16 +285,17 @@
         {/if}
       </div>
       <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-      <div class="divider" role="separator" aria-label="コメントパネル幅調整" onmousedown={startDrag}></div>
+      <div
+        class="divider"
+        role="separator"
+        aria-label="コメントパネル幅調整"
+        onmousedown={startDrag}
+      ></div>
       <div class="comment-panel" style:width="{panelWidth}px" style:min-width="{panelWidth}px">
         {#if commentsLoading}
           <div class="comment-loading">コメント取得中…</div>
         {/if}
-        <CommentList
-          comments={visibleComments}
-          {currentTime}
-          onSeek={handleSeek}
-        />
+        <CommentList comments={visibleComments} {currentTime} onSeek={handleSeek} />
       </div>
     </div>
 
@@ -314,8 +314,11 @@
           {/if}
           <span class="dot">·</span>
           <span>コメ {commentsLoading ? '…' : formatNumber(comments.length)}</span>
-          <a class="external" href={videoUrl(payload.video.id)} target="_blank" rel="noreferrer noopener"
-            >ニコニコで開く ↗</a
+          <a
+            class="external"
+            href={videoUrl(payload.video.id)}
+            target="_blank"
+            rel="noreferrer noopener">ニコニコで開く ↗</a
           >
         </div>
         {#if payload.owner}
@@ -324,7 +327,10 @@
               <img src={payload.owner.iconUrl} alt="" loading="lazy" />
             {/if}
             {#if payload.owner.id}
-              <a href={`/user/${payload.owner.id}?kind=${payload.owner.kind}${payload.owner.nickname ? `&name=${encodeURIComponent(payload.owner.nickname)}` : ''}${payload.owner.iconUrl ? `&icon=${encodeURIComponent(payload.owner.iconUrl)}` : ''}`} class="owner-link">
+              <a
+                href={`/user/${payload.owner.id}?kind=${payload.owner.kind}${payload.owner.nickname ? `&name=${encodeURIComponent(payload.owner.nickname)}` : ''}${payload.owner.iconUrl ? `&icon=${encodeURIComponent(payload.owner.iconUrl)}` : ''}`}
+                class="owner-link"
+              >
                 <span>{payload.owner.nickname ?? '不明'}</span>
               </a>
             {:else}
@@ -336,7 +342,12 @@
         {#if payload.video.tags && payload.video.tags.length > 0}
           <div class="tags" aria-label="タグ">
             {#each payload.video.tags as tag (tag.name)}
-              <a class="tag" class:locked={tag.isLocked} href={tagSearchHref(tag.name)} title="このタグで検索">
+              <a
+                class="tag"
+                class:locked={tag.isLocked}
+                href={tagSearchHref(tag.name)}
+                title="このタグで検索"
+              >
                 {#if tag.isLocked}<span class="lock" aria-hidden="true">🔒</span>{/if}
                 {tag.name}
               </a>
@@ -346,6 +357,7 @@
         {#if payload.video.description}
           <details>
             <summary>説明文</summary>
+            <!-- eslint-disable-next-line svelte/no-at-html-tags -->
             <p class="desc">{@html payload.video.description}</p>
           </details>
         {/if}

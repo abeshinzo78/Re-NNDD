@@ -133,7 +133,7 @@
     if (toastTimer) clearTimeout(toastTimer);
   });
 
-  let activeComment = $derived(menuFor ? sorted.find((c) => c.id === menuFor) ?? null : null);
+  let activeComment = $derived(menuFor ? (sorted.find((c) => c.id === menuFor) ?? null) : null);
 </script>
 
 <aside class="comment-list">
@@ -162,8 +162,8 @@
           class="ng-btn"
           title="NG メニュー（右クリックでも開けます）"
           aria-label="NG メニュー"
-          onclick={(e) => openMenu(c, e)}
-        >⋯</button>
+          onclick={(e) => openMenu(c, e)}>⋯</button
+        >
       </li>
     {/each}
   </ul>
@@ -178,9 +178,15 @@
     style:top="{menuPos.y}px"
   >
     <div class="menu-head">NG に追加</div>
-    <div class="menu-preview">「{activeComment.content.slice(0, 40)}{activeComment.content.length > 40 ? '…' : ''}」</div>
-    <button type="button" onclick={() => ngBody(activeComment!)}>このコメ本文を NG（部分一致）</button>
-    <button type="button" onclick={() => ngBodyExact(activeComment!)}>このコメ本文を NG（完全一致）</button>
+    <div class="menu-preview">
+      「{activeComment.content.slice(0, 40)}{activeComment.content.length > 40 ? '…' : ''}」
+    </div>
+    <button type="button" onclick={() => ngBody(activeComment!)}
+      >このコメ本文を NG（部分一致）</button
+    >
+    <button type="button" onclick={() => ngBodyExact(activeComment!)}
+      >このコメ本文を NG（完全一致）</button
+    >
     <button
       type="button"
       onclick={() => ngUser(activeComment!)}

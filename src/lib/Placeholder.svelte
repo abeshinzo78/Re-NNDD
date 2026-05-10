@@ -1,5 +1,9 @@
 <script lang="ts">
-  let { title, phase, description } = $props<{ title: string; phase: string; description: string }>();
+  let { title, phase, description } = $props<{
+    title: string;
+    phase: string;
+    description: string;
+  }>();
 </script>
 
 <section>

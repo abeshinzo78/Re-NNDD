@@ -25,9 +25,7 @@
       "csp": null,
       "assetProtocol": {
         "enable": true,
-        "scope": [
-          "$APPDATA/**"
-        ]
+        "scope": ["$APPDATA/**"]
       }
     }
   },
@@ -41,9 +39,6 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "externalBin": [
-      "binaries/yt-dlp",
-      "binaries/ffmpeg"
-    ]
+    "externalBin": ["binaries/yt-dlp", "binaries/ffmpeg"]
   }
 }

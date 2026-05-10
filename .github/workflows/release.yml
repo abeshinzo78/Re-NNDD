@@ -5,20 +5,20 @@ name: Release (Tauri bundle)
 on:
   push:
     tags:
-      - "v*"
+      - 'v*'
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag (e.g. v0.1.0). 必ず指定。"
+        description: 'Release tag (e.g. v0.1.0). 必ず指定。'
         required: true
         type: string
       draft:
-        description: "draft release として作るか"
+        description: 'draft release として作るか'
         required: false
         type: boolean
         default: true
       prerelease:
-        description: "prerelease として作るか"
+        description: 'prerelease として作るか'
         required: false
         type: boolean
         default: false
@@ -32,8 +32,8 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  CARGO_INCREMENTAL: "0"
-  NODE_VERSION: "20"
+  CARGO_INCREMENTAL: '0'
+  NODE_VERSION: '20'
 
 jobs:
   bundle:
@@ -115,7 +115,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ inputs.tag || github.ref_name }}
-          releaseName: "Re:NNDD ${{ inputs.tag || github.ref_name }}"
+          releaseName: 'Re:NNDD ${{ inputs.tag || github.ref_name }}'
           releaseBody: |
             ## Re:NNDD バンドルリリース
 

@@ -62,7 +62,8 @@
 
   function onDelete(m: Mylist) {
     if (m.builtin) return;
-    if (!confirm(`「${m.name}」を削除しますか？(${m.items.length} 件の動画リンクも消えます)`)) return;
+    if (!confirm(`「${m.name}」を削除しますか？(${m.items.length} 件の動画リンクも消えます)`))
+      return;
     deleteMylist(m.id);
   }
 
@@ -112,12 +113,7 @@
       </ul>
 
       <form class="create" onsubmit={onCreate}>
-        <input
-          type="text"
-          placeholder="新しいマイリスト名"
-          bind:value={newName}
-          maxlength="60"
-        />
+        <input type="text" placeholder="新しいマイリスト名" bind:value={newName} maxlength="60" />
         <button type="submit" disabled={!newName.trim()}>作成</button>
       </form>
     </aside>
@@ -134,7 +130,9 @@
           </div>
         </div>
         <p class="muted small">
-          {formatNumber(selected.items.length)} 件 · 更新 {formatDate(new Date(selected.updatedAt).toISOString())}
+          {formatNumber(selected.items.length)} 件 · 更新 {formatDate(
+            new Date(selected.updatedAt).toISOString(),
+          )}
         </p>
         {#if selected.items.length === 0}
           <p class="muted">

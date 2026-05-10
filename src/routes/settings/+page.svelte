@@ -61,8 +61,7 @@
       case 'mfa':
         return {
           kind: 'warn',
-          text:
-            '二段階認証が有効なアカウントです。下の「Cookie を直接入力」で user_session を貼り付けてください。',
+          text: '二段階認証が有効なアカウントです。下の「Cookie を直接入力」で user_session を貼り付けてください。',
         };
       case 'invalid_credentials':
         return { kind: 'error', text: 'メールアドレスかパスワードが正しくありません。' };
@@ -151,18 +150,21 @@
   ];
 
   function defsForSection(id: string) {
-    return [...SETTING_DEFS]
-      .filter((d) => d.section === id)
-      .sort((a, b) => a.order - b.order);
+    return [...SETTING_DEFS].filter((d) => d.section === id).sort((a, b) => a.order - b.order);
   }
 
   function sourceLabel(s: string): string {
     switch (s) {
-      case 'bundled': return 'バンドル済';
-      case 'sidecar': return 'サイドカー';
-      case 'system_path': return 'システム PATH';
-      case 'not_found': return '未検出';
-      default: return s;
+      case 'bundled':
+        return 'バンドル済';
+      case 'sidecar':
+        return 'サイドカー';
+      case 'system_path':
+        return 'システム PATH';
+      case 'not_found':
+        return '未検出';
+      default:
+        return s;
     }
   }
   function formatBytes(b: number): string {
@@ -249,8 +251,8 @@
                     type="button"
                     class="reset-btn"
                     title="既定値に戻す"
-                    onclick={() => onSettingReset(k)}
-                  >↺</button>
+                    onclick={() => onSettingReset(k)}>↺</button
+                  >
                 {/if}
               </div>
             </div>
@@ -290,11 +292,7 @@
       </label>
       <label>
         パスワード
-        <input
-          type="password"
-          bind:value={password}
-          autocomplete="current-password"
-        />
+        <input type="password" bind:value={password} autocomplete="current-password" />
       </label>
       <div class="actions">
         <button type="submit" class="primary" disabled={pending || !email || !password}>
@@ -311,9 +309,7 @@
       <form onsubmit={handleCookieSubmit}>
         <input type="password" bind:value={cookie} placeholder="xxxxxx..." autocomplete="off" />
         <div class="actions">
-          <button type="submit" class="primary" disabled={pending || !cookie.trim()}>
-            保存
-          </button>
+          <button type="submit" class="primary" disabled={pending || !cookie.trim()}> 保存 </button>
         </div>
       </form>
     </details>
@@ -327,18 +323,27 @@
     </header>
     {#if appInfo}
       <dl class="info-grid">
-        <dt>バージョン</dt><dd>{appInfo.version}</dd>
-        <dt>識別子</dt><dd><code>{appInfo.identifier}</code></dd>
-        <dt>データ保存場所</dt><dd><code>{appInfo.dataDir}</code></dd>
-        <dt>動画保存場所</dt><dd><code>{appInfo.videosDir}</code></dd>
-        <dt>DB 場所</dt><dd><code>{appInfo.dbPath}</code></dd>
-        <dt>ローカルサーバ</dt><dd><code>http://127.0.0.1:{appInfo.localServerPort}/v/</code></dd>
-        <dt>ライブラリ動画数</dt><dd>{appInfo.libraryVideoCount} 本 ({formatBytes(appInfo.libraryVideosSizeBytes)})</dd>
+        <dt>バージョン</dt>
+        <dd>{appInfo.version}</dd>
+        <dt>識別子</dt>
+        <dd><code>{appInfo.identifier}</code></dd>
+        <dt>データ保存場所</dt>
+        <dd><code>{appInfo.dataDir}</code></dd>
+        <dt>動画保存場所</dt>
+        <dd><code>{appInfo.videosDir}</code></dd>
+        <dt>DB 場所</dt>
+        <dd><code>{appInfo.dbPath}</code></dd>
+        <dt>ローカルサーバ</dt>
+        <dd><code>http://127.0.0.1:{appInfo.localServerPort}/v/</code></dd>
+        <dt>ライブラリ動画数</dt>
+        <dd>{appInfo.libraryVideoCount} 本 ({formatBytes(appInfo.libraryVideosSizeBytes)})</dd>
         <dt>yt-dlp</dt>
         <dd>
           {#if appInfo.ytdlpAvailable}
             <span class="ok">✓ {appInfo.ytdlpVersion ?? '検出'}</span>
-            <span class="src-badge src-{appInfo.ytdlpSource}">{sourceLabel(appInfo.ytdlpSource)}</span>
+            <span class="src-badge src-{appInfo.ytdlpSource}"
+              >{sourceLabel(appInfo.ytdlpSource)}</span
+            >
             <code class="path-tiny">{appInfo.ytdlpPath}</code>
           {:else}
             <span class="error-text">× 未検出 — DL に必要</span>
@@ -348,7 +353,9 @@
         <dd>
           {#if appInfo.ffmpegAvailable}
             <span class="ok">✓ {appInfo.ffmpegVersion ?? '検出'}</span>
-            <span class="src-badge src-{appInfo.ffmpegSource}">{sourceLabel(appInfo.ffmpegSource)}</span>
+            <span class="src-badge src-{appInfo.ffmpegSource}"
+              >{sourceLabel(appInfo.ffmpegSource)}</span
+            >
             <code class="path-tiny">{appInfo.ffmpegPath}</code>
           {:else}
             <span class="error-text">× 未検出 — yt-dlp の merge に必要</span>
@@ -357,13 +364,13 @@
       </dl>
       <p class="hint">
         <strong>「アプリ単体で完結」を目指す場合:</strong>
-        プロジェクト ルートで <code>bash scripts/fetch-binaries.sh</code> を 1 回実行すれば、
-        yt-dlp / ffmpeg の単体バイナリが <code>src-tauri/binaries/</code> に展開されて
-        バンドルされます。<code>npm run tauri build</code> で生成される .deb / .app / .msi
-        にはこのバイナリも入るので、ユーザは別途インストール不要になります。
+        プロジェクト ルートで <code>bash scripts/fetch-binaries.sh</code> を 1 回実行すれば、 yt-dlp
+        / ffmpeg の単体バイナリが <code>src-tauri/binaries/</code> に展開されて バンドルされます。<code
+          >npm run tauri build</code
+        >
+        で生成される .deb / .app / .msi にはこのバイナリも入るので、ユーザは別途インストール不要になります。
         <br />開発中で system PATH のものを使いたい場合は
-        <code>bash scripts/fetch-binaries.sh --system</code> でシステムバイナリへの
-        symlink を張れます。
+        <code>bash scripts/fetch-binaries.sh --system</code> でシステムバイナリへの symlink を張れます。
       </p>
     {:else}
       <p class="muted">取得中…</p>
@@ -372,18 +379,31 @@
 </section>
 
 <style>
-  .page { max-width: 900px; }
-  h2 { margin-top: 0; }
-  h3 { margin: 0 0 4px; font-size: 15px; }
-  .muted { color: #9a9a9a; }
+  .page {
+    max-width: 900px;
+  }
+  h2 {
+    margin-top: 0;
+  }
+  h3 {
+    margin: 0 0 4px;
+    font-size: 15px;
+  }
+  .muted {
+    color: #9a9a9a;
+  }
   .hint {
     color: #9a9a9a;
     font-size: 12px;
     margin: 0;
     line-height: 1.5;
   }
-  .ok { color: #4ade80; }
-  .error-text { color: #f87171; }
+  .ok {
+    color: #4ade80;
+  }
+  .error-text {
+    color: #f87171;
+  }
   .card {
     background: #161616;
     border: 1px solid #1f1f1f;
@@ -414,7 +434,9 @@
     padding: 8px 0;
     border-bottom: 1px solid #1a1a1a;
   }
-  .setting-row:last-child { border-bottom: none; }
+  .setting-row:last-child {
+    border-bottom: none;
+  }
   .setting-row.overridden {
     background: linear-gradient(90deg, rgba(37, 99, 235, 0.05), transparent);
   }
@@ -440,7 +462,9 @@
     font-size: 12px;
     line-height: 1;
   }
-  .reset-btn:hover { background: #1a1a1a; }
+  .reset-btn:hover {
+    background: #1a1a1a;
+  }
   /* number/text inputs */
   input[type='number'],
   input[type='text'],
@@ -455,7 +479,8 @@
     font-size: 13px;
     min-width: 120px;
   }
-  input:focus, select:focus {
+  input:focus,
+  select:focus {
     outline: none;
     border-color: #5a5a5a;
   }
@@ -488,7 +513,9 @@
     top: 3px;
     background: #b0b0b0;
     border-radius: 50%;
-    transition: transform 0.15s, background 0.15s;
+    transition:
+      transform 0.15s,
+      background 0.15s;
   }
   .switch input:checked + .switch-thumb {
     background: #2563eb;
@@ -506,10 +533,14 @@
     flex-wrap: wrap;
   }
   .dot {
-    width: 10px; height: 10px;
-    background: #555; border-radius: 999px;
+    width: 10px;
+    height: 10px;
+    background: #555;
+    border-radius: 999px;
   }
-  .dot.on { background: #4ade80; }
+  .dot.on {
+    background: #4ade80;
+  }
   .login-form {
     display: flex;
     flex-direction: column;
@@ -536,7 +567,10 @@
     font-size: 14px;
     cursor: pointer;
   }
-  .primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  .primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
   .link {
     background: transparent;
     border: none;
@@ -547,7 +581,9 @@
     padding: 0;
     margin-left: auto;
   }
-  .link.danger { color: #f87171; }
+  .link.danger {
+    color: #f87171;
+  }
   details > summary {
     cursor: pointer;
     color: #cfcfcf;
@@ -561,9 +597,21 @@
     font-size: 13px;
     margin-bottom: 12px;
   }
-  .msg.ok { background: #102d20; border: 1px solid #1e6b48; color: #bbf7d0; }
-  .msg.warn { background: #2a2410; border: 1px solid #5a4a1a; color: #fde68a; }
-  .msg.error { background: #2a1212; border: 1px solid #5a2222; color: #f5b3b3; }
+  .msg.ok {
+    background: #102d20;
+    border: 1px solid #1e6b48;
+    color: #bbf7d0;
+  }
+  .msg.warn {
+    background: #2a2410;
+    border: 1px solid #5a4a1a;
+    color: #fde68a;
+  }
+  .msg.error {
+    background: #2a1212;
+    border: 1px solid #5a2222;
+    color: #f5b3b3;
+  }
   .info-grid {
     display: grid;
     grid-template-columns: max-content 1fr;
@@ -571,8 +619,14 @@
     margin: 0;
     font-size: 13px;
   }
-  .info-grid dt { color: #9a9a9a; }
-  .info-grid dd { margin: 0; color: #eaeaea; word-break: break-all; }
+  .info-grid dt {
+    color: #9a9a9a;
+  }
+  .info-grid dd {
+    margin: 0;
+    color: #eaeaea;
+    word-break: break-all;
+  }
   .src-badge {
     display: inline-block;
     margin-left: 6px;
@@ -581,10 +635,26 @@
     font-size: 10px;
     font-weight: 500;
   }
-  .src-bundled { background: #1a3a26; color: #b3f5b3; border: 1px solid #2a5a3a; }
-  .src-sidecar { background: #1a2a44; color: #93c5fd; border: 1px solid #2a3f5a; }
-  .src-system_path { background: #2a2418; color: #fde68a; border: 1px solid #5a4a1a; }
-  .src-not_found { background: #2a1212; color: #f5b3b3; border: 1px solid #5a2222; }
+  .src-bundled {
+    background: #1a3a26;
+    color: #b3f5b3;
+    border: 1px solid #2a5a3a;
+  }
+  .src-sidecar {
+    background: #1a2a44;
+    color: #93c5fd;
+    border: 1px solid #2a3f5a;
+  }
+  .src-system_path {
+    background: #2a2418;
+    color: #fde68a;
+    border: 1px solid #5a4a1a;
+  }
+  .src-not_found {
+    background: #2a1212;
+    color: #f5b3b3;
+    border: 1px solid #5a2222;
+  }
   .path-tiny {
     display: block;
     font-size: 10px;

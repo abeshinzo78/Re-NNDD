@@ -98,12 +98,18 @@
 
   function statusLabel(s: DownloadStatus): string {
     switch (s) {
-      case 'pending': return '待機中';
-      case 'downloading': return 'DL 中';
-      case 'done': return '完了';
-      case 'error': return 'エラー';
-      case 'paused': return '一時停止';
-      default: return s;
+      case 'pending':
+        return '待機中';
+      case 'downloading':
+        return 'DL 中';
+      case 'done':
+        return '完了';
+      case 'error':
+        return 'エラー';
+      case 'paused':
+        return '一時停止';
+      default:
+        return s;
     }
   }
 
@@ -130,8 +136,8 @@
     <p class="muted">
       「DL 開始」で <code>app_data_dir/videos/{'{'}videoId{'}'}/</code> 配下に
       <code>video.mp4</code> / <code>audio.mp4</code> / <code>thumbnail.jpg</code> /
-      <code>description.txt</code> / <code>meta.json</code> を保存し、初期コメ
-      スナップショットをライブラリに取り込みます。AES-128 暗号化セグメントも対応。
+      <code>description.txt</code> / <code>meta.json</code> を保存し、初期コメ スナップショットをライブラリに取り込みます。AES-128
+      暗号化セグメントも対応。
     </p>
   </header>
 
@@ -142,12 +148,8 @@
       bind:value={videoIdInput}
       disabled={enqueueing}
     />
-    <button type="submit" disabled={enqueueing || !videoIdInput.trim()}>
-      キューに追加
-    </button>
-    <button type="button" class="ghost" onclick={onClearFinished}>
-      完了/失敗を掃除
-    </button>
+    <button type="submit" disabled={enqueueing || !videoIdInput.trim()}> キューに追加 </button>
+    <button type="button" class="ghost" onclick={onClearFinished}> 完了/失敗を掃除 </button>
   </form>
 
   {#if error}
@@ -204,13 +206,9 @@
             </td>
             <td class="actions">
               {#if canStart(item.status)}
-                <button type="button" class="start" onclick={() => onStart(item)}>
-                  DL 開始
-                </button>
+                <button type="button" class="start" onclick={() => onStart(item)}> DL 開始 </button>
               {/if}
-              <button type="button" class="cancel" onclick={() => onCancel(item)}>
-                削除
-              </button>
+              <button type="button" class="cancel" onclick={() => onCancel(item)}> 削除 </button>
             </td>
           </tr>
         {/each}
@@ -313,11 +311,22 @@
     border-bottom: 1px solid #181818;
     vertical-align: top;
   }
-  .col-status { width: 110px; }
-  .col-video { width: 140px; }
-  .col-progress { min-width: 200px; }
-  .col-time { width: 220px; }
-  .col-actions { width: 80px; text-align: right; }
+  .col-status {
+    width: 110px;
+  }
+  .col-video {
+    width: 140px;
+  }
+  .col-progress {
+    min-width: 200px;
+  }
+  .col-time {
+    width: 220px;
+  }
+  .col-actions {
+    width: 80px;
+    text-align: right;
+  }
   .row.err td {
     background: #1f1414;
   }
@@ -329,11 +338,26 @@
     background: #1f1f1f;
     color: #cfcfcf;
   }
-  .badge.pending { background: #1e2a44; color: #93c5fd; }
-  .badge.downloading { background: #1f3a26; color: #86efac; }
-  .badge.done { background: #1a2a1a; color: #b3f5b3; }
-  .badge.error { background: #2a1212; color: #f5b3b3; }
-  .badge.paused { background: #2a2418; color: #ffd58a; }
+  .badge.pending {
+    background: #1e2a44;
+    color: #93c5fd;
+  }
+  .badge.downloading {
+    background: #1f3a26;
+    color: #86efac;
+  }
+  .badge.done {
+    background: #1a2a1a;
+    color: #b3f5b3;
+  }
+  .badge.error {
+    background: #2a1212;
+    color: #f5b3b3;
+  }
+  .badge.paused {
+    background: #2a2418;
+    color: #ffd58a;
+  }
   .retry {
     margin-left: 6px;
     color: #f5b3b3;
