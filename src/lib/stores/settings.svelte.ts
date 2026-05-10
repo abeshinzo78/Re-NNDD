@@ -182,9 +182,7 @@ export const SETTING_DEFS = [
     section: 'appearance',
     default: 'dark',
     kind: 'select',
-    options: [
-      { value: 'dark', label: 'ダーク' },
-    ],
+    options: [{ value: 'dark', label: 'ダーク' }],
     order: 10,
   },
 
@@ -239,12 +237,14 @@ function defOf(key: string): SettingDef<unknown> | undefined {
 function parseValue(def: SettingDef<unknown>, raw: string | undefined): unknown {
   if (raw == null) return def.default;
   switch (def.kind) {
-    case 'bool': return raw === 'true';
+    case 'bool':
+      return raw === 'true';
     case 'number': {
       const n = Number(raw);
       return Number.isFinite(n) ? n : def.default;
     }
-    default: return raw;
+    default:
+      return raw;
   }
 }
 

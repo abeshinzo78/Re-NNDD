@@ -45,7 +45,12 @@
   async function onDelete(item: LibraryVideoItem, e: MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
-    if (!confirm(`「${item.title}」(${item.id}) を完全に削除しますか？\nファイル + DB 両方削除されます。`)) return;
+    if (
+      !confirm(
+        `「${item.title}」(${item.id}) を完全に削除しますか？\nファイル + DB 両方削除されます。`,
+      )
+    )
+      return;
     deleting = item.id;
     try {
       await deleteLibraryVideo(item.id);
@@ -159,8 +164,8 @@
             class="del-btn"
             disabled={deleting === item.id}
             title="ライブラリから完全削除"
-            onclick={(e) => onDelete(item, e)}
-          >{deleting === item.id ? '…' : '×'}</button>
+            onclick={(e) => onDelete(item, e)}>{deleting === item.id ? '…' : '×'}</button
+          >
         </div>
       {/each}
     </div>
@@ -177,7 +182,9 @@
     justify-content: space-between;
     margin-bottom: 16px;
   }
-  .head h2 { margin: 0; }
+  .head h2 {
+    margin: 0;
+  }
   .head-actions {
     display: flex;
     gap: 8px;
@@ -200,9 +207,15 @@
     cursor: pointer;
     font-size: 13px;
   }
-  .ghost:hover { background: #1a1a1a; }
-  .muted { color: #9a9a9a; }
-  .small { font-size: 11px; }
+  .ghost:hover {
+    background: #1a1a1a;
+  }
+  .muted {
+    color: #9a9a9a;
+  }
+  .small {
+    font-size: 11px;
+  }
   .error {
     background: #2a1212;
     border: 1px solid #5a2222;
@@ -218,7 +231,9 @@
     border: 1px dashed #2a2a2a;
     border-radius: 8px;
   }
-  .empty a { color: #6ea8fe; }
+  .empty a {
+    color: #6ea8fe;
+  }
   .grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
@@ -245,9 +260,16 @@
     opacity: 0;
     transition: opacity 0.1s;
   }
-  .card-wrap:hover .del-btn { opacity: 1; }
-  .del-btn:hover { background: #2a1212; }
-  .del-btn:disabled { opacity: 0.5; cursor: wait; }
+  .card-wrap:hover .del-btn {
+    opacity: 1;
+  }
+  .del-btn:hover {
+    background: #2a1212;
+  }
+  .del-btn:disabled {
+    opacity: 0.5;
+    cursor: wait;
+  }
   .card {
     display: block;
     background: #161616;
@@ -256,7 +278,10 @@
     overflow: hidden;
     text-decoration: none;
     color: inherit;
-    transition: background 0.1s, border-color 0.1s, transform 0.1s;
+    transition:
+      background 0.1s,
+      border-color 0.1s,
+      transform 0.1s;
   }
   .card:hover {
     background: #1c1c1c;
@@ -325,7 +350,9 @@
     font-size: 12px;
     margin-top: 4px;
   }
-  .dot { color: #555; }
+  .dot {
+    color: #555;
+  }
   .tags {
     display: flex;
     flex-wrap: wrap;

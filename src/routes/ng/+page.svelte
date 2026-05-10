@@ -198,7 +198,8 @@
   <h2>NG ルール</h2>
   <p class="muted">
     動画タイトル / 投稿者 / 動画 ID / タグ / カテゴリ / コメ本文 / コメ投稿者の 7 種ターゲット。
-    完全一致・部分一致・正規表現の 3 種モード。検索結果・コメント描画に即時反映される（データは保持される）。
+    完全一致・部分一致・正規表現の 3
+    種モード。検索結果・コメント描画に即時反映される（データは保持される）。
   </p>
 
   <form class="add" onsubmit={onAdd}>
@@ -225,7 +226,9 @@
         <input
           type="text"
           bind:value={nPattern}
-          placeholder={nTarget === 'uploader' ? 'user/12345 または channel/ch12345' : 'NG にする文字列'}
+          placeholder={nTarget === 'uploader'
+            ? 'user/12345 または channel/ch12345'
+            : 'NG にする文字列'}
         />
       </label>
     </div>
@@ -309,7 +312,8 @@
               <input
                 type="checkbox"
                 checked={r.enabled}
-                onchange={(e) => updateNgRule(r.id, { enabled: (e.currentTarget as HTMLInputElement).checked })}
+                onchange={(e) =>
+                  updateNgRule(r.id, { enabled: (e.currentTarget as HTMLInputElement).checked })}
               />
             </td>
             <td>{TARGET_LABELS[r.targetType]}</td>
@@ -325,7 +329,11 @@
             </td>
             <td class="num">{formatNumber(r.hitCount)}</td>
             <td class="muted small">{formatDate(new Date(r.createdAt).toISOString())}</td>
-            <td><button type="button" class="danger small" onclick={() => onDelete(r.id)}>削除</button></td>
+            <td
+              ><button type="button" class="danger small" onclick={() => onDelete(r.id)}
+                >削除</button
+              ></td
+            >
           </tr>
         {/each}
       </tbody>

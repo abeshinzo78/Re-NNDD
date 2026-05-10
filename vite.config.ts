@@ -28,5 +28,6 @@ export default defineConfig(async () => ({
   test: {
     environment: 'jsdom',
     include: ['src/**/*.{test,spec}.{ts,js}', 'tests/svelte/**/*.{test,spec}.{ts,js}'],
+    passWithNoTests: true,
   },
 }));

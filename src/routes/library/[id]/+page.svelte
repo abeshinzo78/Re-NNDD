@@ -127,12 +127,16 @@
     if (!getBool('playback.resume_enabled')) return 0;
     try {
       return Number(localStorage.getItem(`resume:${id}`)) || 0;
-    } catch { return 0; }
+    } catch {
+      return 0;
+    }
   }
   function saveResumePosition(id: string, t: number) {
     try {
       localStorage.setItem(`resume:${id}`, String(Math.floor(t)));
-    } catch { /* */ }
+    } catch {
+      /* */
+    }
   }
 
   function handleTimeUpdate(time: number) {
@@ -201,14 +205,14 @@
         class="ghost-btn"
         title="WebKit 互換 MP4 へ ffmpeg で作り直す"
         disabled={remuxing}
-        onclick={() => onRemux(local!.videoId)}
-      >{remuxing ? 'remux 中…' : '再 mux'}</button>
+        onclick={() => onRemux(local!.videoId)}>{remuxing ? 'remux 中…' : '再 mux'}</button
+      >
       <button
         type="button"
         class="danger-btn"
         title="ライブラリから完全削除"
-        onclick={() => onDelete(local!.videoId)}
-      >削除</button>
+        onclick={() => onDelete(local!.videoId)}>削除</button
+      >
     {/if}
   </div>
 
@@ -259,13 +263,14 @@
         {/if}
       </div>
       <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-      <div class="divider" role="separator" aria-label="コメントパネル幅調整" onmousedown={startDrag}></div>
+      <div
+        class="divider"
+        role="separator"
+        aria-label="コメントパネル幅調整"
+        onmousedown={startDrag}
+      ></div>
       <div class="comment-panel" style:width="{panelWidth}px" style:min-width="{panelWidth}px">
-        <CommentList
-          comments={visibleComments}
-          {currentTime}
-          onSeek={handleSeek}
-        />
+        <CommentList comments={visibleComments} {currentTime} onSeek={handleSeek} />
       </div>
     </div>
 
@@ -288,7 +293,10 @@
         {#if lp.uploaderName}
           <div class="row owner">
             {#if lp.uploaderId}
-              <a href={`/user/${lp.uploaderId}?kind=${lp.uploaderType ?? 'user'}&name=${encodeURIComponent(lp.uploaderName)}`} class="owner-link">
+              <a
+                href={`/user/${lp.uploaderId}?kind=${lp.uploaderType ?? 'user'}&name=${encodeURIComponent(lp.uploaderName)}`}
+                class="owner-link"
+              >
                 <span>{lp.uploaderName}</span>
               </a>
             {:else}
@@ -300,7 +308,12 @@
         {#if lp.tags.length > 0}
           <div class="tags" aria-label="タグ">
             {#each lp.tags as tag (tag.name)}
-              <a class="tag" class:locked={tag.isLocked} href={tagSearchHref(tag.name)} title="このタグで検索">
+              <a
+                class="tag"
+                class:locked={tag.isLocked}
+                href={tagSearchHref(tag.name)}
+                title="このタグで検索"
+              >
                 {#if tag.isLocked}<span class="lock" aria-hidden="true">🔒</span>{/if}
                 {tag.name}
               </a>
@@ -310,6 +323,7 @@
         {#if lp.description}
           <details>
             <summary>説明文</summary>
+            <!-- eslint-disable-next-line svelte/no-at-html-tags -->
             <p class="desc">{@html lp.description}</p>
           </details>
         {/if}
@@ -319,7 +333,9 @@
 </section>
 
 <style>
-  .page { max-width: 1600px; }
+  .page {
+    max-width: 1600px;
+  }
   .head {
     display: flex;
     align-items: center;
@@ -342,7 +358,9 @@
     font-size: 13px;
     flex-shrink: 0;
   }
-  .back:hover { text-decoration: underline; }
+  .back:hover {
+    text-decoration: underline;
+  }
   .local-badge {
     background: #1a3a26;
     color: #b3f5b3;
@@ -361,8 +379,13 @@
     font-size: 11px;
     cursor: pointer;
   }
-  .ghost-btn:hover:not(:disabled) { background: #1f2a44; }
-  .ghost-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .ghost-btn:hover:not(:disabled) {
+    background: #1f2a44;
+  }
+  .ghost-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
   .danger-btn {
     background: transparent;
     border: 1px solid #5a2222;
@@ -372,8 +395,12 @@
     font-size: 11px;
     cursor: pointer;
   }
-  .danger-btn:hover { background: #2a1212; }
-  .muted { color: #9a9a9a; }
+  .danger-btn:hover {
+    background: #2a1212;
+  }
+  .muted {
+    color: #9a9a9a;
+  }
   .error {
     background: #2a1212;
     border: 1px solid #5a2222;
@@ -463,8 +490,12 @@
     flex-shrink: 0;
     transition: background 0.1s;
   }
-  .divider:hover { background: #333; }
-  .dragging .divider { background: #2563eb; }
+  .divider:hover {
+    background: #333;
+  }
+  .dragging .divider {
+    background: #2563eb;
+  }
   .comment-panel {
     flex-shrink: 0;
     overflow: hidden;
@@ -489,20 +520,33 @@
     gap: 6px;
     margin-top: 6px;
   }
-  .dot { color: #555; }
+  .dot {
+    color: #555;
+  }
   .external {
     margin-left: auto;
     color: #6ea8fe;
     text-decoration: none;
   }
-  .external:hover { text-decoration: underline; }
+  .external:hover {
+    text-decoration: underline;
+  }
   .owner-link {
     color: #eaeaea;
     text-decoration: none;
   }
-  .owner-link:hover { text-decoration: underline; }
-  details { margin-top: 12px; color: #cfcfcf; }
-  details > summary { cursor: pointer; color: #b0b0b0; margin-bottom: 6px; }
+  .owner-link:hover {
+    text-decoration: underline;
+  }
+  details {
+    margin-top: 12px;
+    color: #cfcfcf;
+  }
+  details > summary {
+    cursor: pointer;
+    color: #b0b0b0;
+    margin-bottom: 6px;
+  }
   .desc {
     white-space: pre-wrap;
     line-height: 1.6;

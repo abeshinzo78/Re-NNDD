@@ -6,7 +6,7 @@ on:
   pull_request:
     branches: [main, master]
   schedule:
-    - cron: "30 5 * * 2"
+    - cron: '30 5 * * 2'
   workflow_dispatch:
 
 permissions:
@@ -42,4 +42,4 @@ jobs:
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@v3
         with:
-          category: "/language:${{ matrix.language }}"
+          category: '/language:${{ matrix.language }}'

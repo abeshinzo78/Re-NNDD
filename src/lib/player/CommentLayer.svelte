@@ -112,8 +112,16 @@
     if (!nc) return;
     // destroy() は内部 active-instance counter をデクリメントしてくれる。
     // clear() はピクセルだけ消す。両方呼んでおく。
-    try { (nc as unknown as { destroy?: () => void }).destroy?.(); } catch { /* */ }
-    try { nc.clear?.(); } catch { /* */ }
+    try {
+      (nc as unknown as { destroy?: () => void }).destroy?.();
+    } catch {
+      /* */
+    }
+    try {
+      nc.clear?.();
+    } catch {
+      /* */
+    }
     nc = null;
     forceClearCanvas();
     lastVpos = -1;
@@ -222,10 +230,7 @@
       if (r.valid && comments.length > 0) {
         // nc 未作成 / size 変わった / nc が違う size で作られてる
         // のどれかなら作り直す。
-        const stale =
-          !nc || r.changed
-          || canvas.width !== ncCanvasW
-          || canvas.height !== ncCanvasH;
+        const stale = !nc || r.changed || canvas.width !== ncCanvasW || canvas.height !== ncCanvasH;
         if (stale) createNc();
       } else if (comments.length === 0 && nc) {
         destroyNc();
@@ -253,7 +258,9 @@
     rafId = requestAnimationFrame(tick);
   }
 
-  onMount(() => { rafId = requestAnimationFrame(tick); });
+  onMount(() => {
+    rafId = requestAnimationFrame(tick);
+  });
 
   onDestroy(() => {
     cancelAnimationFrame(rafId);
@@ -299,11 +306,7 @@
   });
 </script>
 
-<canvas
-  bind:this={canvas}
-  class="layer"
-  style:opacity={enabled ? opacity : 0}
-></canvas>
+<canvas bind:this={canvas} class="layer" style:opacity={enabled ? opacity : 0}></canvas>
 
 <style>
   .layer {

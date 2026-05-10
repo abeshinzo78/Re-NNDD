@@ -65,7 +65,11 @@ function read(): Mylist[] {
       }
     }
     if (migrated) {
-      try { localStorage.setItem(KEY, JSON.stringify(parsed)); } catch { /* */ }
+      try {
+        localStorage.setItem(KEY, JSON.stringify(parsed));
+      } catch {
+        /* */
+      }
     }
     return parsed;
   } catch {

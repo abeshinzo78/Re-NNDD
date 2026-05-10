@@ -4,7 +4,9 @@
   import { formatDate, formatDuration, formatNumber, videoUrl } from '$lib/format';
 
   let userId = $derived(page.params.id ?? '');
-  let kind = $derived<'user' | 'channel'>(page.url.searchParams.get('kind') === 'channel' ? 'channel' : 'user');
+  let kind = $derived<'user' | 'channel'>(
+    page.url.searchParams.get('kind') === 'channel' ? 'channel' : 'user',
+  );
   let nickname = $derived(page.url.searchParams.get('name') ?? '');
   let iconUrl = $derived(page.url.searchParams.get('icon') || null);
 
@@ -36,10 +38,12 @@
 
     try {
       const resp = await fetchUserVideos(
-        kind, userId,
+        kind,
+        userId,
         reset ? 1 : currentPage,
         PAGE_SIZE,
-        sortKey, sortOrder,
+        sortKey,
+        sortOrder,
       );
       if (reset) {
         items = resp.items;
@@ -58,10 +62,8 @@
   }
 
   $effect(() => {
-    userId;
-    kind;
-    sortKey;
-    sortOrder;
+    // Track reactive deps so the effect re-runs when any of these change.
+    void [userId, kind, sortKey, sortOrder];
     loadVideos(true);
   });
 
@@ -107,13 +109,25 @@
   </header>
 
   <div class="toolbar">
-    <button class="sort-btn" class:active={sortKey === 'registeredAt'} onclick={() => changeSort('registeredAt')}>
+    <button
+      class="sort-btn"
+      class:active={sortKey === 'registeredAt'}
+      onclick={() => changeSort('registeredAt')}
+    >
       投稿日 {sortKey === 'registeredAt' ? (sortOrder === 'desc' ? '↓' : '↑') : ''}
     </button>
-    <button class="sort-btn" class:active={sortKey === 'viewCount'} onclick={() => changeSort('viewCount')}>
+    <button
+      class="sort-btn"
+      class:active={sortKey === 'viewCount'}
+      onclick={() => changeSort('viewCount')}
+    >
       再生数 {sortKey === 'viewCount' ? (sortOrder === 'desc' ? '↓' : '↑') : ''}
     </button>
-    <button class="sort-btn" class:active={sortKey === 'mylistCount'} onclick={() => changeSort('mylistCount')}>
+    <button
+      class="sort-btn"
+      class:active={sortKey === 'mylistCount'}
+      onclick={() => changeSort('mylistCount')}
+    >
       マイリスト {sortKey === 'mylistCount' ? (sortOrder === 'desc' ? '↓' : '↑') : ''}
     </button>
   </div>
@@ -144,12 +158,21 @@
           <div class="info">
             <div class="title">
               <a href={videoHref(item.contentId)}>{item.title || '(無題)'}</a>
-              <a class="ext" href={videoUrl(item.contentId)} target="_blank" rel="noreferrer noopener" title="ニコニコで開く">↗</a>
+              <a
+                class="ext"
+                href={videoUrl(item.contentId)}
+                target="_blank"
+                rel="noreferrer noopener"
+                title="ニコニコで開く">↗</a
+              >
             </div>
             <div class="row-meta muted">
               <span>{item.contentId}</span>
-              {#if item.lengthSeconds != null}<span class="dot">·</span><span>{formatDuration(item.lengthSeconds)}</span>{/if}
-              {#if item.startTime}<span class="dot">·</span><span>{formatDate(item.startTime)}</span>{/if}
+              {#if item.lengthSeconds != null}<span class="dot">·</span><span
+                  >{formatDuration(item.lengthSeconds)}</span
+                >{/if}
+              {#if item.startTime}<span class="dot">·</span><span>{formatDate(item.startTime)}</span
+                >{/if}
             </div>
             <div class="row-meta">
               <span>再生 {formatNumber(item.viewCounter)}</span>

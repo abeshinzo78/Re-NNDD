@@ -72,11 +72,7 @@ export class TauriHlsLoader implements Loader<LoaderContext> {
 
     void (async () => {
       try {
-        const resource = await fetchHlsResource(
-          context.url,
-          context.rangeStart,
-          context.rangeEnd,
-        );
+        const resource = await fetchHlsResource(context.url, context.rangeStart, context.rangeEnd);
         if (this.aborted) {
           callbacks.onAbort?.(this.stats, context, null);
           return;
@@ -91,15 +87,14 @@ export class TauriHlsLoader implements Loader<LoaderContext> {
 
         const data =
           context.responseType === 'arraybuffer'
-            ? bytes.buffer.slice(
+            ? (bytes.buffer.slice(
                 bytes.byteOffset,
                 bytes.byteOffset + bytes.byteLength,
-              ) as ArrayBuffer
+              ) as ArrayBuffer)
             : decodeUtf8(bytes);
 
-        const isAb = context.responseType === 'arraybuffer';
         const kind = classifyUrl(context.url, bytes.byteLength);
-        // eslint-disable-next-line no-console
+
         console.debug(
           `[TauriHlsLoader] OK kind=${kind} bytes=${bytes.byteLength} ` +
             `firstHex=${hexHead(bytes, 16)} respType=${context.responseType} ` +
@@ -113,9 +108,14 @@ export class TauriHlsLoader implements Loader<LoaderContext> {
           );
         }
 
-        callbacks.onSuccess({ url: context.url, data, code: resource.status }, this.stats, context, {
-          contentType: resource.contentType,
-        });
+        callbacks.onSuccess(
+          { url: context.url, data, code: resource.status },
+          this.stats,
+          context,
+          {
+            contentType: resource.contentType,
+          },
+        );
       } catch (e) {
         this.stats.loading.end = performance.now();
         if (this.aborted) {
