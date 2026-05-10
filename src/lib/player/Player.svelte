@@ -819,7 +819,12 @@
       // 頻発する一過性エラー。play/timeupdate が来れば自然回復する。
       // console 出力は debug レベルに下げてノイズを減らす。
       if (code === 3) {
-        console.debug('[Player] <video> decode error (likely transient):', detail, 'src=', video?.currentSrc);
+        console.debug(
+          '[Player] <video> decode error (likely transient):',
+          detail,
+          'src=',
+          video?.currentSrc,
+        );
       } else {
         console.warn('[Player] <video> error:', detail, 'src=', video?.currentSrc);
       }
