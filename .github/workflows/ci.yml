@@ -34,10 +34,10 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       - name: Setup Node.js ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -64,7 +64,7 @@ jobs:
         run: npm run build
 
       - name: Upload SvelteKit build artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: frontend-build-${{ github.sha }}
           path: build/
@@ -80,7 +80,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       - name: Install system dependencies for Tauri 2 (Linux)
         run: |
@@ -149,7 +149,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       # actionlint v1.7.12 にピン留め。
       # Codex review (P2): mutable head reference は merge gate で危険。
@@ -167,7 +167,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       # ludeeus/action-shellcheck v2.0.0 (commit pin)
       - name: Run shellcheck
@@ -185,7 +185,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       # crate-ci/typos v1.46.1 (commit pin)
       - name: Run typos
