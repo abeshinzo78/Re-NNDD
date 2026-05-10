@@ -50,7 +50,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "serd
 # Niconico watch page scraping
 regex = "1"
 parking_lot = "0.12"
-rand = "0.8"
+rand = "0.10"
 
 # HLS AES-128-CBC 復号 (downloader/aes.rs)
 # NOTE: cbc 0.2 は cipher 0.5 / aes 0.9 が前提で、aes 0.8 (cipher 0.4) と組むと
