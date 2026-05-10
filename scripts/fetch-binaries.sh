@@ -103,6 +103,8 @@ elif [[ "$MODE" == "symlink" ]]; then
   link_system "ffmpeg" "$FFMPEG_DST"
 else
   TMP="$(mktemp -d)"
+  # SC2064: $TMP を登録時点で固定展開させる意図 (子プロセスや変数再代入の影響を避ける)
+  # shellcheck disable=SC2064
   trap "rm -rf '$TMP'" EXIT
 
   case "$FFMPEG_FAMILY" in

@@ -7,6 +7,11 @@ all-features = true
 [advisories]
 version = 2
 yanked = "warn"
+# Tauri 2 は gtk-rs (GTK3) / unic-ucd / paste など unmaintained advisory
+# (RUSTSEC-2024-04xx, 2025-0075/0080/0081/0098/0100 など) を大量に推移的に
+# 引いてくる。ワークスペース直下の Cargo.toml で直接依存していない限り
+# 無視する。Tauri 側で解消されるまでこちらでは対処不可。
+unmaintained = "workspace"
 ignore = []
 
 [licenses]

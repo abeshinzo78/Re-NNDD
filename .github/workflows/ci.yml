@@ -107,6 +107,22 @@ jobs:
           shared-key: tauri-linux
           cache-on-failure: true
 
+      # tauri.conf.json の `externalBin` は build script が物理ファイルの存在を
+      # 要求する (clippy / test / build いずれも build script を走らせる)。
+      # CI では実バイナリは要らないので空ファイルを置いて pass させる。
+      # bundle 本番は release.yml 側で fetch-binaries.sh を走らせる。
+      - name: Stub external binaries (yt-dlp / ffmpeg) for build scripts
+        run: |
+          set -eu
+          TRIPLE="$(rustc -vV | awk '/^host:/ {print $2}')"
+          mkdir -p src-tauri/binaries
+          for name in yt-dlp ffmpeg; do
+            f="src-tauri/binaries/${name}-${TRIPLE}"
+            : > "$f"
+            chmod +x "$f"
+          done
+          ls -la src-tauri/binaries
+
       - name: cargo fmt --check
         run: cargo fmt --all -- --check
 
