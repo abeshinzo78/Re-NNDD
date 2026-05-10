@@ -36,7 +36,7 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 url = "2"
 
 # Persistence
-rusqlite = { version = "0.32", features = ["bundled", "serde_json"] }
+rusqlite = { version = "0.39", features = ["bundled", "serde_json"] }
 
 # Errors / logging
 thiserror = "1"
