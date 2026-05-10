@@ -26,7 +26,7 @@ Tauri 2 + Rust + Svelte 5 で実装するデスクトップアーカイブクラ
 
 ## 設計概要
 
-- Desktop first: Tauri 2（Rust バックエンド + Svelte フロント）で Linux デスクトップを主対象にする
+- Desktop first: Tauri 2（Rust バックエンド + Svelte フロント）で Mac、Windows、Linux対応を目指す。
 - API 境界: niconico 連携は `src-tauri/src/api/` 配下に集約し、UI からは Tauri command 経由で呼ぶ
 - 永続化: SQLite（`library.db`）を単一ソースとし、動画メタ/タグ/コメント/キュー/設定を管理
 - ダウンロード: 実運用の安定性を優先し、`yt-dlp` + `ffmpeg` をサイドカーとして利用
