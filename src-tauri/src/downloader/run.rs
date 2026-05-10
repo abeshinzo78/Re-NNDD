@@ -146,7 +146,27 @@ where
         tokio::fs::create_dir_all(parent).await?;
     }
     let tmp_path = with_extension_suffix(&options.output_path, ".part");
-    let mut file = tokio::fs::File::create(&tmp_path).await?;
+    let result = write_concatenated_inner(client, media, options, &tmp_path, on_progress).await;
+    if result.is_err() {
+        // 失敗時に書き途中の .part を消さないと、HLS 1 本で数百 MB
+        // のゴミがディスクに残り続ける。`tokio::fs::File` はスコープを
+        // 抜けてもファイル自体を unlink しないため明示的に削除する。
+        let _ = tokio::fs::remove_file(&tmp_path).await;
+    }
+    result
+}
+
+async fn write_concatenated_inner<F>(
+    client: &DomandClient,
+    media: &MediaPlaylist,
+    options: &DownloadOptions,
+    tmp_path: &Path,
+    on_progress: &mut F,
+) -> Result<u64, ApiError>
+where
+    F: FnMut(Progress) + Send,
+{
+    let mut file = tokio::fs::File::create(tmp_path).await?;
     let mut written: u64 = 0;
 
     // init segment は最初に 1 回だけ。CMAF init は暗号化されない仕様。
@@ -173,28 +193,32 @@ where
     let sem = Arc::new(Semaphore::new(concurrency));
     let key_cache: Arc<Mutex<HashMap<String, [u8; 16]>>> = Arc::new(Mutex::new(HashMap::new()));
 
-    let mut tasks = Vec::with_capacity(media.segments.len());
+    // `JoinSet` で「完了したものから」拾う。Vec<JoinHandle> を順に await
+    // すると、idx=0 の通信が遅いときに idx=1.. が先に終わっても
+    // SegmentDone を発火できず、UI の進捗バーが固まったあとに一気に
+    // 跳ねる挙動になる（並列 DL 自体は spawn 時点で動いているが、
+    // 進捗イベントだけが index 順に直列化されてしまう）。
+    let mut set = tokio::task::JoinSet::new();
     for (idx, seg) in media.segments.iter().enumerate() {
         let permit_sem = Arc::clone(&sem);
         let client_cloned = client.clone();
         let cache = Arc::clone(&key_cache);
         let segment = seg.clone();
-        tasks.push(tokio::spawn(async move {
+        set.spawn(async move {
             let _permit = permit_sem
                 .acquire_owned()
                 .await
                 .map_err(|e| ApiError::Downloader(format!("semaphore closed: {e}")))?;
             let bytes = fetch_one_segment(&client_cloned, &segment, idx, &cache).await?;
             Ok::<(usize, Vec<u8>), ApiError>((idx, bytes))
-        }));
+        });
     }
 
     let mut buffered: std::collections::BTreeMap<usize, Vec<u8>> = Default::default();
     let mut next_to_write: usize = 0;
-    for handle in tasks {
-        let (idx, bytes) = handle
-            .await
-            .map_err(|e| ApiError::Downloader(format!("segment task panicked: {e}")))??;
+    while let Some(res) = set.join_next().await {
+        let (idx, bytes) =
+            res.map_err(|e| ApiError::Downloader(format!("segment task panicked: {e}")))??;
         let len = bytes.len() as u64;
         on_progress(Progress::SegmentDone {
             index: idx,
@@ -207,13 +231,15 @@ where
             next_to_write += 1;
         }
     }
+    // ここに到達して buffered が空でないのは BUG（next_to_write が穴を持っている
+    // ことになる）なので保険として書き出すが、本来は到達しない。
     for (_idx, b) in buffered.into_iter() {
         file.write_all(&b).await?;
         written += b.len() as u64;
     }
     file.flush().await?;
     drop(file);
-    tokio::fs::rename(&tmp_path, &options.output_path).await?;
+    tokio::fs::rename(tmp_path, &options.output_path).await?;
     Ok(written)
 }
 
