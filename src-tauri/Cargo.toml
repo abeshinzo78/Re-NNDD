@@ -56,7 +56,7 @@ rand = "0.8"
 # NOTE: cbc 0.2 は cipher 0.5 / aes 0.9 が前提で、aes 0.8 (cipher 0.4) と組むと
 # `BlockCipherEncrypt`/`BlockCipherDecrypt` トレイト境界が満たせずビルド不可。
 # 上げるなら aes と一緒に上げる必要がある。今は 0.1 系に固定する。
-aes = "0.8"
+aes = "0.9"
 cbc = "0.1"
 
 # 内蔵 HTTP サーバー (local_server.rs)
