@@ -731,14 +731,16 @@ pub async fn start_download(
         if item.status == "downloading" {
             return Err(AppError::Other("既に DL 中です".into()));
         }
+        // enqueue_download を経由しない経路（旧バージョンが入れた行など）で
+        // 不正な ID が DB に入っていた場合に備えて、状態を `downloading` に
+        // する前に弾く。後で弾くと、行が `downloading` のまま固まって
+        // 「既に DL 中です」で永久に再起動できなくなる（キューデッドロック）。
+        validate_video_id(&item.video_id)?;
         queue::mark_status(&conn, id, "downloading").map_err(AppError::from)?;
         // 進捗を 0 に戻す（再試行ケース）
         let _ = queue::update_progress(&conn, id, 0.0);
         item.video_id
     };
-    // 万一 enqueue_download を経由しない経路で不正な ID が DB に入っていても、
-    // ここで filesystem 操作する前に弾く。
-    validate_video_id(&video_id)?;
 
     let (cancel_tx, cancel_rx) = watch::channel(false);
     tasks.insert(id, cancel_tx);
