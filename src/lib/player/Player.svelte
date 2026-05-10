@@ -654,7 +654,11 @@
     if (video.paused) showControls();
     syncAudioPlayState();
     // 再生開始 = 一過性 error は無視
-    if (!video.paused) clearPendingVideoError();
+    if (!video.paused) {
+      clearPendingVideoError();
+      // 復旧後にエラーバナーが残っていれば消す
+      if (errorMessage && video.readyState >= 2) errorMessage = null;
+    }
   }
   function onVolumeChange() {
     if (!video) return;
@@ -811,10 +815,17 @@
       };
       const detail = video?.error?.message || codeMap[code] || `code ${code}`;
 
-      console.warn('[Player] <video> error:', detail, 'src=', video?.currentSrc);
+      // 初期バッファリング中の MEDIA_ERR_DECODE は WebKitGTK + GStreamer で
+      // 頻発する一過性エラー。play/timeupdate が来れば自然回復する。
+      // console 出力は debug レベルに下げてノイズを減らす。
+      if (code === 3) {
+        console.debug('[Player] <video> decode error (likely transient):', detail, 'src=', video?.currentSrc);
+      } else {
+        console.warn('[Player] <video> error:', detail, 'src=', video?.currentSrc);
+      }
 
       // SRC_NOT_SUPPORTED は本質的に詰みなので即表示。
-      // それ以外 (decode/network 系) は 1.5s 様子見して、
+      // それ以外 (decode/network 系) は 3s 様子見して、
       // その間に play / timeupdate が走ったら一過性として無視する。
       if (code === 4) {
         errorMessage = `動画再生エラー: ${detail}`;
@@ -828,9 +839,9 @@
           !!video && (!video.paused || (video.currentTime > 0 && video.readyState >= 2));
         if (recovered) return;
         errorMessage = `動画再生エラー: ${detail}`;
-      }, 1500);
+      }, 3000);
     }}
-    playsinline
+    preload="auto"
   ></video>
   {#if localAudioSrc}
     <audio
