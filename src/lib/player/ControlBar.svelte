@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
+  import { SvelteSet } from 'svelte/reactivity';
   import { formatDuration } from '$lib/format';
   import type { Level } from 'hls.js';
 
@@ -119,7 +120,7 @@
   // Deduplicate levels by height — niconico often has multiple
   // tracks at the same resolution with different audio codecs.
   let uniqueLevels = $derived.by(() => {
-    const seen = new Set<number>();
+    const seen = new SvelteSet<number>();
     const result: { index: number; level: Level }[] = [];
     for (let i = 0; i < hlsLevels.length; i++) {
       const h = hlsLevels[i].height ?? 0;

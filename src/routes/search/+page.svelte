@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
+  import { SvelteSet } from 'svelte/reactivity';
   import { page } from '$app/state';
   import { searchVideosOnline } from '$lib/api';
   import type { SearchField, SearchResponse, SearchTarget } from '$lib/api';
@@ -19,7 +20,7 @@
   } from '$lib/stores/ngRules';
 
   let query = $state('');
-  let targets = $state<Set<SearchTarget>>(new Set<SearchTarget>(['title']));
+  let targets = $state(new SvelteSet(['title']) as SvelteSet<SearchTarget>);
   let sortField = $state<SortKey>('popularity');
   let sortDir = $state<'desc' | 'asc'>('desc');
   let limit = $state(20);
@@ -64,7 +65,7 @@
     const prev = loadSearchState();
     if (!prev) return;
     query = prev.query;
-    targets = new Set(prev.targets);
+    targets = new SvelteSet(prev.targets);
     sortField = prev.sortField;
     sortDir = prev.sortDir;
     limit = prev.limit;
@@ -100,7 +101,7 @@
   }
 
   function toggleTarget(t: SearchTarget) {
-    const next = new Set(targets);
+    const next = new SvelteSet(targets);
     if (next.has(t)) next.delete(t);
     else next.add(t);
     if (next.size === 0) next.add(t); // keep at least one

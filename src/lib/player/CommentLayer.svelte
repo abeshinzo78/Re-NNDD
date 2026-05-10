@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount, untrack } from 'svelte';
+  import { SvelteMap } from 'svelte/reactivity';
   import NiconiComments from '@xpadev-net/niconicomments';
   import type { PlayerComment } from './types';
 
@@ -179,7 +180,7 @@
     // Pre-binding '2d' makes getContext('webgl2') return null inside NC.
     canvas.getContext('2d');
 
-    const byFork = new Map<string, ReturnType<typeof toV1Comment>[]>();
+    const byFork = new SvelteMap<string, ReturnType<typeof toV1Comment>[]>();
     for (const c of comments) {
       const fork = c.fork || 'main';
       const arr = byFork.get(fork) ?? [];

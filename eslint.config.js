@@ -20,6 +20,15 @@ export default ts.config(
     languageOptions: {
       parserOptions: { parser: ts.parser },
     },
+    rules: {
+      'svelte/no-navigation-without-resolve': 'off',
+    },
+  },
+  {
+    files: ['**/*.svelte.ts'],
+    languageOptions: {
+      parserOptions: { parser: ts.parser },
+    },
   },
   {
     ignores: ['build/', '.svelte-kit/', 'dist/', 'src-tauri/target/', 'target/'],

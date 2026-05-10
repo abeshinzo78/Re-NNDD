@@ -68,10 +68,10 @@
       const name = page.url.searchParams.get('name') ?? '';
       const icon = page.url.searchParams.get('icon') ?? '';
       if (uid) {
-        const params = new URLSearchParams({ kind });
-        if (name) params.set('name', name);
-        if (icon) params.set('icon', icon);
-        backHref = `/user/${uid}?${params}`;
+        let qs = `kind=${encodeURIComponent(kind)}`;
+        if (name) qs += `&name=${encodeURIComponent(name)}`;
+        if (icon) qs += `&icon=${encodeURIComponent(icon)}`;
+        backHref = `/user/${uid}?${qs}`;
         backLabel = `← ${name || uid} の投稿動画に戻る`;
       } else {
         backHref = '/search';
