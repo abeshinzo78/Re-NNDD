@@ -32,7 +32,7 @@ serde_json = "1"
 base64 = "0.22"
 
 # HTTP
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "gzip"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls-tls", "json", "gzip"] }
 url = "2"
 
 # Persistence
