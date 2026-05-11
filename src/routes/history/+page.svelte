@@ -42,6 +42,22 @@
       ? `/library/${item.videoId}?from=history`
       : `/video/${item.videoId}?from=history`;
   }
+
+  function getResumeSeconds(videoId: string): number {
+    try {
+      return Number(localStorage.getItem(`resume:${videoId}`)) || 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  function resumePercent(videoId: string, duration?: number): number | null {
+    if (!duration || duration <= 0) return null;
+    const pos = getResumeSeconds(videoId);
+    if (pos <= 0) return null;
+    const pct = Math.min(100, (pos / duration) * 100);
+    return pct < 3 ? null : pct;
+  }
 </script>
 
 <section>
@@ -93,6 +109,15 @@
               <img src={item.thumbnailUrl} alt="" class="thumb" loading="lazy" />
             {:else}
               <div class="thumb placeholder"></div>
+            {/if}
+            {#if resumePercent(item.videoId, item.duration)}
+              {@const pct = resumePercent(item.videoId, item.duration)!}
+              <div class="resume-overlay">
+                <div class="resume-bar">
+                  <div class="resume-bar-inner" style:width="{pct}%"></div>
+                </div>
+                <span class="resume-time">{formatDuration(getResumeSeconds(item.videoId))}</span>
+              </div>
             {/if}
           </a>
           <div class="info">
@@ -209,6 +234,41 @@
   }
   .thumb.placeholder {
     border: 1px dashed #2a2a2a;
+  }
+  .thumb-link {
+    position: relative;
+    flex-shrink: 0;
+  }
+  .resume-overlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(0, 0, 0, 0.7);
+    border-radius: 0 0 4px 4px;
+    padding: 2px 6px;
+    height: 18px;
+  }
+  .resume-bar {
+    flex: 1;
+    height: 3px;
+    background: #333;
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .resume-bar-inner {
+    height: 100%;
+    background: #93c5fd;
+    border-radius: 2px;
+  }
+  .resume-time {
+    font-size: 10px;
+    color: #c5d8f5;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
   }
   .info {
     display: flex;
