@@ -21,6 +21,7 @@ Tauri 2 + Rust + Svelte 5 で実装するデスクトップアーカイブクラ
 - Phase 1.0: SQLite スキーマ/マイグレーション実装済み
 - Phase 1.1: Snapshot Search API 実装済み
 - Phase 1.2: ダウンロードキュー CRUD + HLS パーサ実装済み
+- Phase 1.3: ライブラリ層の拡張（検索/整列/集計など）←現在進行中
 
 詳細は [`docs/test-lists/`](./docs/test-lists/) の各テストリストを参照してください。
 
@@ -36,7 +37,6 @@ Tauri 2 + Rust + Svelte 5 で実装するデスクトップアーカイブクラ
 
 ## 今後の予定
 
-- Phase 1.3: ライブラリ層の拡張（検索/整列/集計など）
 - Phase 1.4: UI 骨格の整理と画面間導線の安定化
 - Phase 1.5: プレイヤー機能の強化（操作性・安定性）
 - Phase 1.6: NG 機能の充足
