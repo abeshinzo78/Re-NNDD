@@ -268,12 +268,19 @@
     if (e.altKey || e.ctrlKey || e.metaKey) return;
     if (e.key === 'Escape') {
       e.preventDefault();
+      // 同じ window に登録されたページ Player のショートカット (例: F の
+      // 全画面トグル) も同時発火するのを防ぐ。MiniPlayer は layout 経由で
+      // 先に listen し始めるので、ここで stopImmediatePropagation すれば
+      // 後段のページ Player リスナは呼ばれない。
+      e.stopImmediatePropagation();
       close();
     } else if (e.key === ' ') {
       e.preventDefault();
+      e.stopImmediatePropagation();
       togglePlay();
     } else if (e.key === 'p' || e.key === 'P') {
       e.preventDefault();
+      e.stopImmediatePropagation();
       expand();
     }
   }
@@ -281,13 +288,17 @@
   onMount(() => {
     miniPlayer.hydrate();
     window.addEventListener('resize', onWindowResize);
-    window.addEventListener('keydown', onKeyDown);
+    // ページ Player は target.addEventListener('keydown', ...) で window に
+    // 後から登録する。MiniPlayer は layout マウント時点で先に登録するため、
+    // capture: true 指定により確実にこちらが先に呼ばれるようにする。
+    // (stopImmediatePropagation で後段を打ち切れる)
+    window.addEventListener('keydown', onKeyDown, { capture: true });
   });
 
   onDestroy(() => {
     if (typeof window !== 'undefined') {
       window.removeEventListener('resize', onWindowResize);
-      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keydown', onKeyDown, { capture: true });
     }
     if (hideHoverTimer) clearTimeout(hideHoverTimer);
     if (pollTimer) clearInterval(pollTimer);
@@ -317,32 +328,37 @@
     onmouseleave={onMouseLeave}
     aria-label="ミニプレイヤー"
   >
-    <!-- 動画レイヤ。Player.svelte を compact モードで埋め込む -->
+    <!-- 動画レイヤ。Player.svelte を compact モードで埋め込む。
+         source.videoId が変わったら強制 remount する。Player 内部の
+         `resumeApplied` フラグは一度 true になると次の動画でも残ってしまい、
+         新しい resumePosition が無視されるため。 -->
     <div class="video-wrap">
-      {#if onlineSrc}
-        <Player
-          bind:this={playerRef}
-          hlsUrl={onlineSrc.hlsUrl}
-          comments={miniPlayer.comments}
-          refreshHlsUrl={onlineSrc.refreshHlsUrl}
-          onTime={onTimeFromPlayer}
-          resumePosition={miniPlayer.resumePosition}
-          loop={miniPlayer.loop}
-          compact={true}
-        />
-      {:else if localSrcObj}
-        <Player
-          bind:this={playerRef}
-          hlsUrl=""
-          localSrc={localSrcObj.localSrc}
-          localAudioSrc={localSrcObj.localAudioSrc}
-          comments={miniPlayer.comments}
-          onTime={onTimeFromPlayer}
-          resumePosition={miniPlayer.resumePosition}
-          loop={miniPlayer.loop}
-          compact={true}
-        />
-      {/if}
+      {#key miniPlayer.source.videoId}
+        {#if onlineSrc}
+          <Player
+            bind:this={playerRef}
+            hlsUrl={onlineSrc.hlsUrl}
+            comments={miniPlayer.comments}
+            refreshHlsUrl={onlineSrc.refreshHlsUrl}
+            onTime={onTimeFromPlayer}
+            resumePosition={miniPlayer.resumePosition}
+            loop={miniPlayer.loop}
+            compact={true}
+          />
+        {:else if localSrcObj}
+          <Player
+            bind:this={playerRef}
+            hlsUrl=""
+            localSrc={localSrcObj.localSrc}
+            localAudioSrc={localSrcObj.localAudioSrc}
+            comments={miniPlayer.comments}
+            onTime={onTimeFromPlayer}
+            resumePosition={miniPlayer.resumePosition}
+            loop={miniPlayer.loop}
+            compact={true}
+          />
+        {/if}
+      {/key}
     </div>
 
     <!-- ドラッグ + クリック→展開 のキャッチオール -->

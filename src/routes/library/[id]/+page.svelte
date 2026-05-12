@@ -206,6 +206,7 @@
     const snapTitle = local.title;
     const snapSrc = localSrc;
     const snapAudio = localAudioSrc ?? undefined;
+    const snapHref = page.url.pathname + (page.url.search ?? '');
     if (snapVideoId) {
       try {
         localStorage.setItem(`resume:${snapVideoId}`, String(Math.floor(t)));
@@ -223,7 +224,7 @@
       title: snapTitle,
       comments: visibleComments,
       resumePosition: t,
-      expandHref: `/library/${snapVideoId}`,
+      expandHref: snapHref,
       loop,
     });
   }

@@ -254,6 +254,9 @@
     const snapVideoId = payload.videoId;
     const snapHlsUrl = payload.hlsUrl;
     const snapTitle = payload.video.title;
+    // expandHref はクエリ込みで保存する。?from=history / ?from=user&uid=...
+    // のようなコンテキストを保ったまま展開時に元ページへ戻すため。
+    const snapHref = page.url.pathname + (page.url.search ?? '');
     if (snapVideoId) {
       try {
         localStorage.setItem(`resume:${snapVideoId}`, String(Math.floor(t)));
@@ -271,7 +274,7 @@
       title: snapTitle,
       comments: visibleComments,
       resumePosition: t,
-      expandHref: `/video/${snapVideoId}`,
+      expandHref: snapHref,
       loop,
     });
   }
