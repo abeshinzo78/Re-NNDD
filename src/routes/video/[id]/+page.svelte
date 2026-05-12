@@ -16,7 +16,7 @@
   import { addHistory } from '$lib/stores/history';
   import { getBool, loadSettings } from '$lib/stores/settings.svelte';
   import { sanitizeDescriptionHtml } from '$lib/sanitize';
-  import { miniPlayer } from '$lib/player/miniPlayer.svelte';
+  import { miniPlayer } from '$lib/player/miniPlayerStore.svelte';
 
   // この route は **オンライン視聴専用**。ローカル再生は /library/[id] で行う。
   // 別ルートに分けることで、ネット接続が要らないときに偶発的に niconico を

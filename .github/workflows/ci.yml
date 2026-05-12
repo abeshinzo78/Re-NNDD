@@ -48,6 +48,13 @@ jobs:
       - name: svelte-kit sync
         run: npx svelte-kit sync
 
+      # Case-insensitive filename collision check (Windows / macOS では `.svelte`
+      # と `.svelte.ts` の case 差だけのペアが import 解決を壊して release build
+      # が `[MISSING_EXPORT]` でコケる。Linux runner 単独では検出できないので
+      # 静的に潰す)
+      - name: Check Svelte filename case collisions
+        run: bash scripts/check-case-collisions.sh
+
       - name: Prettier (format check)
         run: npx prettier --check .
 

@@ -21,7 +21,7 @@
     clamp,
     clampWidth,
     type MiniGeometry,
-  } from './miniPlayer.svelte';
+  } from './miniPlayerStore.svelte';
 
   type PlayerRef = {
     getVideo: () => HTMLVideoElement | null;
