@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
+  import { beforeNavigate } from '$app/navigation';
   import { page } from '$app/state';
   import Player from '$lib/player/Player.svelte';
   import CommentList from '$lib/player/CommentList.svelte';
@@ -186,6 +187,8 @@
   }
 
   function getResumePosition(id: string): number {
+    const pipPos = miniPlayer.consumeReturnPosition(id);
+    if (pipPos > 0) return pipPos;
     if (!getBool('playback.resume_enabled')) return 0;
     try {
       return Number(localStorage.getItem(`resume:${id}`)) || 0;
@@ -237,15 +240,8 @@
       dlMsgTimer = null;
     }, 4000);
   }
-  // PiP (ミニプレイヤー) のトグル。
-  // ON: 現在の再生位置を resume に書いて miniPlayer ストアへ流し込み。
-  // OFF: 元ページに戻ってきた時点で MiniPlayer 側が自動 handoff する。
-  function togglePip() {
-    if (!payload) return;
-    if (pipActiveForThis) {
-      miniPlayer.close();
-      return;
-    }
+  function openPipForCurrentVideo(): boolean {
+    if (!payload || pipActiveForThis) return false;
     const vid = playerRef?.getVideo();
     const t = vid?.currentTime ?? currentTime ?? 0;
     // `payload` は同一コンポーネントが /video/A → /video/B でパラ遷移した時
@@ -277,6 +273,18 @@
       expandHref: snapHref,
       loop,
     });
+    return true;
+  }
+
+  // PiP (ミニプレイヤー) のトグル。
+  // ON: 現在の再生位置を resume に書いて miniPlayer ストアへ流し込み。
+  // OFF: 元ページに戻ってきた時点で MiniPlayer 側が自動 handoff する。
+  function togglePip() {
+    if (pipActiveForThis) {
+      miniPlayer.close();
+      return;
+    }
+    openPipForCurrentVideo();
   }
 
   let pipActiveForThis = $derived(
@@ -288,6 +296,13 @@
     if (pipActiveForThis && payload) {
       miniPlayer.updateComments(payload.videoId, visibleComments);
     }
+  });
+
+  beforeNavigate((nav) => {
+    if (!getBool('pip.auto_navigate')) return;
+    const toPath = nav.to?.url.pathname;
+    if (!toPath || toPath !== backHref) return;
+    openPipForCurrentVideo();
   });
 
   async function onDownload(id: string) {

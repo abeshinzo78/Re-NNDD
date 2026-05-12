@@ -101,13 +101,24 @@ pub async fn search_videos_online(query: SearchQuery) -> Result<SearchResponse> 
 }
 
 #[tauri::command]
-pub fn save_session_cookie(value: String, store: State<'_, Arc<SessionStore>>) {
-    store.set(value);
+pub async fn save_session_cookie(
+    value: String,
+    store: State<'_, Arc<SessionStore>>,
+    library: State<'_, Arc<LibraryHandle>>,
+) -> Result<()> {
+    let conn = library.lock().await;
+    store.set_with_conn(value, &conn);
+    Ok(())
 }
 
 #[tauri::command]
-pub fn clear_session_cookie(store: State<'_, Arc<SessionStore>>) {
-    store.clear();
+pub async fn clear_session_cookie(
+    store: State<'_, Arc<SessionStore>>,
+    library: State<'_, Arc<LibraryHandle>>,
+) -> Result<()> {
+    let conn = library.lock().await;
+    store.clear_with_conn(&conn);
+    Ok(())
 }
 
 #[tauri::command]
@@ -128,13 +139,15 @@ pub async fn login_password(
     email: String,
     password: String,
     store: State<'_, Arc<SessionStore>>,
+    library: State<'_, Arc<LibraryHandle>>,
 ) -> Result<LoginResult> {
     let outcome = login_with_password(&email, &password)
         .await
         .map_err(AppError::from)?;
     match outcome {
         LoginOutcome::Success { user_session } => {
-            store.set(user_session);
+            let conn = library.lock().await;
+            store.set_with_conn(user_session, &conn);
             Ok(LoginResult::Success)
         }
         LoginOutcome::Mfa { mfa_session } => Ok(LoginResult::Mfa { mfa_session }),

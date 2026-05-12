@@ -32,10 +32,10 @@ pub fn run() {
     let session = Arc::new(SessionStore::default());
 
     if let Err(err) = tauri::Builder::default()
-        .manage(session)
+        .manage(Arc::clone(&session))
         .manage(commands::DownloadTasks::default())
         .plugin(tauri_plugin_shell::init())
-        .setup(|app| {
+        .setup(move |app| {
             // app_data_dir() は実行プロファイル（dev/prod）と OS で
             // 自動的に切り替わるので、ここで一度だけ解決して library.db を
             // 開く。マイグレーションは LibraryHandle::open 内で完走する。
@@ -47,6 +47,13 @@ pub fn run() {
             tracing::info!(path = %db_path.display(), "opening library db");
             let library = LibraryHandle::open(&db_path)
                 .map_err(|e| format!("library db init failed: {e}"))?;
+
+            // Restore persisted session from the settings table.
+            {
+                let conn = library.blocking_lock();
+                session.load_from_db(&conn);
+            }
+
             app.manage(library);
 
             // ローカル HTTP サーバを起動（DL 済み動画の Range 配信用）

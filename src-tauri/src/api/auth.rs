@@ -5,16 +5,19 @@
 //!   `user_session` out of `Set-Cookie`.
 //! - `set` — accept a pasted `user_session` value (2FA / SSO fallback).
 //!
-//! The cookie is held in memory only. CLAUDE.md mandates OS keyring
-//! (`tauri-plugin-stronghold` / `keyring`) for persistent storage; that
-//! lands when the auth flow matures (we do not want to ship plaintext
-//! credentials to disk in the meantime).
+//! The cookie is persisted to the `settings` SQLite table under the key
+//! `auth.user_session` so that it survives app restarts. The in-memory
+//! copy is the authoritative live state; the on-disk copy is a mirror
+//! that is kept in sync by `set` / `clear`.
 
 use parking_lot::RwLock;
 use reqwest::header::SET_COOKIE;
 use reqwest::redirect::Policy;
 
 use crate::error::ApiError;
+use crate::library::settings;
+
+const SETTINGS_KEY: &str = "auth.user_session";
 
 const LOGIN_URL: &str = "https://account.nicovideo.jp/api/v1/login?site=niconico";
 const BROWSER_UA: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 \
@@ -36,6 +39,38 @@ impl SessionStore {
             user_session: RwLock::new(None),
             domand_bid: RwLock::new(None),
         }
+    }
+
+    /// Load the persisted `user_session` from the settings table into memory.
+    /// Call once during app startup, before the store is handed to commands.
+    pub fn load_from_db(&self, conn: &rusqlite::Connection) {
+        if let Ok(Some(value)) = settings::get(conn, SETTINGS_KEY) {
+            let trimmed = value.trim().to_owned();
+            if !trimmed.is_empty() {
+                *self.user_session.write() = Some(trimmed);
+                tracing::info!("restored user_session from persistent storage");
+            }
+        }
+    }
+
+    fn persist_to_db(&self, conn: &rusqlite::Connection) {
+        let guard = self.user_session.read();
+        if let Err(e) = match guard.as_deref() {
+            Some(val) => settings::set(conn, SETTINGS_KEY, val),
+            None => settings::delete(conn, SETTINGS_KEY).map(|_| ()),
+        } {
+            tracing::warn!(error = %e, "failed to persist session to db");
+        }
+    }
+
+    pub fn set_with_conn(&self, value: String, conn: &rusqlite::Connection) {
+        self.set(value);
+        self.persist_to_db(conn);
+    }
+
+    pub fn clear_with_conn(&self, conn: &rusqlite::Connection) {
+        self.clear();
+        self.persist_to_db(conn);
     }
 
     pub fn set(&self, value: String) {

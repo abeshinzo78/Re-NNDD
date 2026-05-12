@@ -64,6 +64,15 @@ export const SETTING_DEFS = [
     order: 30,
   },
   {
+    key: 'pip.auto_navigate',
+    label: '戻った時に自動的に PiP にする',
+    description: '再生ページから戻る時に自動でミニプレイヤーを開始する',
+    section: 'playback',
+    default: false,
+    kind: 'bool',
+    order: 35,
+  },
+  {
     key: 'playback.default_rate',
     label: 'デフォルト再生速度',
     description: '動画を開いた直後の再生倍率',

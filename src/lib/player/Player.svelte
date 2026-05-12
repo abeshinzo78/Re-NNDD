@@ -71,7 +71,7 @@
   let volume = $state(1);
   let muted = $state(false);
   let playbackRate = $state(1);
-  let commentsEnabled = $state(getBool('comment.default_enabled'));
+  let commentsEnabled = $state(compact || getBool('comment.default_enabled'));
   let commentOpacity = $state(getNum('comment.default_opacity'));
   let abLoop = $state<{ in: number | null; out: number | null; enabled: boolean }>({
     in: null,

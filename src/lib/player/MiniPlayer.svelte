@@ -317,7 +317,6 @@
     class="mini"
     class:dragging={isDragging}
     class:resizing={isResizing}
-    class:hidden-on-source={onSourcePage}
     bind:this={container}
     style:left="{miniPlayer.geometry.x}px"
     style:top="{miniPlayer.geometry.y}px"
@@ -490,12 +489,6 @@
   }
   .mini.dragging {
     cursor: grabbing;
-  }
-  /* 元動画ページに居る間は視覚を隠す (再生は継続)。pointer-events も
-     切ってクリックを下のレイヤに通す。 */
-  .mini.hidden-on-source {
-    visibility: hidden;
-    pointer-events: none;
   }
   @keyframes mini-in {
     from {

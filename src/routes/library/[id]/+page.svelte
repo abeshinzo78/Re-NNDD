@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
+  import { beforeNavigate } from '$app/navigation';
   import { page } from '$app/state';
   import Player from '$lib/player/Player.svelte';
   import CommentList from '$lib/player/CommentList.svelte';
@@ -140,6 +141,8 @@
   }
 
   function getResumePosition(id: string): number {
+    const pipPos = miniPlayer.consumeReturnPosition(id);
+    if (pipPos > 0) return pipPos;
     if (!getBool('playback.resume_enabled')) return 0;
     try {
       return Number(localStorage.getItem(`resume:${id}`)) || 0;
@@ -193,12 +196,8 @@
     }
   }
 
-  function togglePip() {
-    if (!local || !localSrc) return;
-    if (pipActiveForThis) {
-      miniPlayer.close();
-      return;
-    }
+  function openPipForCurrentVideo(): boolean {
+    if (!local || !localSrc || pipActiveForThis) return false;
     const vid = playerRef?.getVideo();
     const t = vid?.currentTime ?? currentTime ?? 0;
     // パラ遷移で local が書き換わっても影響を受けないようスナップ。
@@ -227,6 +226,15 @@
       expandHref: snapHref,
       loop,
     });
+    return true;
+  }
+
+  function togglePip() {
+    if (pipActiveForThis) {
+      miniPlayer.close();
+      return;
+    }
+    openPipForCurrentVideo();
   }
 
   let pipActiveForThis = $derived(
@@ -236,6 +244,13 @@
     if (pipActiveForThis && local) {
       miniPlayer.updateComments(local.videoId, visibleComments);
     }
+  });
+
+  beforeNavigate((nav) => {
+    if (!getBool('pip.auto_navigate')) return;
+    const toPath = nav.to?.url.pathname;
+    if (!toPath || toPath !== backHref) return;
+    openPipForCurrentVideo();
   });
 
   async function onDelete(id: string) {

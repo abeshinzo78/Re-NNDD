@@ -119,6 +119,9 @@ class MiniPlayerStore {
   geometry = $state<MiniGeometry>({ x: 0, y: 0, width: DEFAULT_WIDTH });
   /** 初期化済みか (geometry を 1 度 localStorage からロードしたか) */
   private hydrated = false;
+  /** close() 時に退避した復帰先情報。ページ側が consume して PiP 前の位置に復元する。 */
+  private _returnVideoId = '';
+  private _returnPosition = 0;
 
   /** ブラウザ側でのみ呼ぶ — 初回 open 時などに lazy 初期化 */
   hydrate() {
@@ -164,7 +167,25 @@ class MiniPlayerStore {
     }
   }
 
+  /** ページ側が PiP からの復帰位置を取得する。呼び出しで消費される。 */
+  consumeReturnPosition(videoId: string): number {
+    if (this._returnVideoId === videoId && this._returnPosition > 0) {
+      const pos = this._returnPosition;
+      this._returnVideoId = '';
+      this._returnPosition = 0;
+      return pos;
+    }
+    return 0;
+  }
+
   close() {
+    if (this.source && this.currentTime > 0) {
+      this._returnVideoId = this.source.videoId;
+      this._returnPosition = this.currentTime;
+    } else {
+      this._returnVideoId = '';
+      this._returnPosition = 0;
+    }
     this.active = false;
     this.source = null;
     this.comments = [];
