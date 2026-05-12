@@ -24,6 +24,12 @@
     initialQualityLabel?: string;
     resumePosition?: number;
     loop?: boolean;
+    /** ミニプレイヤー (PiP) 用の compact モード。ControlBar を抑制する。 */
+    compact?: boolean;
+    /** PiP ボタンが押された時のフック (compact=false 時のみ表示) */
+    onTogglePip?: () => void;
+    /** PiP ボタンの aria-pressed 表示用 */
+    pipActive?: boolean;
   };
 
   let {
@@ -36,6 +42,9 @@
     initialQualityLabel,
     resumePosition = 0,
     loop = false,
+    compact = false,
+    onTogglePip,
+    pipActive = false,
   }: Props = $props();
 
   let stage = $state<HTMLDivElement | null>(null);
@@ -737,23 +746,31 @@
 
   onMount(() => {
     document.addEventListener('webkitfullscreenchange', onFullscreenChange);
-    const actions: PlayerActions = {
-      togglePlay,
-      seekDelta,
-      jumpToFraction,
-      toggleComments,
-      toggleFullscreen,
-      toggleMute,
-      setAbIn,
-      setAbOut,
-      toggleAbLoop,
-      volumeDelta: (d) => setVolume((video?.volume ?? volume) + d),
-      frameStep,
-    };
-    const unbindShortcuts = bindShortcuts(window, actions);
+    // compact (PiP) モードでは window レベルのショートカットを登録しない。
+    // ミニ側と通常ページ側の <Player> が同時に存在する状況で 1 キーが
+    // 2 重発火するのを防ぐ。ミニ側専用のショートカットは MiniPlayer が
+    // 別途登録する。
+    let unbindShortcuts: (() => void) | null = null;
+    if (!compact) {
+      const actions: PlayerActions = {
+        togglePlay,
+        seekDelta,
+        jumpToFraction,
+        toggleComments,
+        toggleFullscreen,
+        toggleMute,
+        setAbIn,
+        setAbOut,
+        toggleAbLoop,
+        volumeDelta: (d) => setVolume((video?.volume ?? volume) + d),
+        frameStep,
+        togglePip: onTogglePip ? () => onTogglePip?.() : undefined,
+      };
+      unbindShortcuts = bindShortcuts(window, actions);
+    }
     return () => {
       document.removeEventListener('webkitfullscreenchange', onFullscreenChange);
-      unbindShortcuts();
+      unbindShortcuts?.();
     };
   });
 
@@ -762,6 +779,17 @@
   }
   export function seek(t: number) {
     seekTo(t);
+  }
+  export function play() {
+    if (!video) return;
+    void video.play().catch(() => undefined);
+  }
+  export function pause() {
+    if (!video) return;
+    video.pause();
+  }
+  export function getCurrentTime(): number {
+    return video?.currentTime ?? currentTime;
   }
 </script>
 
@@ -868,39 +896,44 @@
   {#if loadingMessage}
     <div class="loading">{loadingMessage}</div>
   {/if}
-  <div class="controls-wrap" class:visible={controlsVisible}>
-    <ControlBar
-      {video}
-      {paused}
-      {currentTime}
-      {duration}
-      {volume}
-      {muted}
-      {playbackRate}
-      {commentsEnabled}
-      {commentOpacity}
-      {abLoop}
-      {hlsLevels}
-      {currentLevel}
-      {loop}
-      onTogglePlay={togglePlay}
-      onSeek={seekTo}
-      onVolume={setVolume}
-      onToggleMute={toggleMute}
-      onRate={setRate}
-      onToggleComments={toggleComments}
-      onCommentOpacity={setCommentOpacity}
-      onSetAbIn={setAbIn}
-      onSetAbOut={setAbOut}
-      onToggleAb={toggleAbLoop}
-      onClearAb={clearAb}
-      onToggleLoop={() => {
-        loop = !loop;
-      }}
-      onFullscreen={toggleFullscreen}
-      onQuality={setQuality}
-    />
-  </div>
+  {#if !compact}
+    <div class="controls-wrap" class:visible={controlsVisible}>
+      <ControlBar
+        {video}
+        {paused}
+        {currentTime}
+        {duration}
+        {volume}
+        {muted}
+        {playbackRate}
+        {commentsEnabled}
+        {commentOpacity}
+        {abLoop}
+        {hlsLevels}
+        {currentLevel}
+        {loop}
+        {pipActive}
+        showPip={!!onTogglePip}
+        onTogglePlay={togglePlay}
+        onSeek={seekTo}
+        onVolume={setVolume}
+        onToggleMute={toggleMute}
+        onRate={setRate}
+        onToggleComments={toggleComments}
+        onCommentOpacity={setCommentOpacity}
+        onSetAbIn={setAbIn}
+        onSetAbOut={setAbOut}
+        onToggleAb={toggleAbLoop}
+        onClearAb={clearAb}
+        onToggleLoop={() => {
+          loop = !loop;
+        }}
+        onFullscreen={toggleFullscreen}
+        onQuality={setQuality}
+        onTogglePip={() => onTogglePip?.()}
+      />
+    </div>
+  {/if}
 </div>
 
 <style>

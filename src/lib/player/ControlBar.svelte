@@ -32,6 +32,11 @@
     onFullscreen: () => void;
     onToggleLoop: () => void;
     onQuality: (levelIndex: number) => void;
+    onTogglePip?: () => void;
+    /** PiP ボタンを表示するか */
+    showPip?: boolean;
+    /** PiP が現在 ON か (ボタンの active 表示) */
+    pipActive?: boolean;
   };
 
   let {
@@ -62,6 +67,9 @@
     onFullscreen,
     onToggleLoop,
     onQuality,
+    onTogglePip,
+    showPip = false,
+    pipActive = false,
   }: Props = $props();
 
   const speeds = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
@@ -267,6 +275,21 @@
       />
     </div>
 
+    {#if showPip}
+      <button
+        type="button"
+        class="btn pip-btn"
+        class:active={pipActive}
+        onclick={() => onTogglePip?.()}
+        title="ミニプレイヤー (P)"
+        aria-label="ミニプレイヤー"
+        aria-pressed={pipActive}
+      >
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+          <path d="M3 5h18v14H3V5zm2 2v10h14V7H5zm7 4h6v4h-6v-4z" fill="currentColor" />
+        </svg>
+      </button>
+    {/if}
     <button type="button" class="btn" onclick={onFullscreen} title="全画面 (F)">⛶</button>
     <button
       type="button"
@@ -462,5 +485,14 @@
   }
   .comments-controls input[type='range'] {
     width: 80px;
+  }
+  .pip-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px 8px;
+  }
+  .pip-btn svg {
+    display: block;
   }
 </style>

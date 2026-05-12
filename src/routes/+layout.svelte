@@ -3,6 +3,7 @@
   import { onMount } from 'svelte';
   import { installConsoleBridge } from '$lib/consoleBridge';
   import { loadSettings } from '$lib/stores/settings.svelte';
+  import MiniPlayer from '$lib/player/MiniPlayer.svelte';
 
   let { children } = $props();
 
@@ -38,6 +39,8 @@
     {@render children()}
   </main>
 </div>
+
+<MiniPlayer />
 
 <style>
   :global(html) {
