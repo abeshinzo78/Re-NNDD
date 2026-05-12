@@ -14,6 +14,7 @@ export type PlayerActions = {
   toggleAbLoop: () => void;
   volumeDelta: (delta: number) => void;
   frameStep: (forward: boolean) => void;
+  togglePip?: () => void;
 };
 
 export function bindShortcuts(target: HTMLElement | Window, a: PlayerActions): () => void {
@@ -80,6 +81,13 @@ export function bindShortcuts(target: HTMLElement | Window, a: PlayerActions): (
       case 'l':
       case 'L':
         a.toggleAbLoop();
+        return;
+      case 'p':
+      case 'P':
+        if (a.togglePip) {
+          event.preventDefault();
+          a.togglePip();
+        }
         return;
       case 'Escape':
         a.toggleFullscreen();

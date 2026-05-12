@@ -15,6 +15,7 @@
   import { addHistory } from '$lib/stores/history';
   import { getBool, loadSettings } from '$lib/stores/settings.svelte';
   import { sanitizeDescriptionHtml } from '$lib/sanitize';
+  import { miniPlayer } from '$lib/player/miniPlayer.svelte';
 
   // この route は **オンライン視聴専用**。ローカル再生は /library/[id] で行う。
   // 別ルートに分けることで、ネット接続が要らないときに偶発的に niconico を
@@ -236,6 +237,59 @@
       dlMsgTimer = null;
     }, 4000);
   }
+  // PiP (ミニプレイヤー) のトグル。
+  // ON: 現在の再生位置を resume に書いて miniPlayer ストアへ流し込み。
+  // OFF: 元ページに戻ってきた時点で MiniPlayer 側が自動 handoff する。
+  function togglePip() {
+    if (!payload) return;
+    if (pipActiveForThis) {
+      miniPlayer.close();
+      return;
+    }
+    const vid = playerRef?.getVideo();
+    const t = vid?.currentTime ?? currentTime ?? 0;
+    // `payload` は同一コンポーネントが /video/A → /video/B でパラ遷移した時
+    // 後から書き換わる。クロージャに `payload` を直接参照させると、PiP 再生中の
+    // 動画 A のトークン再発行が B の URL を取得してしまう。スナップショットで固める。
+    const snapVideoId = payload.videoId;
+    const snapHlsUrl = payload.hlsUrl;
+    const snapTitle = payload.video.title;
+    // expandHref はクエリ込みで保存する。?from=history / ?from=user&uid=...
+    // のようなコンテキストを保ったまま展開時に元ページへ戻すため。
+    const snapHref = page.url.pathname + (page.url.search ?? '');
+    if (snapVideoId) {
+      try {
+        localStorage.setItem(`resume:${snapVideoId}`, String(Math.floor(t)));
+      } catch {
+        /* ignore */
+      }
+    }
+    miniPlayer.open({
+      source: {
+        kind: 'online',
+        videoId: snapVideoId,
+        hlsUrl: snapHlsUrl,
+        refreshHlsUrl: () => issueHlsUrl(snapVideoId),
+      },
+      title: snapTitle,
+      comments: visibleComments,
+      resumePosition: t,
+      expandHref: snapHref,
+      loop,
+    });
+  }
+
+  let pipActiveForThis = $derived(
+    miniPlayer.active && miniPlayer.source?.videoId === (payload?.videoId ?? ''),
+  );
+
+  // PiP 中はミニ側で取得済みコメの方が新しい可能性があるので、ミニ側にも反映
+  $effect(() => {
+    if (pipActiveForThis && payload) {
+      miniPlayer.updateComments(payload.videoId, visibleComments);
+    }
+  });
+
   async function onDownload(id: string) {
     dlPending = true;
     try {
@@ -293,15 +347,38 @@
     {@const p = payload}
     <div class="player-row" class:dragging>
       <div class="player-col">
-        <Player
-          bind:this={playerRef}
-          hlsUrl={p.hlsUrl}
-          comments={visibleComments}
-          refreshHlsUrl={() => issueHlsUrl(p.videoId)}
-          onTime={handleTimeUpdate}
-          resumePosition={getResumePosition(p.videoId)}
-          {loop}
-        />
+        {#if pipActiveForThis}
+          <div class="pip-placeholder">
+            <div class="pip-thumb">
+              {#if p.video.thumbnailUrl}
+                <img src={p.video.thumbnailUrl} alt="" />
+              {/if}
+              <div class="pip-overlay">
+                <div class="pip-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="44" height="44">
+                    <path d="M3 5h18v14H3V5zm2 2v10h14V7H5zm7 4h6v4h-6v-4z" fill="currentColor" />
+                  </svg>
+                </div>
+                <div class="pip-text">ミニプレイヤーで再生中</div>
+                <button type="button" class="pip-resume" onclick={() => miniPlayer.close()}>
+                  ここで再生に戻す
+                </button>
+              </div>
+            </div>
+          </div>
+        {:else}
+          <Player
+            bind:this={playerRef}
+            hlsUrl={p.hlsUrl}
+            comments={visibleComments}
+            refreshHlsUrl={() => issueHlsUrl(p.videoId)}
+            onTime={handleTimeUpdate}
+            resumePosition={getResumePosition(p.videoId)}
+            {loop}
+            onTogglePip={togglePip}
+            pipActive={false}
+          />
+        {/if}
         {#if ngFilteredCount > 0}
           <div class="ng-banner">NG: {ngFilteredCount} 件のコメを除外中</div>
         {/if}
@@ -671,6 +748,59 @@
    * 全画面表示時に裏側でレイアウト計算（特に関連動画の遅延読み込み画像など）
    * が走って動画がガクつくのを防ぐため、プレーヤー以外を非表示にする
    */
+  .pip-placeholder {
+    background: #000;
+    border-radius: 8px;
+    overflow: hidden;
+    aspect-ratio: 16 / 9;
+    width: 100%;
+    position: relative;
+  }
+  .pip-thumb {
+    position: relative;
+    width: 100%;
+    height: 100%;
+  }
+  .pip-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    filter: brightness(0.45) blur(4px);
+  }
+  .pip-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    color: #fff;
+  }
+  .pip-icon {
+    color: #fff;
+    opacity: 0.85;
+  }
+  .pip-text {
+    font-size: 14px;
+    font-weight: 600;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+  }
+  .pip-resume {
+    margin-top: 4px;
+    background: #2563eb;
+    color: #fff;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .pip-resume:hover {
+    background: #3b78f0;
+  }
+
   :global(body:has(:fullscreen)) .head,
   :global(body:has(:fullscreen)) .divider,
   :global(body:has(:fullscreen)) .comment-panel,
