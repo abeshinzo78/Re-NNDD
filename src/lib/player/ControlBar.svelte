@@ -286,10 +286,7 @@
         aria-pressed={pipActive}
       >
         <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-          <path
-            d="M3 5h18v14H3V5zm2 2v10h14V7H5zm7 4h6v4h-6v-4z"
-            fill="currentColor"
-          />
+          <path d="M3 5h18v14H3V5zm2 2v10h14V7H5zm7 4h6v4h-6v-4z" fill="currentColor" />
         </svg>
       </button>
     {/if}

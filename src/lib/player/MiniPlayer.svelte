@@ -41,21 +41,16 @@
   let isDragging = $state(false);
   let isResizing = $state(false);
 
-  // 元動画ページに居る間は表示を隠す (再生は継続)。
-  // 戻ってきた瞬間に PiP を閉じて、ページ側のプレイヤーへ引き継ぎ。
+  // 元動画ページに居る間は、ページ側のプレースホルダが視覚を引き受け、
+  // ミニ側は visibility:hidden で見えなくする (再生は継続)。
+  // ユーザが「ここで再生に戻す」ボタンや mini の閉じる/展開を押した時のみ
+  // miniPlayer.close() を呼ぶ。
   let pathname = $derived(page.url.pathname);
   let onSourcePage = $derived(
     miniPlayer.source != null && pathname === miniPlayer.expandHref.split('?')[0],
   );
 
-  $effect(() => {
-    if (onSourcePage && miniPlayer.active) {
-      // 元ページに戻ってきた = ページ側で再生再開させる
-      handoffToPage();
-    }
-  });
-
-  function handoffToPage() {
+  function saveResume() {
     const t = playerRef?.getCurrentTime() ?? currentTime;
     const id = miniPlayer.source?.videoId;
     if (id && Number.isFinite(t) && t > 0) {
@@ -65,12 +60,12 @@
         /* ignore */
       }
     }
-    miniPlayer.close();
   }
 
   function expand() {
     const href = miniPlayer.expandHref;
-    handoffToPage();
+    saveResume();
+    miniPlayer.close();
     if (href && href !== pathname) {
       void goto(href);
     }
@@ -78,15 +73,7 @@
 
   function close() {
     // 完全に閉じる (再生停止)。resume だけは保存しておく。
-    const t = playerRef?.getCurrentTime() ?? currentTime;
-    const id = miniPlayer.source?.videoId;
-    if (id && Number.isFinite(t) && t > 0) {
-      try {
-        localStorage.setItem(`resume:${id}`, String(Math.floor(t)));
-      } catch {
-        /* ignore */
-      }
-    }
+    saveResume();
     miniPlayer.close();
   }
 
@@ -228,11 +215,7 @@
     const newW = clampWidth(resizeStart.w + deltaW);
     const wDiff = newW - resizeStart.w;
     const hDiff = wDiff / MINI_CONSTANTS.ASPECT_RATIO;
-    const nx = clamp(
-      resizeStart.gx - wDiff,
-      0,
-      Math.max(0, window.innerWidth - newW),
-    );
+    const nx = clamp(resizeStart.gx - wDiff, 0, Math.max(0, window.innerWidth - newW));
     const ny = clamp(
       resizeStart.gy - hDiff,
       0,
@@ -257,7 +240,12 @@
   // ============ ウィンドウリサイズに追従 ============
   function onWindowResize() {
     const g = miniPlayer.geometry;
-    const w = clampWidth(Math.min(g.width, Math.max(MINI_CONSTANTS.MIN_WIDTH, window.innerWidth - MINI_CONSTANTS.MARGIN * 2)));
+    const w = clampWidth(
+      Math.min(
+        g.width,
+        Math.max(MINI_CONSTANTS.MIN_WIDTH, window.innerWidth - MINI_CONSTANTS.MARGIN * 2),
+      ),
+    );
     const h = w / MINI_CONSTANTS.ASPECT_RATIO;
     const next: MiniGeometry = {
       width: w,
@@ -307,23 +295,18 @@
 
   // テンプレート用 derived
   let height = $derived(miniPlayer.geometry.width / MINI_CONSTANTS.ASPECT_RATIO);
-  let progressPct = $derived(
-    duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0,
-  );
-  let onlineSrc = $derived(
-    miniPlayer.source?.kind === 'online' ? miniPlayer.source : null,
-  );
-  let localSrcObj = $derived(
-    miniPlayer.source?.kind === 'local' ? miniPlayer.source : null,
-  );
+  let progressPct = $derived(duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0);
+  let onlineSrc = $derived(miniPlayer.source?.kind === 'online' ? miniPlayer.source : null);
+  let localSrcObj = $derived(miniPlayer.source?.kind === 'local' ? miniPlayer.source : null);
 </script>
 
-{#if miniPlayer.active && miniPlayer.source && !onSourcePage}
+{#if miniPlayer.active && miniPlayer.source}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="mini"
     class:dragging={isDragging}
     class:resizing={isResizing}
+    class:hidden-on-source={onSourcePage}
     bind:this={container}
     style:left="{miniPlayer.geometry.x}px"
     style:top="{miniPlayer.geometry.y}px"
@@ -491,6 +474,12 @@
   }
   .mini.dragging {
     cursor: grabbing;
+  }
+  /* 元動画ページに居る間は視覚を隠す (再生は継続)。pointer-events も
+     切ってクリックを下のレイヤに通す。 */
+  .mini.hidden-on-source {
+    visibility: hidden;
+    pointer-events: none;
   }
   @keyframes mini-in {
     from {

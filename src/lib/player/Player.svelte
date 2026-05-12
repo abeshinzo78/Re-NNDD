@@ -746,24 +746,31 @@
 
   onMount(() => {
     document.addEventListener('webkitfullscreenchange', onFullscreenChange);
-    const actions: PlayerActions = {
-      togglePlay,
-      seekDelta,
-      jumpToFraction,
-      toggleComments,
-      toggleFullscreen,
-      toggleMute,
-      setAbIn,
-      setAbOut,
-      toggleAbLoop,
-      volumeDelta: (d) => setVolume((video?.volume ?? volume) + d),
-      frameStep,
-      togglePip: onTogglePip ? () => onTogglePip?.() : undefined,
-    };
-    const unbindShortcuts = bindShortcuts(window, actions);
+    // compact (PiP) モードでは window レベルのショートカットを登録しない。
+    // ミニ側と通常ページ側の <Player> が同時に存在する状況で 1 キーが
+    // 2 重発火するのを防ぐ。ミニ側専用のショートカットは MiniPlayer が
+    // 別途登録する。
+    let unbindShortcuts: (() => void) | null = null;
+    if (!compact) {
+      const actions: PlayerActions = {
+        togglePlay,
+        seekDelta,
+        jumpToFraction,
+        toggleComments,
+        toggleFullscreen,
+        toggleMute,
+        setAbIn,
+        setAbOut,
+        toggleAbLoop,
+        volumeDelta: (d) => setVolume((video?.volume ?? volume) + d),
+        frameStep,
+        togglePip: onTogglePip ? () => onTogglePip?.() : undefined,
+      };
+      unbindShortcuts = bindShortcuts(window, actions);
+    }
     return () => {
       document.removeEventListener('webkitfullscreenchange', onFullscreenChange);
-      unbindShortcuts();
+      unbindShortcuts?.();
     };
   });
 

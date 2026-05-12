@@ -248,9 +248,15 @@
     }
     const vid = playerRef?.getVideo();
     const t = vid?.currentTime ?? currentTime ?? 0;
-    if (payload.video.id) {
+    // `payload` は同一コンポーネントが /video/A → /video/B でパラ遷移した時
+    // 後から書き換わる。クロージャに `payload` を直接参照させると、PiP 再生中の
+    // 動画 A のトークン再発行が B の URL を取得してしまう。スナップショットで固める。
+    const snapVideoId = payload.videoId;
+    const snapHlsUrl = payload.hlsUrl;
+    const snapTitle = payload.video.title;
+    if (snapVideoId) {
       try {
-        localStorage.setItem(`resume:${payload.video.id}`, String(Math.floor(t)));
+        localStorage.setItem(`resume:${snapVideoId}`, String(Math.floor(t)));
       } catch {
         /* ignore */
       }
@@ -258,14 +264,14 @@
     miniPlayer.open({
       source: {
         kind: 'online',
-        videoId: payload.videoId,
-        hlsUrl: payload.hlsUrl,
-        refreshHlsUrl: () => issueHlsUrl(payload!.videoId),
+        videoId: snapVideoId,
+        hlsUrl: snapHlsUrl,
+        refreshHlsUrl: () => issueHlsUrl(snapVideoId),
       },
-      title: payload.video.title,
+      title: snapTitle,
       comments: visibleComments,
       resumePosition: t,
-      expandHref: `/video/${payload.videoId}`,
+      expandHref: `/video/${snapVideoId}`,
       loop,
     });
   }
@@ -347,10 +353,7 @@
               <div class="pip-overlay">
                 <div class="pip-icon" aria-hidden="true">
                   <svg viewBox="0 0 24 24" width="44" height="44">
-                    <path
-                      d="M3 5h18v14H3V5zm2 2v10h14V7H5zm7 4h6v4h-6v-4z"
-                      fill="currentColor"
-                    />
+                    <path d="M3 5h18v14H3V5zm2 2v10h14V7H5zm7 4h6v4h-6v-4z" fill="currentColor" />
                   </svg>
                 </div>
                 <div class="pip-text">ミニプレイヤーで再生中</div>

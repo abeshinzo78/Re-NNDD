@@ -201,9 +201,14 @@
     }
     const vid = playerRef?.getVideo();
     const t = vid?.currentTime ?? currentTime ?? 0;
-    if (local.videoId) {
+    // パラ遷移で local が書き換わっても影響を受けないようスナップ。
+    const snapVideoId = local.videoId;
+    const snapTitle = local.title;
+    const snapSrc = localSrc;
+    const snapAudio = localAudioSrc ?? undefined;
+    if (snapVideoId) {
       try {
-        localStorage.setItem(`resume:${local.videoId}`, String(Math.floor(t)));
+        localStorage.setItem(`resume:${snapVideoId}`, String(Math.floor(t)));
       } catch {
         /* ignore */
       }
@@ -211,14 +216,14 @@
     miniPlayer.open({
       source: {
         kind: 'local',
-        videoId: local.videoId,
-        localSrc: localSrc,
-        localAudioSrc: localAudioSrc ?? undefined,
+        videoId: snapVideoId,
+        localSrc: snapSrc,
+        localAudioSrc: snapAudio,
       },
-      title: local.title,
+      title: snapTitle,
       comments: visibleComments,
       resumePosition: t,
-      expandHref: `/library/${local.videoId}`,
+      expandHref: `/library/${snapVideoId}`,
       loop,
     });
   }
@@ -312,10 +317,7 @@
               <div class="pip-overlay">
                 <div class="pip-icon" aria-hidden="true">
                   <svg viewBox="0 0 24 24" width="44" height="44">
-                    <path
-                      d="M3 5h18v14H3V5zm2 2v10h14V7H5zm7 4h6v4h-6v-4z"
-                      fill="currentColor"
-                    />
+                    <path d="M3 5h18v14H3V5zm2 2v10h14V7H5zm7 4h6v4h-6v-4z" fill="currentColor" />
                   </svg>
                 </div>
                 <div class="pip-text">ミニプレイヤーで再生中</div>
