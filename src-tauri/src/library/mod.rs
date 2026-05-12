@@ -2,6 +2,7 @@
 //! library entities (videos, tags, comments, NG rules, …).
 
 pub mod db;
+pub mod query;
 pub mod queue;
 pub mod schema;
 pub mod settings;

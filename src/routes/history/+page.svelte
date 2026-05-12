@@ -10,14 +10,27 @@
 
   let history = $state<HistoryItem[]>([]);
   let filter = $state<'all' | HistorySource>('all');
+  let searchQuery = $state('');
 
   onMount(() => {
     history = getHistory();
   });
 
   let visible = $derived.by(() => {
-    if (filter === 'all') return history;
-    return history.filter((h) => (h.source ?? 'online') === filter);
+    let list = history;
+    if (filter !== 'all') {
+      list = list.filter((h) => (h.source ?? 'online') === filter);
+    }
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      list = list.filter(
+        (h) =>
+          h.title.toLowerCase().includes(q) ||
+          h.videoId.toLowerCase().includes(q) ||
+          (h.uploaderName ?? '').toLowerCase().includes(q),
+      );
+    }
+    return list;
   });
 
   let counts = $derived.by(() => {
@@ -64,6 +77,12 @@
   <div class="head">
     <h2>再生履歴</h2>
     <div class="head-tools">
+      <input
+        type="search"
+        class="search-box"
+        placeholder="動画名で検索…"
+        bind:value={searchQuery}
+      />
       <div class="tabs" role="tablist" aria-label="履歴フィルタ">
         <button
           type="button"
@@ -95,7 +114,9 @@
 
   {#if visible.length === 0}
     <p class="muted">
-      {#if filter === 'local'}ローカル再生の履歴はありません。
+      {#if searchQuery.trim()}
+        「{searchQuery}」に一致する履歴はありません。
+      {:else if filter === 'local'}ローカル再生の履歴はありません。
       {:else if filter === 'online'}オンライン再生の履歴はありません。
       {:else}履歴はありません。
       {/if}
@@ -163,6 +184,23 @@
   }
   h2 {
     margin: 0;
+  }
+  .search-box {
+    background: #161616;
+    border: 1px solid #2a2a2a;
+    color: #eaeaea;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    width: 200px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .search-box::placeholder {
+    color: #666;
+  }
+  .search-box:focus {
+    border-color: #4a6a9a;
   }
   .tabs {
     display: inline-flex;

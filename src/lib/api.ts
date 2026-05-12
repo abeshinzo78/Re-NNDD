@@ -281,6 +281,86 @@ export async function listLibraryVideos(): Promise<LibraryVideoItem[]> {
   return invoke<LibraryVideoItem[]>('list_library_videos');
 }
 
+// =================== ライブラリ検索・整列・集計 ===================
+
+export type LibraryQueryParams = {
+  q?: string;
+  tags?: string[];
+  uploaderId?: string;
+  minDuration?: number;
+  maxDuration?: number;
+  resolution?: string;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
+  offset?: number;
+  limit?: number;
+};
+
+export type LibraryVideoRow = {
+  id: string;
+  title: string;
+  description: string | null;
+  uploaderId: string | null;
+  uploaderName: string | null;
+  uploaderType: string | null;
+  category: string | null;
+  durationSec: number;
+  postedAt: number | null;
+  viewCount: number | null;
+  commentCount: number | null;
+  mylistCount: number | null;
+  thumbnailUrl: string | null;
+  videoPath: string | null;
+  resolution: string | null;
+  downloadedAt: number | null;
+  playCount: number;
+  lastPlayedAt: number | null;
+  tags: string[];
+};
+
+export type QueryResult = {
+  items: LibraryVideoRow[];
+  totalCount: number;
+  offset: number;
+  limit: number;
+};
+
+export type TagCount = {
+  name: string;
+  count: number;
+};
+
+export type ResolutionCount = {
+  resolution: string;
+  count: number;
+};
+
+export type LibraryStats = {
+  totalVideos: number;
+  totalDurationSec: number;
+  totalComments: number;
+  uniqueUploaders: number;
+  uniqueTags: number;
+  topTags: TagCount[];
+  resolutionDistribution: ResolutionCount[];
+};
+
+export async function queryLibraryVideos(q: LibraryQueryParams): Promise<QueryResult> {
+  return invoke<QueryResult>('query_library_videos', { q });
+}
+
+export async function getLibraryStats(): Promise<LibraryStats> {
+  return invoke<LibraryStats>('get_library_stats');
+}
+
+export async function listLibraryTags(): Promise<string[]> {
+  return invoke<string[]>('list_library_tags');
+}
+
+export async function listLibraryResolutions(): Promise<string[]> {
+  return invoke<string[]>('list_library_resolutions');
+}
+
 export async function prepareLocalPlayback(videoId: string): Promise<LocalPlaybackPayload | null> {
   return invoke<LocalPlaybackPayload | null>('prepare_local_playback', { videoId });
 }

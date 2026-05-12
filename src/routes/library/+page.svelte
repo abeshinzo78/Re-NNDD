@@ -5,6 +5,7 @@
     cleanupStorage,
     deleteLibraryVideo,
     listLibraryVideos,
+    queryLibraryVideos,
     type LibraryVideoItem,
   } from '$lib/api';
   import { formatDuration, formatNumber } from '$lib/format';
@@ -13,16 +14,42 @@
   let loading = $state(true);
   let error = $state<string | null>(null);
   let deleting = $state<string | null>(null);
+  let searchQuery = $state('');
 
   async function refresh() {
     try {
-      items = await listLibraryVideos();
+      if (searchQuery.trim()) {
+        const result = await queryLibraryVideos({ q: searchQuery.trim() });
+        items = result.items.map((r) => ({
+          id: r.id,
+          title: r.title,
+          durationSec: r.durationSec,
+          uploaderId: r.uploaderId ?? null,
+          uploaderName: r.uploaderName ?? null,
+          viewCount: r.viewCount ?? null,
+          postedAt: r.postedAt ?? null,
+          downloadedAt: r.downloadedAt ?? null,
+          resolution: r.resolution ?? null,
+          thumbnailUrl: r.thumbnailUrl ?? null,
+          localThumbnailPath: null,
+          localVideoPath: r.videoPath ?? null,
+          tags: r.tags,
+        }));
+      } else {
+        items = await listLibraryVideos();
+      }
       error = null;
     } catch (e) {
       error = String(e);
     } finally {
       loading = false;
     }
+  }
+
+  let searchTimeout: ReturnType<typeof setTimeout> | null = null;
+  function onSearchInput() {
+    if (searchTimeout) clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(refresh, 300);
   }
 
   let cleaning = $state(false);
@@ -89,6 +116,13 @@
   <header class="head">
     <h2>ライブラリ</h2>
     <div class="head-actions">
+      <input
+        type="search"
+        class="search-box"
+        placeholder="動画名・タグで検索…"
+        bind:value={searchQuery}
+        oninput={onSearchInput}
+      />
       <button type="button" class="ghost" onclick={refresh}>更新</button>
       <button type="button" class="ghost" disabled={cleaning} onclick={onCleanup}>
         {cleaning ? '掃除中…' : 'ストレージ掃除'}
@@ -108,10 +142,16 @@
     <div class="muted">読み込み中…</div>
   {:else if items.length === 0}
     <div class="empty">
-      <p class="muted">ダウンロード済みの動画はまだありません。</p>
       <p class="muted">
-        <a href="/downloads">ダウンロード</a> ページで動画 ID を追加 → 「DL 開始」で取り込めます。
+        {searchQuery.trim()
+          ? '検索結果が見つかりません。'
+          : 'ダウンロード済みの動画はまだありません。'}
       </p>
+      {#if !searchQuery.trim()}
+        <p class="muted">
+          <a href="/downloads">ダウンロード</a> ページで動画 ID を追加 → 「DL 開始」で取り込めます。
+        </p>
+      {/if}
     </div>
   {:else}
     <div class="grid">
@@ -181,6 +221,8 @@
     align-items: center;
     justify-content: space-between;
     margin-bottom: 16px;
+    flex-wrap: wrap;
+    gap: 10px;
   }
   .head h2 {
     margin: 0;
@@ -188,6 +230,24 @@
   .head-actions {
     display: flex;
     gap: 8px;
+    align-items: center;
+  }
+  .search-box {
+    background: #161616;
+    border: 1px solid #2a2a2a;
+    color: #eaeaea;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    width: 220px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .search-box::placeholder {
+    color: #666;
+  }
+  .search-box:focus {
+    border-color: #4a6a9a;
   }
   .info {
     background: #1a2a44;

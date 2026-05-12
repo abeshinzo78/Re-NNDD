@@ -19,6 +19,7 @@ use crate::api::video::{
 };
 use crate::error::{AppError, Result};
 use crate::library::db::LibraryHandle;
+use crate::library::query::{self, LibraryQuery, LibraryStats, QueryResult};
 use crate::library::queue::{self, DownloadQueueItem};
 use crate::library::settings;
 use crate::library::videos::{self, CommentRecord, IngestPayload, TagRecord, VideoRecord};
@@ -1611,6 +1612,41 @@ pub async fn prepare_local_playback(
         local_thumbnail_path: thumb_abs,
         comments,
     }))
+}
+
+// =================== ライブラリ検索・整列・集計 ===================
+
+#[tauri::command]
+pub async fn query_library_videos(
+    q: LibraryQuery,
+    library: State<'_, Arc<LibraryHandle>>,
+) -> Result<QueryResult> {
+    let conn = library.lock().await;
+    let result = query::query_videos(&conn, &q).map_err(AppError::from)?;
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn get_library_stats(library: State<'_, Arc<LibraryHandle>>) -> Result<LibraryStats> {
+    let conn = library.lock().await;
+    let stats = query::get_stats(&conn).map_err(AppError::from)?;
+    Ok(stats)
+}
+
+#[tauri::command]
+pub async fn list_library_tags(library: State<'_, Arc<LibraryHandle>>) -> Result<Vec<String>> {
+    let conn = library.lock().await;
+    let tags = query::list_all_tags(&conn).map_err(AppError::from)?;
+    Ok(tags)
+}
+
+#[tauri::command]
+pub async fn list_library_resolutions(
+    library: State<'_, Arc<LibraryHandle>>,
+) -> Result<Vec<String>> {
+    let conn = library.lock().await;
+    let resolutions = query::list_resolutions(&conn).map_err(AppError::from)?;
+    Ok(resolutions)
 }
 
 // =================== 設定 ===================
