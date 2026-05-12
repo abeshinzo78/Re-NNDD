@@ -18,7 +18,7 @@
   import { addHistory } from '$lib/stores/history';
   import { getBool, loadSettings } from '$lib/stores/settings.svelte';
   import { sanitizeDescriptionHtml } from '$lib/sanitize';
-  import { miniPlayer } from '$lib/player/miniPlayer.svelte';
+  import { miniPlayer } from '$lib/player/miniPlayerStore.svelte';
 
   let local = $state<LocalPlaybackPayload | null>(null);
   let localSrc = $state<string | null>(null);
