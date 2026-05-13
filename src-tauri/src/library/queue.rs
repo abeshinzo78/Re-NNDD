@@ -93,7 +93,8 @@ pub fn list_all(conn: &Connection) -> Result<Vec<DownloadQueueItem>, LibraryErro
 }
 
 /// ワーカが拾うべき次の候補を、scheduled_at の早い順 → id 順で返す。
-/// pending と paused（再開待ち）を含む。
+/// `paused` はワーカが拾うべき対象ではないので含めない（手動再開で `pending`
+/// に戻ったタイミングで再びここに乗る）。
 pub fn list_pending(conn: &Connection) -> Result<Vec<DownloadQueueItem>, LibraryError> {
     let mut stmt = conn.prepare(&format!(
         "SELECT {SELECT_COLS} FROM download_queue \
@@ -291,7 +292,7 @@ mod tests {
     }
 
     #[test]
-    fn list_pending_returns_pending_and_paused_only_in_schedule_order() {
+    fn list_pending_returns_pending_only_in_schedule_order() {
         let conn = setup();
         let a = enqueue(&conn, "sm1", Some(200)).unwrap();
         let b = enqueue(&conn, "sm2", Some(100)).unwrap();
@@ -299,13 +300,13 @@ mod tests {
         let d = enqueue(&conn, "sm4", Some(300)).unwrap();
         // d を done に
         mark_status(&conn, d.id, "done").unwrap();
-        // a を paused に
+        // a を paused に（list_pending では拾わない）
         mark_status(&conn, a.id, "paused").unwrap();
 
         let pending = list_pending(&conn).unwrap();
         let ids: Vec<i64> = pending.iter().map(|i| i.id).collect();
-        // c (scheduled 0/null) → b (100) → a (200, paused) — d は除外
-        assert_eq!(ids, vec![c.id, b.id, a.id]);
+        // c (scheduled 0/null) → b (100) — d (done) と a (paused) は除外
+        assert_eq!(ids, vec![c.id, b.id]);
     }
 
     #[test]
