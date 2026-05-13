@@ -540,7 +540,10 @@ pub async fn fetch_user_videos(
     sort_order: String,
     store: State<'_, Arc<SessionStore>>,
 ) -> Result<UserVideosResponse> {
-    if owner_id.is_empty() || owner_id.len() > 64 || !owner_id.chars().all(|c| c.is_ascii_alphanumeric()) {
+    if owner_id.is_empty()
+        || owner_id.len() > 64
+        || !owner_id.chars().all(|c| c.is_ascii_alphanumeric())
+    {
         return Err(AppError::Other(format!("invalid owner_id: {owner_id:?}")));
     }
     let client = reqwest::Client::builder()
@@ -1092,7 +1095,12 @@ pub async fn cleanup_storage(app: tauri::AppHandle) -> Result<u64> {
         return Ok(0);
     }
 
-    let keep = ["video.mp4", "thumbnail.jpg", "description.txt", ".cookies.txt"];
+    let keep = [
+        "video.mp4",
+        "thumbnail.jpg",
+        "description.txt",
+        ".cookies.txt",
+    ];
     let mut total_bytes: u64 = 0;
     let mut entries = tokio::fs::read_dir(&videos_root)
         .await
@@ -1625,7 +1633,10 @@ pub async fn query_library_videos(
     let conn = library.lock().await;
     let mut result = query::query_videos(&conn, &q).map_err(AppError::from)?;
     for item in &mut result.items {
-        let thumb = app_data_dir.join("videos").join(&item.id).join("thumbnail.jpg");
+        let thumb = app_data_dir
+            .join("videos")
+            .join(&item.id)
+            .join("thumbnail.jpg");
         if thumb.exists() {
             item.local_thumbnail_path = Some(thumb.to_string_lossy().into_owned());
         }

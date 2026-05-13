@@ -78,10 +78,7 @@
 
     try {
       // 設定と再生情報を並列取得
-      const [, result] = await Promise.all([
-        loadSettings(),
-        prepareLocalPlayback(id),
-      ]);
+      const [, result] = await Promise.all([loadSettings(), prepareLocalPlayback(id)]);
       loop = getBool('playback.always_loop');
       if (loadingFor !== id) return;
       if (!result) {

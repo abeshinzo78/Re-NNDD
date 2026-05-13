@@ -103,74 +103,71 @@
     related = [];
     relatedError = null;
     try {
-    // 設定と再生情報を並列取得
-    const [, result] = await Promise.all([
-      loadSettings(),
-      preparePlayback(id),
-    ]);
-    if (loadingFor !== id) return;
-    loop = getBool('playback.always_loop');
-    payload = result;
-    pending = false;
+      // 設定と再生情報を並列取得
+      const [, result] = await Promise.all([loadSettings(), preparePlayback(id)]);
+      if (loadingFor !== id) return;
+      loop = getBool('playback.always_loop');
+      payload = result;
+      pending = false;
 
-    // Record to history
-    addHistory({
-      videoId: result.video.id,
-      title: result.video.title,
-      thumbnailUrl: result.video.thumbnailUrl,
-      uploaderName: result.owner?.nickname,
-      duration: result.video.duration,
-      viewCount: result.video.viewCount,
-    });
+      // Record to history
+      addHistory({
+        videoId: result.video.id,
+        title: result.video.title,
+        thumbnailUrl: result.video.thumbnailUrl,
+        uploaderName: result.owner?.nickname,
+        duration: result.video.duration,
+        viewCount: result.video.viewCount,
+      });
 
-    // Load comments + related in parallel — video already playable.
-    if (result.nvComment) {
-      commentsLoading = true;
-      void fetchVideoComments(result.nvComment)
-        .then((c) => {
-          if (loadingFor !== id) return;
-          comments = c;
-        })
-        .catch((e) => {
-          console.warn('comment fetch failed', e);
-        })
-        .finally(() => {
-          if (loadingFor === id) commentsLoading = false;
-        });
-    }
+      // Load comments + related in parallel — video already playable.
+      if (result.nvComment) {
+        commentsLoading = true;
+        void fetchVideoComments(result.nvComment)
+          .then((c) => {
+            if (loadingFor !== id) return;
+            comments = c;
+          })
+          .catch((e) => {
+            console.warn('comment fetch failed', e);
+          })
+          .finally(() => {
+            if (loadingFor === id) commentsLoading = false;
+          });
+      }
 
-    // Defer related-video fetch so it doesn't compete with the
-    // player's initial buffering / segment downloads.
-    relatedLoading = true;
-    setTimeout(() => {
-      void fetchRelatedVideos(id, result.video.title, result.video.tags)
-        .then((hits) => {
-          if (loadingFor !== id) return;
-          related = hits;
-          // Reveal cards progressively so thumbnail decode doesn't block video
-          relatedVisibleCount = 0;
-          const reveal = () => {
-            relatedVisibleCount += 3;
-            if (relatedVisibleCount < hits.length) {
-              if (window.requestIdleCallback) {
-                window.requestIdleCallback(reveal, { timeout: 200 });
-              } else {
-                setTimeout(reveal, 200);
+      // Defer related-video fetch so it doesn't compete with the
+      // player's initial buffering / segment downloads.
+      relatedLoading = true;
+      setTimeout(() => {
+        void fetchRelatedVideos(id, result.video.title, result.video.tags)
+          .then((hits) => {
+            if (loadingFor !== id) return;
+            related = hits;
+            // Reveal cards progressively so thumbnail decode doesn't block video
+            relatedVisibleCount = 0;
+            const reveal = () => {
+              relatedVisibleCount += 3;
+              if (relatedVisibleCount < hits.length) {
+                if (window.requestIdleCallback) {
+                  window.requestIdleCallback(reveal, { timeout: 200 });
+                } else {
+                  setTimeout(reveal, 200);
+                }
               }
+            };
+            reveal();
+          })
+          .catch((e) => {
+            if (loadingFor !== id) return;
+            relatedError = String(e);
+          })
+          .finally(() => {
+            if (loadingFor === id) {
+              relatedLoading = false;
             }
-          };
-          reveal();
-        })
-        .catch((e) => {
-          if (loadingFor !== id) return;
-          relatedError = String(e);
-        })
-        .finally(() => {
-          if (loadingFor === id) {
-            relatedLoading = false;
-          }
-        });
-    }, 3000);
+          });
+      }, 3000);
     } catch (e) {
       if (loadingFor !== id) return;
       error = String(e);
@@ -360,7 +357,9 @@
             src={`https://tn.smilevideo.jp/smile?i=${videoId.replace(/^[a-z]+/, '')}`}
             alt=""
             class="skeleton-thumb"
-            onerror={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+            onerror={(e) => {
+              (e.target as HTMLElement).style.display = 'none';
+            }}
           />
           <div class="skeleton-overlay">
             <div class="skeleton-spinner"></div>
@@ -866,7 +865,9 @@
     animation: spin 0.8s linear infinite;
   }
   @keyframes spin {
-    to { transform: rotate(360deg); }
+    to {
+      transform: rotate(360deg);
+    }
   }
   .skeleton-text {
     color: #ddd;

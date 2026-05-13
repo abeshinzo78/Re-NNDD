@@ -64,7 +64,10 @@ fn html_unescape(s: &str) -> String {
     for cap in re.captures_iter(&intermediate) {
         let m = cap.get(0).unwrap();
         let num_str = cap.get(1).unwrap().as_str();
-        let code_point = if let Some(hex) = num_str.strip_prefix('x').or_else(|| num_str.strip_prefix('X')) {
+        let code_point = if let Some(hex) = num_str
+            .strip_prefix('x')
+            .or_else(|| num_str.strip_prefix('X'))
+        {
             u32::from_str_radix(hex, 16).ok()
         } else {
             num_str.parse::<u32>().ok()
@@ -423,7 +426,11 @@ fn urlencoding_simple(s: &str) -> String {
 }
 
 fn is_valid_video_id(id: &str) -> bool {
-    !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    !id.is_empty()
+        && id.len() <= 64
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
 /// Public for unit-testability — extracts the `server-response` JSON and
