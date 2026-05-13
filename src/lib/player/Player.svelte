@@ -74,7 +74,6 @@
   let volume = $state(1);
   let muted = $state(false);
   let playbackRate = $state(1);
-  // svelte-ignore state_referenced_locally — compact is intentionally captured as initial value
   let commentsEnabled = $state(compact || getBool('comment.default_enabled'));
   let commentOpacity = $state(getNum('comment.default_opacity'));
   let abLoop = $state<{ in: number | null; out: number | null; enabled: boolean }>({
