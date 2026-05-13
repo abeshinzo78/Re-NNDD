@@ -55,15 +55,29 @@ fn html_unescape(s: &str) -> String {
         .replace("&amp;", "&");
     // Decode numeric character references: &#NN; (decimal) and &#xNN; (hex)
     fn numref_regex() -> &'static Regex {
+        // The pattern is a compile-time constant — `Regex::new` cannot fail
+        // here. The targeted allow keeps the workspace `expect_used` deny
+        // active for genuine production code paths.
+        #[allow(clippy::expect_used)]
+        fn build() -> Regex {
+            Regex::new(r"&#(x?[0-9a-fA-F]+);").expect("static regex compiles")
+        }
         static RE: OnceLock<Regex> = OnceLock::new();
-        RE.get_or_init(|| Regex::new(r"&#(x?[0-9a-fA-F]+);").unwrap())
+        RE.get_or_init(build)
     }
     let re = numref_regex();
     let mut result = String::with_capacity(intermediate.len());
     let mut last = 0;
     for cap in re.captures_iter(&intermediate) {
-        let m = cap.get(0).unwrap();
-        let num_str = cap.get(1).unwrap().as_str();
+        // `captures_iter` only yields successful matches, so group 0 (the
+        // whole match) and group 1 (the mandatory `(x?[0-9a-fA-F]+)`) are
+        // always present. Use `let-else` instead of `unwrap` to satisfy
+        // the workspace `unwrap_used` deny.
+        let Some(m) = cap.get(0) else { continue };
+        let Some(num_match) = cap.get(1) else {
+            continue;
+        };
+        let num_str = num_match.as_str();
         let code_point = if let Some(hex) = num_str
             .strip_prefix('x')
             .or_else(|| num_str.strip_prefix('X'))
