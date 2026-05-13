@@ -102,75 +102,75 @@
     commentsLoading = false;
     related = [];
     relatedError = null;
-    await loadSettings();
-    loop = getBool('playback.always_loop');
-
     try {
-      // オンライン専用ルート — ローカル DL 済みでも常にストリーミングする。
-      // ネット不要で見たい場合は /library/[id] を使う。
-      const result = await preparePlayback(id);
-      if (loadingFor !== id) return;
-      payload = result;
-      pending = false;
+    // 設定と再生情報を並列取得
+    const [, result] = await Promise.all([
+      loadSettings(),
+      preparePlayback(id),
+    ]);
+    if (loadingFor !== id) return;
+    loop = getBool('playback.always_loop');
+    payload = result;
+    pending = false;
 
-      // Record to history
-      addHistory({
-        videoId: result.video.id,
-        title: result.video.title,
-        thumbnailUrl: result.video.thumbnailUrl,
-        uploaderName: result.owner?.nickname,
-        duration: result.video.duration,
-        viewCount: result.video.viewCount,
-      });
+    // Record to history
+    addHistory({
+      videoId: result.video.id,
+      title: result.video.title,
+      thumbnailUrl: result.video.thumbnailUrl,
+      uploaderName: result.owner?.nickname,
+      duration: result.video.duration,
+      viewCount: result.video.viewCount,
+    });
 
-      // Load comments + related in parallel — video already playable.
-      if (result.nvComment) {
-        commentsLoading = true;
-        void fetchVideoComments(result.nvComment)
-          .then((c) => {
-            if (loadingFor !== id) return;
-            comments = c;
-          })
-          .catch((e) => {
-            console.warn('comment fetch failed', e);
-          })
-          .finally(() => {
-            if (loadingFor === id) commentsLoading = false;
-          });
-      }
+    // Load comments + related in parallel — video already playable.
+    if (result.nvComment) {
+      commentsLoading = true;
+      void fetchVideoComments(result.nvComment)
+        .then((c) => {
+          if (loadingFor !== id) return;
+          comments = c;
+        })
+        .catch((e) => {
+          console.warn('comment fetch failed', e);
+        })
+        .finally(() => {
+          if (loadingFor === id) commentsLoading = false;
+        });
+    }
 
-      // Defer related-video fetch so it doesn't compete with the
-      // player's initial buffering / segment downloads.
-      relatedLoading = true;
-      setTimeout(() => {
-        void fetchRelatedVideos(id, result.video.title, result.video.tags)
-          .then((hits) => {
-            if (loadingFor !== id) return;
-            related = hits;
-            // Reveal cards progressively so thumbnail decode doesn't block video
-            relatedVisibleCount = 0;
-            const reveal = () => {
-              relatedVisibleCount += 3;
-              if (relatedVisibleCount < hits.length) {
-                if (window.requestIdleCallback) {
-                  window.requestIdleCallback(reveal, { timeout: 200 });
-                } else {
-                  setTimeout(reveal, 200);
-                }
+    // Defer related-video fetch so it doesn't compete with the
+    // player's initial buffering / segment downloads.
+    relatedLoading = true;
+    setTimeout(() => {
+      void fetchRelatedVideos(id, result.video.title, result.video.tags)
+        .then((hits) => {
+          if (loadingFor !== id) return;
+          related = hits;
+          // Reveal cards progressively so thumbnail decode doesn't block video
+          relatedVisibleCount = 0;
+          const reveal = () => {
+            relatedVisibleCount += 3;
+            if (relatedVisibleCount < hits.length) {
+              if (window.requestIdleCallback) {
+                window.requestIdleCallback(reveal, { timeout: 200 });
+              } else {
+                setTimeout(reveal, 200);
               }
-            };
-            reveal();
-          })
-          .catch((e) => {
-            if (loadingFor !== id) return;
-            relatedError = String(e);
-          })
-          .finally(() => {
-            if (loadingFor === id) {
-              relatedLoading = false;
             }
-          });
-      }, 3000);
+          };
+          reveal();
+        })
+        .catch((e) => {
+          if (loadingFor !== id) return;
+          relatedError = String(e);
+        })
+        .finally(() => {
+          if (loadingFor === id) {
+            relatedLoading = false;
+          }
+        });
+    }, 3000);
     } catch (e) {
       if (loadingFor !== id) return;
       error = String(e);
@@ -301,7 +301,9 @@
   beforeNavigate((nav) => {
     if (!getBool('pip.auto_navigate')) return;
     const toPath = nav.to?.url.pathname;
-    if (!toPath || toPath !== backHref) return;
+    const fromPath = nav.from?.url.pathname;
+    if (!toPath || toPath === fromPath) return;
+    if (/^\/video\//.test(toPath) || /^\/library\//.test(toPath)) return;
     openPipForCurrentVideo();
   });
 
@@ -351,7 +353,22 @@
   {/if}
 
   {#if pending}
-    <div class="muted">読み込み中…</div>
+    <div class="player-row">
+      <div class="player-col">
+        <div class="loading-skeleton">
+          <img
+            src={`https://tn.smilevideo.jp/smile?i=${videoId.replace(/^[a-z]+/, '')}`}
+            alt=""
+            class="skeleton-thumb"
+            onerror={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+          />
+          <div class="skeleton-overlay">
+            <div class="skeleton-spinner"></div>
+            <div class="skeleton-text">読み込み中…</div>
+          </div>
+        </div>
+      </div>
+    </div>
   {:else if error}
     <div class="error">エラー: {error}</div>
     <p class="muted">
@@ -390,6 +407,7 @@
             onTime={handleTimeUpdate}
             resumePosition={getResumePosition(p.videoId)}
             {loop}
+            onLoopChange={(v) => (loop = v)}
             onTogglePip={togglePip}
             pipActive={false}
           />
@@ -814,6 +832,46 @@
   }
   .pip-resume:hover {
     background: #3b78f0;
+  }
+
+  .loading-skeleton {
+    background: #000;
+    border-radius: 8px;
+    overflow: hidden;
+    aspect-ratio: 16 / 9;
+    width: 100%;
+    position: relative;
+  }
+  .skeleton-thumb {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    filter: brightness(0.3) blur(2px);
+  }
+  .skeleton-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+  }
+  .skeleton-spinner {
+    width: 36px;
+    height: 36px;
+    border: 3px solid rgba(255, 255, 255, 0.2);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+  .skeleton-text {
+    color: #ddd;
+    font-size: 13px;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
   }
 
   :global(body:has(:fullscreen)) .head,

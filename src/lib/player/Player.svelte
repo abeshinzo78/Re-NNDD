@@ -30,6 +30,8 @@
     onTogglePip?: () => void;
     /** PiP ボタンの aria-pressed 表示用 */
     pipActive?: boolean;
+    /** ループ設定が変わった時の通知 (親の state を更新するため) */
+    onLoopChange?: (value: boolean) => void;
   };
 
   let {
@@ -45,6 +47,7 @@
     compact = false,
     onTogglePip,
     pipActive = false,
+    onLoopChange,
   }: Props = $props();
 
   let stage = $state<HTMLDivElement | null>(null);
@@ -71,6 +74,7 @@
   let volume = $state(1);
   let muted = $state(false);
   let playbackRate = $state(1);
+  // svelte-ignore state_referenced_locally — compact is intentionally captured as initial value
   let commentsEnabled = $state(compact || getBool('comment.default_enabled'));
   let commentOpacity = $state(getNum('comment.default_opacity'));
   let abLoop = $state<{ in: number | null; out: number | null; enabled: boolean }>({
@@ -173,7 +177,7 @@
     if (Hls.isSupported()) {
       disableSubtleCryptoOnce();
       hls = new Hls({
-        enableWorker: false,
+        enableWorker: true,
         debug: false,
         loader: TauriHlsLoader,
         enableSoftwareAES: true,
@@ -185,16 +189,11 @@
         highBufferWatchdogPeriod: 3,
         nudgeMaxRetry: 8,
         backBufferLength: 30,
-        // 画面サイズで画質を絞らない（Linux/HiDPI で誤縮退しがち）
         capLevelToPlayerSize: false,
-        // 初期レベル: マニフェスト解析時に最高画質へロックする。
-        // -1 のままだと帯域推定で低画質スタートになり、最初の数秒の
-        // 印象画質が落ちる。startLevel もマニフェスト後にロックする。
         startLevel: -1,
-        // 既定推定帯域を上げる: niconico の上位画質は 5-10Mbps 出るので
-        // 5Mbps 推定だと初手で 720p が選ばれてからアップグレードする
-        // 挙動になる。10Mbps にして初手から 1080p を取りにいく。
         abrEwmaDefaultEstimate: 10_000_000,
+        // 最初のフラグメントを先行取得して初動遅延を短縮
+        startFragPrefetch: true,
         manifestLoadingMaxRetry: 6,
         manifestLoadingRetryDelay: 500,
         manifestLoadingMaxRetryTimeout: 64_000,
@@ -926,7 +925,8 @@
         onToggleAb={toggleAbLoop}
         onClearAb={clearAb}
         onToggleLoop={() => {
-          loop = !loop;
+          const next = !loop;
+          onLoopChange?.(next);
         }}
         onFullscreen={toggleFullscreen}
         onQuality={setQuality}

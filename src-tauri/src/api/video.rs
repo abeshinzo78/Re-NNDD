@@ -46,13 +46,43 @@ fn meta_regex() -> &'static Regex {
 }
 
 fn html_unescape(s: &str) -> String {
-    // The watch page only uses these five entities inside the meta content.
-    s.replace("&quot;", "\"")
+    let intermediate = s
+        .replace("&quot;", "\"")
         .replace("&apos;", "'")
         .replace("&#39;", "'")
         .replace("&lt;", "<")
         .replace("&gt;", ">")
-        .replace("&amp;", "&")
+        .replace("&amp;", "&");
+    // Decode numeric character references: &#NN; (decimal) and &#xNN; (hex)
+    fn numref_regex() -> &'static Regex {
+        static RE: OnceLock<Regex> = OnceLock::new();
+        RE.get_or_init(|| Regex::new(r"&#(x?[0-9a-fA-F]+);").unwrap())
+    }
+    let re = numref_regex();
+    let mut result = String::with_capacity(intermediate.len());
+    let mut last = 0;
+    for cap in re.captures_iter(&intermediate) {
+        let m = cap.get(0).unwrap();
+        let num_str = cap.get(1).unwrap().as_str();
+        let code_point = if let Some(hex) = num_str.strip_prefix('x').or_else(|| num_str.strip_prefix('X')) {
+            u32::from_str_radix(hex, 16).ok()
+        } else {
+            num_str.parse::<u32>().ok()
+        };
+        result.push_str(&intermediate[last..m.start()]);
+        if let Some(cp) = code_point {
+            if let Some(ch) = char::from_u32(cp) {
+                result.push(ch);
+            } else {
+                result.push_str(m.as_str());
+            }
+        } else {
+            result.push_str(m.as_str());
+        }
+        last = m.end();
+    }
+    result.push_str(&intermediate[last..]);
+    result
 }
 
 fn random_action_track_id() -> String {
@@ -393,7 +423,7 @@ fn urlencoding_simple(s: &str) -> String {
 }
 
 fn is_valid_video_id(id: &str) -> bool {
-    !id.is_empty() && id.len() <= 32 && id.chars().all(|c| c.is_ascii_alphanumeric())
+    !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
 /// Public for unit-testability — extracts the `server-response` JSON and

@@ -106,6 +106,8 @@ pub struct LibraryVideoRow {
     pub last_played_at: Option<i64>,
     /// Tags attached to this video (all sources).
     pub tags: Vec<String>,
+    #[serde(default)]
+    pub local_thumbnail_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -279,6 +281,7 @@ pub fn query_videos(conn: &Connection, q: &LibraryQuery) -> Result<QueryResult, 
                 play_count: row.get::<_, Option<i64>>(16)?.unwrap_or(0),
                 last_played_at: row.get(17)?,
                 tags: Vec::new(),
+                local_thumbnail_path: None,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;

@@ -241,7 +241,7 @@
       <p class="muted">該当なし</p>
     {:else}
       <ul class="results">
-        {#each displayed.data as hit (hit.contentId ?? Math.random())}
+        {#each displayed.data as hit, i (hit.contentId ?? i)}
           <SearchHitCard {hit} onClick={rememberOnNavigate} />
         {/each}
       </ul>

@@ -75,15 +75,16 @@
     localSrc = null;
     localAudioSrc = null;
     comments = [];
-    // 設定をロードしてからループ初期値を反映
-    await loadSettings();
-    loop = getBool('playback.always_loop');
 
     try {
-      const result = await prepareLocalPlayback(id);
+      // 設定と再生情報を並列取得
+      const [, result] = await Promise.all([
+        loadSettings(),
+        prepareLocalPlayback(id),
+      ]);
+      loop = getBool('playback.always_loop');
       if (loadingFor !== id) return;
       if (!result) {
-        // ローカルに無い → エラー表示で止める。オンライン視聴は別ルート (/video/[id])。
         error = `${id} はライブラリに無い、または video.mp4 が見つかりません。`;
         pending = false;
         return;
@@ -249,7 +250,9 @@
   beforeNavigate((nav) => {
     if (!getBool('pip.auto_navigate')) return;
     const toPath = nav.to?.url.pathname;
-    if (!toPath || toPath !== backHref) return;
+    const fromPath = nav.from?.url.pathname;
+    if (!toPath || toPath === fromPath) return;
+    if (/^\/video\//.test(toPath) || /^\/library\//.test(toPath)) return;
     openPipForCurrentVideo();
   });
 
@@ -353,6 +356,7 @@
             onTime={handleTimeUpdate}
             resumePosition={getResumePosition(lp.videoId)}
             {loop}
+            onLoopChange={(v) => (loop = v)}
             onTogglePip={togglePip}
             pipActive={false}
           />

@@ -540,6 +540,9 @@ pub async fn fetch_user_videos(
     sort_order: String,
     store: State<'_, Arc<SessionStore>>,
 ) -> Result<UserVideosResponse> {
+    if owner_id.is_empty() || owner_id.len() > 64 || !owner_id.chars().all(|c| c.is_ascii_alphanumeric()) {
+        return Err(AppError::Other(format!("invalid owner_id: {owner_id:?}")));
+    }
     let client = reqwest::Client::builder()
         .user_agent(
             "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 \
@@ -788,7 +791,8 @@ pub async fn start_download(
             }
             Err(e) => {
                 let msg = e.to_string();
-                if msg == "download canceled" {
+                let was_canceled = matches!(e, crate::error::ApiError::DownloadCanceled);
+                if was_canceled {
                     let _ = tokio::fs::remove_dir_all(app_data_dir.join("videos").join(&video_id))
                         .await;
                 }
@@ -854,7 +858,7 @@ async fn run_one_download(
             .map_err(|e| ApiError::Downloader(format!("queue lookup failed: {e}")))?
             .is_none()
         {
-            return Err(ApiError::Downloader("download canceled".into()));
+            return Err(ApiError::DownloadCanceled);
         }
     }
 
@@ -1016,7 +1020,7 @@ async fn run_one_download(
             .map_err(|e| ApiError::Downloader(format!("queue lookup failed: {e}")))?
             .is_none()
         {
-            return Err(ApiError::Downloader("download canceled".into()));
+            return Err(ApiError::DownloadCanceled);
         }
         videos::ingest_downloaded(
             &mut guard,
@@ -1088,7 +1092,7 @@ pub async fn cleanup_storage(app: tauri::AppHandle) -> Result<u64> {
         return Ok(0);
     }
 
-    let keep = ["video.mp4", "thumbnail.jpg", "description.txt"];
+    let keep = ["video.mp4", "thumbnail.jpg", "description.txt", ".cookies.txt"];
     let mut total_bytes: u64 = 0;
     let mut entries = tokio::fs::read_dir(&videos_root)
         .await
@@ -1174,15 +1178,6 @@ pub fn local_audio_url(video_id: String, server: State<'_, LocalServer>) -> Resu
     validate_video_id(&video_id)?;
     Ok(format!(
         "http://127.0.0.1:{}/v/{}/audio.mp4",
-        server.port, video_id
-    ))
-}
-
-#[tauri::command]
-pub fn local_thumbnail_url(video_id: String, server: State<'_, LocalServer>) -> Result<String> {
-    validate_video_id(&video_id)?;
-    Ok(format!(
-        "http://127.0.0.1:{}/v/{}/thumbnail.jpg",
         server.port, video_id
     ))
 }
@@ -1620,9 +1615,21 @@ pub async fn prepare_local_playback(
 pub async fn query_library_videos(
     q: LibraryQuery,
     library: State<'_, Arc<LibraryHandle>>,
+    app: tauri::AppHandle,
 ) -> Result<QueryResult> {
+    use tauri::Manager;
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| AppError::Other(format!("app_data_dir: {e}")))?;
     let conn = library.lock().await;
-    let result = query::query_videos(&conn, &q).map_err(AppError::from)?;
+    let mut result = query::query_videos(&conn, &q).map_err(AppError::from)?;
+    for item in &mut result.items {
+        let thumb = app_data_dir.join("videos").join(&item.id).join("thumbnail.jpg");
+        if thumb.exists() {
+            item.local_thumbnail_path = Some(thumb.to_string_lossy().into_owned());
+        }
+    }
     Ok(result)
 }
 

@@ -84,30 +84,32 @@
       <ul class="mylist-list">
         {#each mylists as m (m.id)}
           <li>
-            <button
-              type="button"
-              class="ml"
-              class:active={m.id === selectedId}
-              onclick={() => (selectedId = m.id)}
-            >
-              {#if editingId === m.id}
-                <input
-                  class="rename"
-                  type="text"
-                  bind:value={editingName}
-                  onclick={(e) => e.stopPropagation()}
-                  onblur={commitRename}
-                  onkeydown={(e) => {
-                    if (e.key === 'Enter') commitRename();
-                    if (e.key === 'Escape') cancelRename();
-                  }}
-                />
-              {:else}
-                <span class="ml-name">{m.name}</span>
-                {#if m.builtin}<span class="badge">標準</span>{/if}
-                <span class="ml-count">{m.items.length}</span>
-              {/if}
-            </button>
+          <div
+            role="button"
+            tabindex="0"
+            class="ml"
+            class:active={m.id === selectedId}
+            onclick={() => (selectedId = m.id)}
+            onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectedId = m.id; } }}
+          >
+            {#if editingId === m.id}
+              <input
+                class="rename"
+                type="text"
+                bind:value={editingName}
+                onclick={(e) => e.stopPropagation()}
+                onblur={commitRename}
+                onkeydown={(e) => {
+                  if (e.key === 'Enter') commitRename();
+                  if (e.key === 'Escape') cancelRename();
+                }}
+              />
+            {:else}
+              <span class="ml-name">{m.name}</span>
+              {#if m.builtin}<span class="badge">標準</span>{/if}
+              <span class="ml-count">{m.items.length}</span>
+            {/if}
+          </div>
           </li>
         {/each}
       </ul>

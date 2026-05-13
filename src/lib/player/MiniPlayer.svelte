@@ -315,6 +315,7 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="mini"
+    class:hidden={onSourcePage}
     class:dragging={isDragging}
     class:resizing={isResizing}
     bind:this={container}
@@ -478,6 +479,10 @@
     animation: mini-in 0.22s cubic-bezier(0.22, 1, 0.36, 1);
     will-change: left, top, width, height;
     user-select: none;
+  }
+  .mini.hidden {
+    visibility: hidden;
+    pointer-events: none;
   }
   .mini.dragging,
   .mini.resizing {

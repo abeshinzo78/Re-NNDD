@@ -94,7 +94,6 @@ pub fn run() {
             commands::cleanup_storage,
             commands::local_video_url,
             commands::local_audio_url,
-            commands::local_thumbnail_url,
             commands::get_settings,
             commands::set_setting,
             commands::delete_setting,

@@ -97,7 +97,7 @@ pub fn list_all(conn: &Connection) -> Result<Vec<DownloadQueueItem>, LibraryErro
 pub fn list_pending(conn: &Connection) -> Result<Vec<DownloadQueueItem>, LibraryError> {
     let mut stmt = conn.prepare(&format!(
         "SELECT {SELECT_COLS} FROM download_queue \
-         WHERE status IN ('pending', 'paused') \
+         WHERE status = 'pending' \
          ORDER BY COALESCE(scheduled_at, 0) ASC, id ASC"
     ))?;
     let rows = stmt

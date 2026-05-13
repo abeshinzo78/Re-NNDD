@@ -316,6 +316,7 @@ export type LibraryVideoRow = {
   playCount: number;
   lastPlayedAt: number | null;
   tags: string[];
+  localThumbnailPath: string | null;
 };
 
 export type QueryResult = {
@@ -387,9 +388,6 @@ export async function localVideoUrl(videoId: string): Promise<string> {
 }
 export async function localAudioUrl(videoId: string): Promise<string> {
   return invoke<string>('local_audio_url', { videoId });
-}
-export async function localThumbnailUrl(videoId: string): Promise<string> {
-  return invoke<string>('local_thumbnail_url', { videoId });
 }
 
 /** ライブラリから 1 動画分を完全削除（DB + ディスク両方）。 */

@@ -230,7 +230,7 @@ where
                     let _ = stdout_handle.await;
                     let _ = stderr_handle.await;
                     cleanup_cookies(cookies_file.as_ref()).await;
-                    return Err(ApiError::Downloader("download canceled".into()));
+                    return Err(ApiError::DownloadCanceled);
                 }
             }
         }

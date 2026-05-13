@@ -31,9 +31,8 @@
           downloadedAt: r.downloadedAt ?? null,
           resolution: r.resolution ?? null,
           thumbnailUrl: r.thumbnailUrl ?? null,
-          localThumbnailPath: null,
-          localVideoPath: r.videoPath ?? null,
-          tags: r.tags,
+          localThumbnailPath: r.localThumbnailPath ?? null,
+          localVideoPath: r.videoPath ?? null,          tags: r.tags,
         }));
       } else {
         items = await listLibraryVideos();

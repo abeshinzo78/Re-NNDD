@@ -55,6 +55,9 @@ pub enum ApiError {
 
     #[error("downloader error: {0}")]
     Downloader(String),
+
+    #[error("download canceled")]
+    DownloadCanceled,
 }
 
 #[derive(Debug, Error)]

@@ -89,9 +89,15 @@ export function bindShortcuts(target: HTMLElement | Window, a: PlayerActions): (
           a.togglePip();
         }
         return;
-      case 'Escape':
-        a.toggleFullscreen();
+      case 'Escape': {
+        const d = document as Document & {
+          fullscreenElement?: Element | null;
+          webkitFullscreenElement?: Element | null;
+        };
+        const inFs = d.fullscreenElement ?? d.webkitFullscreenElement;
+        if (inFs) a.toggleFullscreen();
         return;
+      }
       default:
         if (/^[0-9]$/.test(event.key)) {
           a.jumpToFraction(Number(event.key) / 10);

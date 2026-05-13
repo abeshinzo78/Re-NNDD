@@ -65,8 +65,8 @@ export const SETTING_DEFS = [
   },
   {
     key: 'pip.auto_navigate',
-    label: '戻った時に自動的に PiP にする',
-    description: '再生ページから戻る時に自動でミニプレイヤーを開始する',
+    label: 'ページ移動時に自動的に PiP にする',
+    description: '再生ページから別のページに移動する時に自動でミニプレイヤーを開始する',
     section: 'playback',
     default: false,
     kind: 'bool',
