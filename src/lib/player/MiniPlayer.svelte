@@ -22,6 +22,7 @@
     clampWidth,
     type MiniGeometry,
   } from './miniPlayerStore.svelte';
+  import { getNum } from '$lib/stores/settings.svelte';
 
   type PlayerRef = {
     getVideo: () => HTMLVideoElement | null;
@@ -96,6 +97,81 @@
       }
     }
   }
+
+  // PiP 起動時の「音声引き継ぎ」フック。
+  // ページ側 Player は鳴り続けたまま、mini は無音 (volume=0) でロードしている。
+  // 内部 Player が playing になった瞬間にこれが呼ばれる。
+  //
+  // 1. ページが進んだぶんのズレを埋めるため handoffTime までシーク
+  //    (ロード時間ぶんの「音声巻き戻し」を防ぐ)
+  // 2. ミニ側の音量を設定値に戻す
+  // 3. miniPlayer.acquireAudio() でページ側にプレースホルダ切替を指示
+  //
+  // 音量の戻しは acquireAudio より「前」に行う。ページ側の Player が破棄され
+  // 音が消える瞬間に mini が既に鳴っている状態を作るため。
+  function handleReadyForAudio() {
+    if (!playerRef) return;
+    const targetTime = miniPlayer.handoffTime;
+    const v = playerRef.getVideo();
+    if (targetTime > 0) {
+      const here = playerRef.getCurrentTime();
+      // 前方にズレている (ページが先行している) 時だけシーク。
+      // 後方は通常起きないが、稀に mini が先行してしまった場合は触らない。
+      if (targetTime > here + 0.3) {
+        playerRef.seek(targetTime);
+      }
+    }
+    if (v) {
+      const vol = getNum('playback.default_volume');
+      v.volume = Number.isFinite(vol) ? Math.max(0, Math.min(1, vol)) : 1;
+    }
+    // 引き継ぎ完了直前にユーザがソース側で停止していた場合、mini も停止して
+    // 引き継ぐ。これでユーザの「停止したい」意図を尊重する。
+    if (miniPlayer.sourcePaused) {
+      try {
+        playerRef.pause();
+      } catch {
+        /* ignore */
+      }
+    }
+    miniPlayer.acquireAudio();
+  }
+
+  // 何らかの理由で playing が来ない時 (HLS のエラー継続など) も
+  // 永遠にページ側 Player を残し続けるのは UX 上良くないので、
+  // 一定時間で安全に判定する保険。
+  //
+  // ただし無条件に acquireAudio() してしまうと、mini が実際には再生に
+  // 到達していないケース (HLS デコード失敗 / マニフェスト 403 連発など) で
+  // 「ページ側 Player を破棄 → mini も鳴らない」= 完全無音になってしまう。
+  // そこで mini の <video> が真に進行しているかを確認し、
+  //  - 進行している (= playing イベントを取りこぼしただけ): 通常の引き継ぎへ
+  //  - 進行していない: 引き継ぎを諦め、mini を閉じてページ側に音声を残す
+  // ようにする。
+  let handoffFallbackTimer: ReturnType<typeof setTimeout> | null = null;
+  $effect(() => {
+    if (miniPlayer.active && miniPlayer.wasPlaying && !miniPlayer.audioOwned) {
+      if (handoffFallbackTimer) clearTimeout(handoffFallbackTimer);
+      handoffFallbackTimer = setTimeout(() => {
+        if (miniPlayer.audioOwned) return;
+        const v = playerRef?.getVideo();
+        const reallyPlaying =
+          !!v && !v.paused && !v.ended && v.readyState >= 2 && v.currentTime > 0;
+        if (reallyPlaying) {
+          // playing イベントを取りこぼした稀ケース。通常パスへ寄せる。
+          handleReadyForAudio();
+        } else {
+          // mini が起動できていない。ページ側の音声を維持するため mini を閉じる。
+          // (ユーザは再度 PiP ボタンを押せば再試行できる)
+          miniPlayer.close();
+        }
+      }, 8000);
+      return () => {
+        if (handoffFallbackTimer) clearTimeout(handoffFallbackTimer);
+        handoffFallbackTimer = null;
+      };
+    }
+  });
 
   // <video> の paused/duration を 100ms ポーリング (Player.svelte の内部
   // state を直接 bind できないため)。負荷は無視できる。
@@ -344,6 +420,8 @@
             resumePosition={miniPlayer.resumePosition}
             loop={miniPlayer.loop}
             compact={true}
+            initialMuted={miniPlayer.wasPlaying}
+            onReadyForAudio={handleReadyForAudio}
           />
         {:else if localSrcObj}
           <Player
@@ -356,6 +434,8 @@
             resumePosition={miniPlayer.resumePosition}
             loop={miniPlayer.loop}
             compact={true}
+            initialMuted={miniPlayer.wasPlaying}
+            onReadyForAudio={handleReadyForAudio}
           />
         {/if}
       {/key}

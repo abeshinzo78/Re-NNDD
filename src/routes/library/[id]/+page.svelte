@@ -161,6 +161,16 @@
     if (local && time > 0) {
       saveResumePosition(local.videoId, time);
     }
+    // PiP 音声引き継ぎ中はページ側 currentTime をストアに書く。
+    // mini が引き継ぎ瞬間にここへシークすることで音声の巻き戻しを防ぐ。
+    if (
+      local &&
+      miniPlayer.active &&
+      !miniPlayer.audioOwned &&
+      miniPlayer.source?.videoId === local.videoId
+    ) {
+      miniPlayer.setHandoffTime(time);
+    }
   }
 
   function startDrag(e: MouseEvent) {
@@ -195,9 +205,13 @@
   }
 
   function openPipForCurrentVideo(): boolean {
-    if (!local || !localSrc || pipActiveForThis) return false;
+    if (!local || !localSrc) return false;
+    // 同じ動画で既に PiP 起動済み (音声引き継ぎ中も含む) なら何もしない。
+    if (miniPlayer.active && miniPlayer.source?.videoId === local.videoId) return false;
     const vid = playerRef?.getVideo();
     const t = vid?.currentTime ?? currentTime ?? 0;
+    // 起動時点で再生中だった場合のみ mini の無音ロード→引き継ぎフローを使う。
+    const wasPlaying = vid != null && !vid.paused && !vid.ended;
     // パラ遷移で local が書き換わっても影響を受けないようスナップ。
     const snapVideoId = local.videoId;
     const snapTitle = local.title;
@@ -223,25 +237,44 @@
       resumePosition: t,
       expandHref: snapHref,
       loop,
+      wasPlaying,
     });
     return true;
   }
 
   function togglePip() {
-    if (pipActiveForThis) {
+    // 音声引き継ぎ中も同じ動画なら「PiP 化済み」扱いで閉じる。
+    if (miniPlayer.active && miniPlayer.source?.videoId === (local?.videoId ?? '')) {
       miniPlayer.close();
       return;
     }
     openPipForCurrentVideo();
   }
 
+  // 音声引き継ぎが完了するまでプレースホルダへ切り替えない (音切れ防止)。
   let pipActiveForThis = $derived(
-    miniPlayer.active && miniPlayer.source?.videoId === (local?.videoId ?? ''),
+    miniPlayer.active &&
+      miniPlayer.audioOwned &&
+      miniPlayer.source?.videoId === (local?.videoId ?? ''),
   );
   $effect(() => {
     if (pipActiveForThis && local) {
       miniPlayer.updateComments(local.videoId, visibleComments);
     }
+  });
+
+  // 音声引き継ぎ中、ソース側 Player の paused 状態をストアへ反映する。
+  // 引き継ぎ完了前にユーザが停止した意図を mini へ引き継ぐため。
+  $effect(() => {
+    if (!local) return;
+    if (!miniPlayer.active) return;
+    if (miniPlayer.audioOwned) return;
+    if (miniPlayer.source?.videoId !== local.videoId) return;
+    const id = setInterval(() => {
+      const v = playerRef?.getVideo();
+      if (v) miniPlayer.setSourcePaused(v.paused || v.ended);
+    }, 200);
+    return () => clearInterval(id);
   });
 
   beforeNavigate((nav) => {
