@@ -263,6 +263,20 @@
     }
   });
 
+  // 音声引き継ぎ中、ソース側 Player の paused 状態をストアへ反映する。
+  // 引き継ぎ完了前にユーザが停止した意図を mini へ引き継ぐため。
+  $effect(() => {
+    if (!local) return;
+    if (!miniPlayer.active) return;
+    if (miniPlayer.audioOwned) return;
+    if (miniPlayer.source?.videoId !== local.videoId) return;
+    const id = setInterval(() => {
+      const v = playerRef?.getVideo();
+      if (v) miniPlayer.setSourcePaused(v.paused || v.ended);
+    }, 200);
+    return () => clearInterval(id);
+  });
+
   beforeNavigate((nav) => {
     if (!getBool('pip.auto_navigate')) return;
     const toPath = nav.to?.url.pathname;

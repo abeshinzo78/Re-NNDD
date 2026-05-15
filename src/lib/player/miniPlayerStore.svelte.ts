@@ -129,6 +129,11 @@ class MiniPlayerStore {
   /** 引き継ぎ用のソースページ側 currentTime。ページが再生中の間継続的に更新し、
    *  mini が引き継ぐ瞬間にこの値へシークすれば「ロード時間ぶんの巻き戻し」音声を防げる。 */
   handoffTime = $state(0);
+  /** 引き継ぎ中のソースページ側 Player の最新 paused 状態。
+   *  ユーザが PiP 起動後、mini の引き継ぎ完了前にソース側で停止した場合、mini も
+   *  停止状態で引き継いで「停止したい」意図を尊重する。引き継ぎ完了 (audioOwned)
+   *  後は更新を停止する。 */
+  sourcePaused = $state(false);
   /** 初期化済みか (geometry を 1 度 localStorage からロードしたか) */
   private hydrated = false;
   /** close() 時に退避した復帰先情報。ページ側が consume して PiP 前の位置に復元する。 */
@@ -162,6 +167,7 @@ class MiniPlayerStore {
     this.loop = args.loop ?? false;
     this.wasPlaying = !!args.wasPlaying;
     this.handoffTime = this.resumePosition;
+    this.sourcePaused = false;
     // 再生中だった場合のみ「mini ロード完了まで音声引き継ぎ保留」。
     // 一時停止中なら音声が無いので保留する意味が無く、即時にプレースホルダへ。
     this.audioOwned = !args.wasPlaying;
@@ -200,6 +206,12 @@ class MiniPlayerStore {
     this.handoffTime = t;
   }
 
+  /** ソースページ側 Player の最新 paused 状態を書き込む。引き継ぎ前のみ有効。 */
+  setSourcePaused(paused: boolean) {
+    if (this.audioOwned) return;
+    this.sourcePaused = !!paused;
+  }
+
   /** ページ側が PiP からの復帰位置を取得する。呼び出しで消費される。 */
   consumeReturnPosition(videoId: string): number {
     if (this._returnVideoId === videoId && this._returnPosition > 0) {
@@ -228,6 +240,7 @@ class MiniPlayerStore {
     this.audioOwned = false;
     this.wasPlaying = false;
     this.handoffTime = 0;
+    this.sourcePaused = false;
   }
 }
 

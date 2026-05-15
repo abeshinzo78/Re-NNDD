@@ -317,6 +317,22 @@
     }
   });
 
+  // 音声引き継ぎ中、ソース側 Player の paused 状態をストアへ反映する。
+  // ユーザが引き継ぎ完了前に停止した場合、mini はその意図を引き継ぐ
+  // (handleReadyForAudio で pause() してから acquireAudio する)。
+  // timeupdate は再生中にしか飛ばないので、独立して 200ms ポーリングする。
+  $effect(() => {
+    if (!payload) return;
+    if (!miniPlayer.active) return;
+    if (miniPlayer.audioOwned) return;
+    if (miniPlayer.source?.videoId !== payload.videoId) return;
+    const id = setInterval(() => {
+      const v = playerRef?.getVideo();
+      if (v) miniPlayer.setSourcePaused(v.paused || v.ended);
+    }, 200);
+    return () => clearInterval(id);
+  });
+
   beforeNavigate((nav) => {
     if (!getBool('pip.auto_navigate')) return;
     const toPath = nav.to?.url.pathname;
