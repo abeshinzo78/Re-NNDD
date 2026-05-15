@@ -64,7 +64,7 @@ cbc = "0.1"
 # 走らずガビガビになる。実 HTTP + Range で配信すると WebKit の HTTP fetcher
 # 経由で GStreamer がちゃんと seek できる。
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
-tower-http = { version = "0.6", features = ["fs"] }
+tower-http = { version = "0.6", features = ["fs", "cors"] }
 tower = "0.5"
 
 [dev-dependencies]

@@ -15,7 +15,8 @@ use crate::api::comment::{Comment, CommentApi, ThreadsClient};
 use crate::api::search::{SearchApi, SnapshotSearchClient};
 use crate::api::types::{SearchQuery, SearchResponse};
 use crate::api::video::{
-    quality_candidates, NiconicoWatchClient, NvCommentSetup, WatchApi, WatchOwner, WatchVideoMeta,
+    quality_candidates, NiconicoWatchClient, NvCommentSetup, SeriesInfo, WatchApi, WatchOwner,
+    WatchVideoMeta,
 };
 use crate::error::{AppError, Result};
 use crate::library::db::LibraryHandle;
@@ -169,6 +170,7 @@ pub struct PickedQuality {
 pub struct PlaybackPayload {
     pub video: WatchVideoMeta,
     pub owner: Option<WatchOwner>,
+    pub series: Option<SeriesInfo>,
     pub hls_url: String,
     pub picked_quality: PickedQuality,
     pub all_qualities: Vec<PickedQuality>,
@@ -241,6 +243,7 @@ pub async fn prepare_playback(
     Ok(PlaybackPayload {
         video: page.video,
         owner: page.owner,
+        series: page.series,
         hls_url: hls.content_url,
         picked_quality: PickedQuality {
             video_track: picked.video_track,
@@ -560,8 +563,9 @@ pub async fn fetch_user_videos(
             owner_id, page, page_size, sort_key, sort_order
         )
     } else {
+        // v3 endpoint returns items wrapped in { essential: …, series: … }
         format!(
-            "https://nvapi.nicovideo.jp/v2/users/{}/videos?page={}&pageSize={}&sortKey={}&sortOrder={}",
+            "https://nvapi.nicovideo.jp/v3/users/{}/videos?page={}&pageSize={}&sortKey={}&sortOrder={}&sensitiveContents=mask",
             owner_id, page, page_size, sort_key, sort_order
         )
     };
@@ -677,6 +681,117 @@ pub async fn fetch_user_videos(
         total_count,
         items,
         debug_raw: Some(body.chars().take(2000).collect()),
+    })
+}
+
+#[tauri::command]
+pub async fn fetch_series_videos(
+    series_id: String,
+    page: u32,
+    page_size: u32,
+    store: State<'_, Arc<SessionStore>>,
+) -> Result<UserVideosResponse> {
+    let client = reqwest::Client::builder()
+        .user_agent(
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 \
+             (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+        )
+        .build()
+        .map_err(crate::error::ApiError::from)?;
+
+    let url = format!(
+        "https://nvapi.nicovideo.jp/v1/series/{}/videos?page={}&pageSize={}&sortKey=createdAt&sortOrder=desc",
+        series_id, page, page_size
+    );
+
+    let mut req = client
+        .get(&url)
+        .header("X-Frontend-Id", "6")
+        .header("X-Frontend-Version", "0")
+        .header(header::REFERER, "https://www.nicovideo.jp/")
+        .header(header::ACCEPT, "application/json");
+
+    if let Some(cookie) = store.cookie_header() {
+        req = req.header(header::COOKIE, cookie);
+    }
+
+    let resp = req.send().await.map_err(crate::error::ApiError::from)?;
+    let status = resp.status();
+    let body = resp.text().await.map_err(crate::error::ApiError::from)?;
+
+    if !status.is_success() {
+        let preview: String = body.chars().take(200).collect();
+        tracing::warn!(%url, %status, body = %preview, "series videos API error");
+        return Err(AppError::Other(format!(
+            "シリーズ動画 API エラー ({status}): {preview}"
+        )));
+    }
+
+    let json: serde_json::Value =
+        serde_json::from_str(&body).map_err(crate::error::ApiError::from)?;
+
+    let total_count = json["data"]["totalCount"].as_i64().unwrap_or(0);
+
+    let items_val = json["data"]["items"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+
+    let mut items = Vec::with_capacity(items_val.len());
+    for raw_item in items_val {
+        let v = if raw_item["essential"].is_object() {
+            &raw_item["essential"]
+        } else {
+            &raw_item
+        };
+        let id = v["id"]
+            .as_str()
+            .or_else(|| v["contentId"].as_str())
+            .unwrap_or("")
+            .to_string();
+        if id.is_empty() {
+            continue;
+        }
+        let thumb = v["thumbnail"]["url"]
+            .as_str()
+            .or_else(|| v["thumbnailUrl"].as_str())
+            .map(String::from);
+        let dur = v["duration"]
+            .as_i64()
+            .or_else(|| v["lengthSeconds"].as_i64());
+        let views = v["count"]["view"]
+            .as_i64()
+            .or_else(|| v["viewCounter"].as_i64());
+        let coms = v["count"]["comment"]
+            .as_i64()
+            .or_else(|| v["commentCounter"].as_i64());
+        let mys = v["count"]["mylist"]
+            .as_i64()
+            .or_else(|| v["mylistCounter"].as_i64());
+        let start = v["registeredAt"]
+            .as_str()
+            .or_else(|| v["startTime"].as_str())
+            .map(String::from);
+        let uid = v["owner"]["id"].as_i64().or_else(|| v["userId"].as_i64());
+        let title = v["title"].as_str().unwrap_or("(無題)").to_string();
+        items.push(UserVideoItem {
+            content_id: id,
+            title,
+            thumbnail_url: thumb,
+            length_seconds: dur,
+            view_counter: views,
+            comment_counter: coms,
+            mylist_counter: mys,
+            start_time: start,
+            user_id: uid,
+            channel_id: None,
+        });
+    }
+
+    Ok(UserVideosResponse {
+        total_count,
+        items,
+        debug_raw: None,
     })
 }
 
@@ -1287,6 +1402,37 @@ pub async fn remux_local_video(video_id: String, app: tauri::AppHandle) -> Resul
     }
 }
 
+#[tauri::command]
+pub async fn extract_video_frame(
+    video_id: String,
+    seek_sec: f64,
+    app: tauri::AppHandle,
+) -> Result<Option<String>> {
+    use tauri::Manager;
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| AppError::Other(format!("app_data_dir: {e}")))?;
+    let dir = app_data_dir.join("videos").join(&video_id);
+    let video_path = dir.join("video.mp4");
+    if !video_path.exists() {
+        return Ok(None);
+    }
+    let png = crate::downloader::ffmpeg::extract_frame(Some(&app), &video_path, seek_sec).await;
+    Ok(png.map(|b| BASE64.encode(b)))
+}
+
+#[tauri::command]
+pub async fn extract_online_frame(
+    hls_url: String,
+    seek_sec: f64,
+    app: tauri::AppHandle,
+) -> Result<Option<String>> {
+    let png =
+        crate::downloader::ffmpeg::extract_frame_from_url(Some(&app), &hls_url, seek_sec).await;
+    Ok(png.map(|b| BASE64.encode(b)))
+}
+
 // =================== ライブラリ閲覧 ===================
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1665,6 +1811,328 @@ pub async fn list_library_resolutions(
     let conn = library.lock().await;
     let resolutions = query::list_resolutions(&conn).map_err(AppError::from)?;
     Ok(resolutions)
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommentSearchHitDto {
+    pub video_id: String,
+    pub video_title: String,
+    pub comment_no: i64,
+    pub vpos_ms: i64,
+    pub content: String,
+    pub user_hash: Option<String>,
+    pub posted_at: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommentSearchResultDto {
+    pub items: Vec<CommentSearchHitDto>,
+    pub total_count: i64,
+    pub offset: u32,
+    pub limit: u32,
+}
+
+#[tauri::command]
+pub async fn search_library_comments(
+    query: String,
+    offset: Option<u32>,
+    limit: Option<u32>,
+    library: State<'_, Arc<LibraryHandle>>,
+) -> Result<CommentSearchResultDto> {
+    if query.chars().count() < 3 {
+        return Err(AppError::Other(
+            "コメント検索は3文字以上のクエリが必要です".into(),
+        ));
+    }
+    let conn = library.lock().await;
+    let result = query::search_comments(&conn, &query, offset.unwrap_or(0), limit.unwrap_or(50))
+        .map_err(AppError::from)?;
+    Ok(CommentSearchResultDto {
+        items: result
+            .items
+            .into_iter()
+            .map(|h| CommentSearchHitDto {
+                video_id: h.video_id,
+                video_title: h.video_title,
+                comment_no: h.comment_no,
+                vpos_ms: h.vpos_ms,
+                content: h.content,
+                user_hash: h.user_hash,
+                posted_at: h.posted_at,
+            })
+            .collect(),
+        total_count: result.total_count,
+        offset: result.offset,
+        limit: result.limit,
+    })
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UploaderInfoDto {
+    pub uploader_id: String,
+    pub uploader_name: Option<String>,
+    pub video_count: i64,
+    pub total_duration_sec: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaylistDto {
+    pub id: i64,
+    pub name: String,
+    pub parent_id: Option<i64>,
+    pub source: String,
+    pub source_official_id: Option<String>,
+    pub imported_at: Option<i64>,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub item_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaylistItemDto {
+    pub playlist_id: i64,
+    pub video_id: String,
+    pub position: i64,
+    pub added_at: i64,
+    pub note: Option<String>,
+    pub title: Option<String>,
+    pub thumbnail_url: Option<String>,
+    pub duration_sec: Option<i64>,
+}
+
+#[tauri::command]
+pub async fn list_library_uploaders(
+    limit: Option<u32>,
+    library: State<'_, Arc<LibraryHandle>>,
+) -> Result<Vec<UploaderInfoDto>> {
+    let conn = library.lock().await;
+    let uploaders = query::list_uploaders(&conn, limit.unwrap_or(50)).map_err(AppError::from)?;
+    Ok(uploaders
+        .into_iter()
+        .map(|u| UploaderInfoDto {
+            uploader_id: u.uploader_id,
+            uploader_name: u.uploader_name,
+            video_count: u.video_count,
+            total_duration_sec: u.total_duration_sec,
+        })
+        .collect())
+}
+
+// =================== プレイリスト CRUD ===================
+
+#[tauri::command]
+pub async fn list_playlists(library: State<'_, Arc<LibraryHandle>>) -> Result<Vec<PlaylistDto>> {
+    let conn = library.lock().await;
+    let playlists = crate::library::playlists::list_playlists(&conn).map_err(AppError::from)?;
+    Ok(playlists
+        .into_iter()
+        .map(|p| PlaylistDto {
+            id: p.id,
+            name: p.name,
+            parent_id: p.parent_id,
+            source: p.source,
+            source_official_id: p.source_official_id,
+            imported_at: p.imported_at,
+            created_at: p.created_at,
+            updated_at: p.updated_at,
+            item_count: p.item_count,
+        })
+        .collect())
+}
+
+#[tauri::command]
+pub async fn create_playlist(
+    name: String,
+    parent_id: Option<i64>,
+    library: State<'_, Arc<LibraryHandle>>,
+) -> Result<PlaylistDto> {
+    let conn = library.lock().await;
+    let playlist = crate::library::playlists::create_playlist(&conn, &name, parent_id)
+        .map_err(AppError::from)?;
+    Ok(PlaylistDto {
+        id: playlist.id,
+        name: playlist.name,
+        parent_id: playlist.parent_id,
+        source: playlist.source,
+        source_official_id: playlist.source_official_id,
+        imported_at: playlist.imported_at,
+        created_at: playlist.created_at,
+        updated_at: playlist.updated_at,
+        item_count: playlist.item_count,
+    })
+}
+
+#[tauri::command]
+pub async fn update_playlist(
+    id: i64,
+    name: String,
+    parent_id: Option<i64>,
+    library: State<'_, Arc<LibraryHandle>>,
+) -> Result<PlaylistDto> {
+    let conn = library.lock().await;
+    let playlist = crate::library::playlists::update_playlist(&conn, id, &name, parent_id)
+        .map_err(AppError::from)?;
+    Ok(PlaylistDto {
+        id: playlist.id,
+        name: playlist.name,
+        parent_id: playlist.parent_id,
+        source: playlist.source,
+        source_official_id: playlist.source_official_id,
+        imported_at: playlist.imported_at,
+        created_at: playlist.created_at,
+        updated_at: playlist.updated_at,
+        item_count: playlist.item_count,
+    })
+}
+
+#[tauri::command]
+pub async fn delete_playlist(id: i64, library: State<'_, Arc<LibraryHandle>>) -> Result<bool> {
+    let conn = library.lock().await;
+    crate::library::playlists::delete_playlist(&conn, id).map_err(AppError::from)
+}
+
+#[tauri::command]
+pub async fn list_playlist_items(
+    playlist_id: i64,
+    library: State<'_, Arc<LibraryHandle>>,
+) -> Result<Vec<PlaylistItemDto>> {
+    let conn = library.lock().await;
+    let items = crate::library::playlists::list_playlist_items(&conn, playlist_id)
+        .map_err(AppError::from)?;
+    Ok(items
+        .into_iter()
+        .map(|i| PlaylistItemDto {
+            playlist_id: i.playlist_id,
+            video_id: i.video_id,
+            position: i.position,
+            added_at: i.added_at,
+            note: i.note,
+            title: i.title,
+            thumbnail_url: i.thumbnail_url,
+            duration_sec: i.duration_sec,
+        })
+        .collect())
+}
+
+#[tauri::command]
+pub async fn add_playlist_item(
+    playlist_id: i64,
+    video_id: String,
+    position: Option<i64>,
+    note: Option<String>,
+    library: State<'_, Arc<LibraryHandle>>,
+) -> Result<PlaylistItemDto> {
+    let conn = library.lock().await;
+    let item = crate::library::playlists::add_playlist_item(
+        &conn,
+        playlist_id,
+        &video_id,
+        position,
+        note.as_deref(),
+    )
+    .map_err(AppError::from)?;
+    Ok(PlaylistItemDto {
+        playlist_id: item.playlist_id,
+        video_id: item.video_id,
+        position: item.position,
+        added_at: item.added_at,
+        note: item.note,
+        title: item.title,
+        thumbnail_url: item.thumbnail_url,
+        duration_sec: item.duration_sec,
+    })
+}
+
+#[tauri::command]
+pub async fn remove_playlist_item(
+    playlist_id: i64,
+    video_id: String,
+    library: State<'_, Arc<LibraryHandle>>,
+) -> Result<bool> {
+    let conn = library.lock().await;
+    crate::library::playlists::remove_playlist_item(&conn, playlist_id, &video_id)
+        .map_err(AppError::from)
+}
+
+// =================== 再生履歴 ===================
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayHistoryItemDto {
+    pub id: i64,
+    pub video_id: String,
+    pub played_at: i64,
+    pub duration_played_sec: f64,
+    pub position_at_close_sec: Option<f64>,
+    pub title: Option<String>,
+    pub thumbnail_url: Option<String>,
+    pub duration_sec: Option<i64>,
+}
+
+#[tauri::command]
+pub async fn record_playback(
+    video_id: String,
+    duration_played_sec: f64,
+    position_at_close_sec: Option<f64>,
+    library: State<'_, Arc<LibraryHandle>>,
+) -> Result<PlayHistoryItemDto> {
+    let conn = library.lock().await;
+    let item = crate::library::history::record_playback(
+        &conn,
+        &video_id,
+        duration_played_sec,
+        position_at_close_sec,
+    )
+    .map_err(AppError::from)?;
+    Ok(PlayHistoryItemDto {
+        id: item.id,
+        video_id: item.video_id,
+        played_at: item.played_at,
+        duration_played_sec: item.duration_played_sec,
+        position_at_close_sec: item.position_at_close_sec,
+        title: item.title,
+        thumbnail_url: item.thumbnail_url,
+        duration_sec: item.duration_sec,
+    })
+}
+
+#[tauri::command]
+pub async fn list_play_history(
+    offset: Option<u32>,
+    limit: Option<u32>,
+    library: State<'_, Arc<LibraryHandle>>,
+) -> Result<Vec<PlayHistoryItemDto>> {
+    let conn = library.lock().await;
+    let items =
+        crate::library::history::list_play_history(&conn, offset.unwrap_or(0), limit.unwrap_or(50))
+            .map_err(AppError::from)?;
+    Ok(items
+        .into_iter()
+        .map(|i| PlayHistoryItemDto {
+            id: i.id,
+            video_id: i.video_id,
+            played_at: i.played_at,
+            duration_played_sec: i.duration_played_sec,
+            position_at_close_sec: i.position_at_close_sec,
+            title: i.title,
+            thumbnail_url: i.thumbnail_url,
+            duration_sec: i.duration_sec,
+        })
+        .collect())
+}
+
+#[tauri::command]
+pub async fn delete_play_history_item(
+    id: i64,
+    library: State<'_, Arc<LibraryHandle>>,
+) -> Result<bool> {
+    let conn = library.lock().await;
+    crate::library::history::delete_play_history_item(&conn, id).map_err(AppError::from)
 }
 
 // =================== 設定 ===================

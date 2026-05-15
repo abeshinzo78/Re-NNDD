@@ -440,6 +440,8 @@
             bind:this={playerRef}
             hlsUrl={p.hlsUrl}
             comments={visibleComments}
+            videoTitle={p.video.title}
+            videoId={p.video.id}
             refreshHlsUrl={() => issueHlsUrl(p.videoId)}
             onTime={handleTimeUpdate}
             resumePosition={getResumePosition(p.videoId)}
@@ -506,6 +508,14 @@
               <span>{payload.owner.nickname ?? '不明'}</span>
             {/if}
             <span class="muted">({payload.owner.kind})</span>
+          </div>
+        {/if}
+        {#if payload.series}
+          <div class="row">
+            <span class="muted">シリーズ:</span>
+            <a href={`/series/${payload.series.id}`} class="owner-link">
+              {payload.series.title}
+            </a>
           </div>
         {/if}
         {#if payload.video.tags && payload.video.tags.length > 0}

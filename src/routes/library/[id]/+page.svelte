@@ -383,6 +383,8 @@
             localSrc={ls}
             localAudioSrc={las ?? undefined}
             comments={visibleComments}
+            videoTitle={lp.title}
+            videoId={lp.videoId}
             onTime={handleTimeUpdate}
             resumePosition={getResumePosition(lp.videoId)}
             {loop}

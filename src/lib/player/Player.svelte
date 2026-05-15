@@ -8,6 +8,7 @@
   import { disableSubtleCryptoOnce } from './disableSubtleCrypto';
   import { TauriHlsLoader } from './tauriHlsLoader';
   import type { PlayerComment } from './types';
+  import { extractOnlineFrame, extractVideoFrame } from '$lib/api';
   import { getBool, getNum } from '$lib/stores/settings.svelte';
 
   type Props = {
@@ -32,6 +33,10 @@
     pipActive?: boolean;
     /** ループ設定が変わった時の通知 (親の state を更新するため) */
     onLoopChange?: (value: boolean) => void;
+    /** 動画タイトル（スクリーンショットのファイル名に使用） */
+    videoTitle?: string;
+    /** 動画 ID（スクリーンショットのファイル名に使用） */
+    videoId?: string;
     /** 音声を出さずにロード/再生開始する。
      *  PiP 切替時、ページ側 Player が音声を出し続けているあいだに mini を
      *  無音でバックグラウンドロードするのに使う。playing イベントが発火し
@@ -59,6 +64,8 @@
     onLoopChange,
     initialMuted = false,
     onReadyForAudio,
+    videoTitle = '',
+    videoId = '',
   }: Props = $props();
 
   let stage = $state<HTMLDivElement | null>(null);
@@ -96,6 +103,7 @@
   let loadingMessage = $state<string | null>(null);
   let isFullscreen = $state(false);
   let controlsVisible = $state(true);
+  let screenshotMsg = $state<string | null>(null);
   let hideTimer: ReturnType<typeof setTimeout> | null = null;
   let hlsLevels = $state<Level[]>([]);
   let currentLevel = $state(-1);
@@ -135,6 +143,93 @@
         controlsVisible = false;
       }, 3000);
     }
+  }
+
+  async function takeScreenshot() {
+    const container = stage;
+    const captureComments = commentsEnabled;
+    const t = currentTime;
+    if (!container) return;
+    screenshotMsg = 'スクリーンショット準備中…';
+    const rect = container.getBoundingClientRect();
+    const w = Math.round(rect.width);
+    const h = Math.round(rect.height);
+    if (w === 0 || h === 0) return;
+
+    // 1) Try Rust-side ffmpeg extraction (local file → remote HLS).
+    let frame: ImageBitmap | null = null;
+    let b64: string | null = null;
+    if (videoId) {
+      try {
+        b64 = await extractVideoFrame(videoId, t);
+      } catch {
+        /* ignore */
+      }
+    }
+    if (!b64 && hlsUrl) {
+      try {
+        b64 = await extractOnlineFrame(hlsUrl, t);
+      } catch {
+        /* ignore */
+      }
+    }
+    if (b64) {
+      try {
+        const resp = await fetch(`data:image/png;base64,${b64}`);
+        frame = await createImageBitmap(await resp.blob());
+      } catch {
+        /* ignore */
+      }
+    }
+
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    const ctx = c.getContext('2d');
+    if (!ctx) return;
+    if (frame) {
+      // Preserve aspect ratio: center the frame, fill black letterbox.
+      const vr = frame.width / frame.height;
+      const cr = w / h;
+      let dw: number, dh: number;
+      if (vr > cr) {
+        dw = w;
+        dh = Math.round(w / vr);
+      } else {
+        dh = h;
+        dw = Math.round(h * vr);
+      }
+      ctx.drawImage(frame, (w - dw) / 2, (h - dh) / 2, dw, dh);
+      frame.close();
+    }
+
+    // 2) Composite comment canvas overlay.
+    const commentCanvas = container.querySelector<HTMLCanvasElement>('canvas.layer');
+    if (captureComments && commentCanvas && commentCanvas.width > 0 && commentCanvas.height > 0) {
+      ctx.drawImage(commentCanvas, 0, 0, w, h);
+    }
+
+    // 3) Download.
+    c.toBlob((blob) => {
+      if (!blob) {
+        screenshotMsg = 'スクリーンショット取得に失敗しました';
+        setTimeout(() => (screenshotMsg = null), 2500);
+        return;
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const mm = String(Math.floor(t / 60)).padStart(2, '0');
+      const ss = String(Math.floor(t % 60)).padStart(2, '0');
+      const base = videoTitle
+        ? videoTitle.replace(/[/\\?%*:|"<>]/g, '_').slice(0, 80)
+        : 'screenshot';
+      a.download = `${base}[${videoId || 'no-id'}]${mm}:${ss}.png`;
+      a.href = url;
+      a.click();
+      URL.revokeObjectURL(url);
+      screenshotMsg = 'スクリーンショットを保存しました';
+      setTimeout(() => (screenshotMsg = null), 2500);
+    });
   }
 
   async function loadFreshSource(forceRefresh = false) {
@@ -850,6 +945,7 @@
   {/if}
   <video
     bind:this={video}
+    crossorigin="anonymous"
     style:visibility={isSeeking ? 'hidden' : 'visible'}
     onplay={onPlayState}
     onpause={onPlayState}
@@ -954,6 +1050,7 @@
         onSetAbOut={setAbOut}
         onToggleAb={toggleAbLoop}
         onClearAb={clearAb}
+        onScreenshot={takeScreenshot}
         onToggleLoop={() => {
           const next = !loop;
           onLoopChange?.(next);
@@ -963,6 +1060,9 @@
         onTogglePip={() => onTogglePip?.()}
       />
     </div>
+  {/if}
+  {#if screenshotMsg}
+    <div class="screenshot-toast">{screenshotMsg}</div>
   {/if}
 </div>
 
@@ -1051,5 +1151,18 @@
     border-radius: 4px;
     font-size: 12px;
     line-height: 1.6;
+  }
+  .screenshot-toast {
+    position: absolute;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.78);
+    color: #b3f5b3;
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    pointer-events: none;
+    z-index: 30;
   }
 </style>

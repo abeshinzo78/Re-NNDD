@@ -108,9 +108,9 @@
     targets = next;
   }
 
-  /** Snapshot Search has no native popularity field, so popularity is
-   * implemented as `viewCounter desc` server-side then re-ranked
-   * client-side by a weighted score (see {@link sortByPopularity}). */
+  /** Snapshot Search has no native popularity sort. We fetch by
+   * `viewCounter desc` with an expanded limit, then re-rank client-side
+   * with a time-decayed weighted score (see {@link sortByPopularity}). */
   function toApiSort(): { field: SearchField; direction: 'asc' | 'desc' } {
     if (sortField === 'popularity') {
       return { field: 'viewCounter', direction: 'desc' };
@@ -124,6 +124,8 @@
     pending = true;
     error = null;
     try {
+      // For popularity sort, over-fetch so re-ranking has a bigger pool.
+      const apiLimit = sortField === 'popularity' ? Math.min(limit * 3, 100) : limit;
       const apiResp = await searchVideosOnline({
         q: query,
         targets: Array.from(targets),
@@ -141,11 +143,11 @@
           'channelId',
         ],
         sort: toApiSort(),
-        limit,
+        limit: apiLimit,
         offset: 0,
       });
       if (sortField === 'popularity') {
-        apiResp.data = sortByPopularity(apiResp.data);
+        apiResp.data = sortByPopularity(apiResp.data).slice(0, limit);
       }
       response = apiResp;
       lastQuery = query;

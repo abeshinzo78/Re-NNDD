@@ -159,6 +159,26 @@ export type UserVideosResponse = {
   debugRaw?: string;
 };
 
+export async function extractOnlineFrame(hlsUrl: string, seekSec: number): Promise<string | null> {
+  return invoke<string | null>('extract_online_frame', { hlsUrl, seekSec });
+}
+
+export async function extractVideoFrame(videoId: string, seekSec: number): Promise<string | null> {
+  return invoke<string | null>('extract_video_frame', { videoId, seekSec });
+}
+
+export async function fetchSeriesVideos(
+  seriesId: string,
+  page: number,
+  pageSize: number,
+): Promise<UserVideosResponse> {
+  return invoke<UserVideosResponse>('fetch_series_videos', {
+    seriesId,
+    page,
+    pageSize,
+  });
+}
+
 export async function fetchUserVideos(
   ownerKind: string,
   ownerId: string,
@@ -286,6 +306,7 @@ export async function listLibraryVideos(): Promise<LibraryVideoItem[]> {
 export type LibraryQueryParams = {
   q?: string;
   tags?: string[];
+  tagsAny?: string[];
   uploaderId?: string;
   minDuration?: number;
   maxDuration?: number;
@@ -362,6 +383,46 @@ export async function listLibraryResolutions(): Promise<string[]> {
   return invoke<string[]>('list_library_resolutions');
 }
 
+export type CommentSearchHit = {
+  videoId: string;
+  videoTitle: string;
+  commentNo: number;
+  vposMs: number;
+  content: string;
+  userHash: string | null;
+  postedAt: number | null;
+};
+
+export type CommentSearchResult = {
+  items: CommentSearchHit[];
+  totalCount: number;
+  offset: number;
+  limit: number;
+};
+
+export async function searchLibraryComments(
+  query: string,
+  offset?: number,
+  limit?: number,
+): Promise<CommentSearchResult> {
+  return invoke<CommentSearchResult>('search_library_comments', {
+    query,
+    offset: offset ?? 0,
+    limit: limit ?? 50,
+  });
+}
+
+export type UploaderInfo = {
+  uploaderId: string;
+  uploaderName: string | null;
+  videoCount: number;
+  totalDurationSec: number;
+};
+
+export async function listLibraryUploaders(limit?: number): Promise<UploaderInfo[]> {
+  return invoke<UploaderInfo[]>('list_library_uploaders', { limit: limit ?? 50 });
+}
+
 export async function prepareLocalPlayback(videoId: string): Promise<LocalPlaybackPayload | null> {
   return invoke<LocalPlaybackPayload | null>('prepare_local_playback', { videoId });
 }
@@ -412,6 +473,109 @@ export async function setSettingRaw(key: string, value: string): Promise<void> {
 
 export async function deleteSettingRaw(key: string): Promise<void> {
   await invoke('delete_setting', { key });
+}
+
+// =================== プレイリスト ===================
+
+export type Playlist = {
+  id: number;
+  name: string;
+  parentId: number | null;
+  source: string;
+  sourceOfficialId: string | null;
+  importedAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+  itemCount: number;
+};
+
+export type PlaylistItem = {
+  playlistId: number;
+  videoId: string;
+  position: number;
+  addedAt: number;
+  note: string | null;
+  title: string | null;
+  thumbnailUrl: string | null;
+  durationSec: number | null;
+};
+
+export async function listPlaylists(): Promise<Playlist[]> {
+  return invoke<Playlist[]>('list_playlists');
+}
+
+export async function createPlaylist(name: string, parentId?: number | null): Promise<Playlist> {
+  return invoke<Playlist>('create_playlist', { name, parentId: parentId ?? null });
+}
+
+export async function updatePlaylist(
+  id: number,
+  name: string,
+  parentId?: number | null,
+): Promise<Playlist> {
+  return invoke<Playlist>('update_playlist', { id, name, parentId: parentId ?? null });
+}
+
+export async function deletePlaylist(id: number): Promise<boolean> {
+  return invoke<boolean>('delete_playlist', { id });
+}
+
+export async function listPlaylistItems(playlistId: number): Promise<PlaylistItem[]> {
+  return invoke<PlaylistItem[]>('list_playlist_items', { playlistId });
+}
+
+export async function addPlaylistItem(
+  playlistId: number,
+  videoId: string,
+  position?: number | null,
+  note?: string | null,
+): Promise<PlaylistItem> {
+  return invoke<PlaylistItem>('add_playlist_item', {
+    playlistId,
+    videoId,
+    position: position ?? null,
+    note: note ?? null,
+  });
+}
+
+export async function removePlaylistItem(playlistId: number, videoId: string): Promise<boolean> {
+  return invoke<boolean>('remove_playlist_item', { playlistId, videoId });
+}
+
+// =================== 再生履歴 ===================
+
+export type PlayHistoryItem = {
+  id: number;
+  videoId: string;
+  playedAt: number;
+  durationPlayedSec: number;
+  positionAtCloseSec: number | null;
+  title: string | null;
+  thumbnailUrl: string | null;
+  durationSec: number | null;
+};
+
+export async function recordPlayback(
+  videoId: string,
+  durationPlayedSec: number,
+  positionAtCloseSec?: number | null,
+): Promise<PlayHistoryItem> {
+  return invoke<PlayHistoryItem>('record_playback', {
+    videoId,
+    durationPlayedSec,
+    positionAtCloseSec: positionAtCloseSec ?? null,
+  });
+}
+
+export async function listPlayHistory(offset?: number, limit?: number): Promise<PlayHistoryItem[]> {
+  return invoke<PlayHistoryItem[]>('list_play_history', {
+    offset: offset ?? 0,
+    limit: limit ?? 50,
+  });
+}
+
+export async function deletePlayHistoryItem(id: number): Promise<boolean> {
+  return invoke<boolean>('delete_play_history_item', { id });
 }
 
 export type AppInfo = {

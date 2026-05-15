@@ -66,3 +66,17 @@ export function clearHistory() {
   if (typeof window === 'undefined') return;
   localStorage.removeItem(HISTORY_KEY);
 }
+
+export function removeHistoryItem(videoId: string, source?: HistorySource) {
+  if (typeof window === 'undefined') return;
+  try {
+    const current = getHistory();
+    const s = source ?? 'online';
+    const filtered = current.filter(
+      (h) => !(h.videoId === videoId && (h.source ?? 'online') === s),
+    );
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(filtered));
+  } catch (e) {
+    console.warn('Failed to remove history item', e);
+  }
+}

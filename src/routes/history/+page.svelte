@@ -3,6 +3,7 @@
   import {
     clearHistory,
     getHistory,
+    removeHistoryItem,
     type HistoryItem,
     type HistorySource,
   } from '$lib/stores/history';
@@ -70,6 +71,11 @@
     if (pos <= 0) return null;
     const pct = Math.min(100, (pos / duration) * 100);
     return pct < 3 ? null : pct;
+  }
+
+  function handleDeleteItem(videoId: string, source?: string) {
+    removeHistoryItem(videoId, source as HistorySource | undefined);
+    history = getHistory();
   }
 </script>
 
@@ -161,6 +167,13 @@
               <span>視聴日時: {new Date(item.playedAt).toLocaleString()}</span>
             </div>
           </div>
+          <button
+            type="button"
+            class="del-btn"
+            onclick={() => handleDeleteItem(item.videoId, item.source)}
+            title="この履歴を削除"
+            aria-label="削除">✕</button
+          >
         </li>
       {/each}
     </ul>
@@ -353,5 +366,32 @@
   }
   .dot {
     color: #555;
+  }
+  .item {
+    position: relative;
+  }
+  .del-btn {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 24px;
+    height: 24px;
+    border: none;
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.5);
+    color: #999;
+    font-size: 12px;
+    cursor: pointer;
+    opacity: 0;
+    transition:
+      opacity 0.15s,
+      background 0.15s;
+  }
+  .item:hover .del-btn {
+    opacity: 1;
+  }
+  .del-btn:hover {
+    background: #5a2222;
+    color: #f5b3b3;
   }
 </style>

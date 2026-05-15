@@ -6,7 +6,7 @@
 //!
 //! ffmpeg がインストールされていない / 失敗した場合は呼び出し側で fallback。
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::downloader::tools;
 use crate::error::ApiError;
@@ -86,4 +86,87 @@ pub async fn remux(
         let stderr = String::from_utf8_lossy(&result.stderr).into_owned();
         Ok(MuxOutcome::FfmpegFailed { stderr })
     }
+}
+
+/// Extract a single frame from a video file at the given timestamp.
+/// Returns PNG bytes. Returns None if ffmpeg is not available or fails.
+pub async fn extract_frame(
+    app: Option<&tauri::AppHandle>,
+    video: &Path,
+    seek_sec: f64,
+) -> Option<Vec<u8>> {
+    let ff = tools::ffmpeg(app);
+    if matches!(ff.source, tools::BinarySource::NotFound) {
+        return None;
+    }
+
+    // Construct a temporary output path.
+    let tmp = PathBuf::from(format!("{}.screenshot.png", video.file_stem()?.to_str()?));
+
+    let mut cmd = tools::tokio_command(&ff.command);
+    cmd.arg("-hide_banner")
+        .arg("-loglevel")
+        .arg("error")
+        .arg("-y")
+        .arg("-ss")
+        .arg(format!("{seek_sec:.3}"))
+        .arg("-i")
+        .arg(video)
+        .arg("-vframes")
+        .arg("1")
+        .arg("-q:v")
+        .arg("2")
+        .arg(&tmp);
+
+    let result = cmd.output().await.ok()?;
+    if !result.status.success() {
+        let _ = tokio::fs::remove_file(&tmp).await;
+        return None;
+    }
+
+    let bytes = tokio::fs::read(&tmp).await.ok()?;
+    let _ = tokio::fs::remove_file(&tmp).await;
+    Some(bytes)
+}
+
+/// Extract a single frame from a remote URL (e.g. HLS playlist).
+/// Pipes PNG data to stdout to avoid writing a temp file.
+/// Timeout is 30 s to allow for network fetch + decode.
+pub async fn extract_frame_from_url(
+    app: Option<&tauri::AppHandle>,
+    url: &str,
+    seek_sec: f64,
+) -> Option<Vec<u8>> {
+    let ff = tools::ffmpeg(app);
+    if matches!(ff.source, tools::BinarySource::NotFound) {
+        return None;
+    }
+
+    let mut cmd = tools::tokio_command(&ff.command);
+    cmd.arg("-hide_banner")
+        .arg("-loglevel")
+        .arg("error")
+        .arg("-y")
+        .arg("-ss")
+        .arg(format!("{seek_sec:.3}"))
+        .arg("-i")
+        .arg(url)
+        .arg("-vframes")
+        .arg("1")
+        .arg("-f")
+        .arg("apng")
+        .arg("-")
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+
+    // Run with a generous timeout for network HLS.
+    let result = tokio::time::timeout(std::time::Duration::from_secs(30), cmd.output())
+        .await
+        .ok()?
+        .ok()?;
+
+    if !result.status.success() {
+        return None;
+    }
+    Some(result.stdout)
 }

@@ -13,8 +13,11 @@
 
 use std::path::PathBuf;
 
-use axum::Router;
-use tower_http::services::ServeDir;
+use axum::{
+    http::{HeaderValue, Method},
+    Router,
+};
+use tower_http::{cors::CorsLayer, services::ServeDir};
 
 /// `videos_root` 配下を `127.0.0.1:0` (ランダム port) で配信する。
 /// 戻り値は実際に bind した port。
@@ -35,7 +38,13 @@ pub fn start(videos_root: PathBuf) -> std::io::Result<u16> {
             }
         };
         // ServeDir は Range / 206 / If-Modified-Since を勝手に扱ってくれる
-        let app = Router::new().nest_service("/v", ServeDir::new(videos_root));
+        let cors = CorsLayer::new()
+            .allow_origin(HeaderValue::from_static("*"))
+            .allow_methods([Method::GET, Method::HEAD])
+            .allow_headers([axum::http::header::RANGE]);
+        let app = Router::new()
+            .nest_service("/v", ServeDir::new(videos_root))
+            .layer(cors);
         tracing::info!(port, "local_server: listening on 127.0.0.1:{port}/v/");
         if let Err(e) = axum::serve(listener, app).await {
             tracing::error!(error = %e, "local_server: serve failed");

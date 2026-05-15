@@ -121,6 +121,14 @@ pub struct WatchPageData {
     pub domand: Option<DomandSetup>,
     pub nv_comment: Option<NvCommentSetup>,
     pub watch_track_id: Option<String>,
+    pub series: Option<SeriesInfo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SeriesInfo {
+    pub id: i64,
+    pub title: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -526,12 +534,20 @@ fn project_watch_data(root: &Value) -> Result<WatchPageData, ApiError> {
         .and_then(Value::as_str)
         .map(String::from);
 
+    let series = response.get("series").and_then(|s| {
+        Some(SeriesInfo {
+            id: s.get("id")?.as_i64()?,
+            title: s.get("title")?.as_str()?.to_string(),
+        })
+    });
+
     Ok(WatchPageData {
         video,
         owner,
         domand,
         nv_comment,
         watch_track_id,
+        series,
     })
 }
 
@@ -776,6 +792,10 @@ mod tests {
                         "nickname": "投稿者",
                         "iconUrl": "https://example.test/icon.jpg"
                     },
+                    "series": {
+                        "id": 999,
+                        "title": "テストシリーズ"
+                    },
                     "client": {
                         "watchTrackId": "fixtureTrack_1234567890"
                     },
@@ -853,6 +873,15 @@ mod tests {
         assert!(data.video.tags[0].is_locked);
         assert_eq!(data.video.tags[1].name, "初音ミク");
         assert!(!data.video.tags[1].is_locked);
+    }
+
+    #[test]
+    fn parses_series_info() {
+        let html = build_fixture();
+        let data = parse_watch_html(&html).expect("parse");
+        let series = data.series.expect("series");
+        assert_eq!(series.id, 999);
+        assert_eq!(series.title, "テストシリーズ");
     }
 
     #[test]

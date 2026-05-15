@@ -21,6 +21,11 @@ pub struct LibraryQuery {
     /// Tag filter: only include videos that have *all* of these tags.
     pub tags: Option<Vec<String>>,
 
+    /// Tag filter (OR): include videos that have *any* of these tags.
+    /// If both `tags` and `tags_any` are specified, the `tags` (AND)
+    /// filter is applied first, then `tags_any` is applied on top.
+    pub tags_any: Option<Vec<String>>,
+
     /// Uploader id filter.
     pub uploader_id: Option<String>,
 
@@ -57,6 +62,7 @@ const ALLOWED_SORT: &[&str] = &[
     "last_played_at",
     "mylist_count",
     "comment_count",
+    "random",
 ];
 
 fn validate_sort(sort_by: &str) -> Result<(), LibraryError> {
@@ -207,6 +213,26 @@ pub fn query_videos(conn: &Connection, q: &LibraryQuery) -> Result<QueryResult, 
         }
     }
 
+    if let Some(ref tags_any) = q.tags_any {
+        if !tags_any.is_empty() {
+            let placeholders: Vec<String> = tags_any
+                .iter()
+                .enumerate()
+                .map(|(i, _)| {
+                    let p = params.len() + i + 1;
+                    format!("?{p}")
+                })
+                .collect();
+            for tag in tags_any {
+                params.push(Box::new(tag.clone()));
+            }
+            sql_where.push(format!(
+                "EXISTS (SELECT 1 FROM tags t WHERE t.video_id = v.id AND t.name IN ({}))",
+                placeholders.join(",")
+            ));
+        }
+    }
+
     if let Some(ref uid) = q.uploader_id {
         let p = params.len() + 1;
         params.push(Box::new(uid.clone()));
@@ -243,6 +269,13 @@ pub fn query_videos(conn: &Connection, q: &LibraryQuery) -> Result<QueryResult, 
     // Data query with pagination — rebuild params to add limit/offset.
     let lim_p = params.len() + 1;
     let off_p = params.len() + 2;
+
+    let order_clause = if sort_by == "random" {
+        "ORDER BY RANDOM()".to_string()
+    } else {
+        format!("ORDER BY v.{sort_by} {order_sql}, v.id DESC")
+    };
+
     let data_sql = format!(
         "SELECT v.id, v.title, v.description, v.uploader_id, v.uploader_name, \
                 v.uploader_type, v.category, v.duration_sec, v.posted_at, v.view_count, \
@@ -250,7 +283,7 @@ pub fn query_videos(conn: &Connection, q: &LibraryQuery) -> Result<QueryResult, 
                 v.downloaded_at, v.play_count, v.last_played_at \
          FROM videos v \
          {where_clause} \
-         ORDER BY v.{sort_by} {order_sql}, v.id DESC \
+         {order_clause} \
          LIMIT ?{lim_p} OFFSET ?{off_p}",
     );
 
@@ -424,8 +457,125 @@ pub fn list_resolutions(conn: &Connection) -> Result<Vec<String>, LibraryError> 
 }
 
 // ---------------------------------------------------------------------------
-// Tests
+// Comment full-text search
 // ---------------------------------------------------------------------------
+
+/// A single comment match from a library-wide comment search.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommentSearchHit {
+    pub video_id: String,
+    pub video_title: String,
+    pub comment_no: i64,
+    pub vpos_ms: i64,
+    pub content: String,
+    pub user_hash: Option<String>,
+    pub posted_at: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommentSearchResult {
+    pub items: Vec<CommentSearchHit>,
+    pub total_count: i64,
+    pub offset: u32,
+    pub limit: u32,
+}
+
+/// Search local library comments via FTS5 trigram index.
+///
+/// `query` must be ≥ 3 characters (FTS5 trigram tokenizer requirement).
+/// Returns comments from downloaded videos, newest snapshot per video.
+pub fn search_comments(
+    conn: &Connection,
+    query: &str,
+    offset: u32,
+    limit: u32,
+) -> Result<CommentSearchResult, LibraryError> {
+    let limit = limit.min(200);
+
+    let count_sql = "\
+        SELECT COUNT(*) \
+        FROM comments_fts fts \
+        JOIN comments c ON c.id = fts.rowid \
+        JOIN comment_snapshots cs ON cs.id = c.snapshot_id \
+        JOIN videos v ON v.id = cs.video_id \
+        WHERE v.video_path IS NOT NULL \
+          AND comments_fts MATCH ?1";
+
+    let total_count: i64 = conn.query_row(count_sql, [query], |row| row.get(0))?;
+
+    let data_sql = "\
+        SELECT v.id, v.title, c.no, c.vpos_ms, c.content, c.user_hash, c.posted_at \
+        FROM comments_fts fts \
+        JOIN comments c ON c.id = fts.rowid \
+        JOIN comment_snapshots cs ON cs.id = c.snapshot_id \
+        JOIN videos v ON v.id = cs.video_id \
+        WHERE v.video_path IS NOT NULL \
+          AND comments_fts MATCH ?1 \
+        ORDER BY c.posted_at DESC \
+        LIMIT ?2 OFFSET ?3";
+
+    let mut stmt = conn.prepare(data_sql)?;
+    let items: Vec<CommentSearchHit> = stmt
+        .query_map(rusqlite::params![query, limit, offset], |row| {
+            Ok(CommentSearchHit {
+                video_id: row.get(0)?,
+                video_title: row.get(1)?,
+                comment_no: row.get(2)?,
+                vpos_ms: row.get(3)?,
+                content: row.get(4)?,
+                user_hash: row.get(5)?,
+                posted_at: row.get(6)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(CommentSearchResult {
+        items,
+        total_count,
+        offset,
+        limit,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Uploader listing
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UploaderInfo {
+    pub uploader_id: String,
+    pub uploader_name: Option<String>,
+    pub video_count: i64,
+    pub total_duration_sec: i64,
+}
+
+/// List all uploaders with video counts, ordered by count desc.
+pub fn list_uploaders(conn: &Connection, limit: u32) -> Result<Vec<UploaderInfo>, LibraryError> {
+    let limit = limit.min(200);
+    let mut stmt = conn.prepare(
+        "SELECT uploader_id, uploader_name, COUNT(*) AS cnt, \
+                COALESCE(SUM(duration_sec), 0) AS total_dur \
+         FROM videos \
+         WHERE video_path IS NOT NULL AND uploader_id IS NOT NULL \
+         GROUP BY uploader_id \
+         ORDER BY cnt DESC \
+         LIMIT ?1",
+    )?;
+    let rows: Vec<UploaderInfo> = stmt
+        .query_map(rusqlite::params![limit], |row| {
+            Ok(UploaderInfo {
+                uploader_id: row.get(0)?,
+                uploader_name: row.get(1)?,
+                video_count: row.get(2)?,
+                total_duration_sec: row.get(3)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
@@ -982,5 +1132,102 @@ mod tests {
         .unwrap();
         assert_eq!(result.total_count, 0);
         assert!(result.items.is_empty());
+    }
+
+    #[test]
+    fn filter_by_tags_any_returns_union() {
+        let mut conn = setup();
+        seed_library(&mut conn);
+        let result = query_videos(
+            &conn,
+            &LibraryQuery {
+                tags_any: Some(vec!["初音ミク".into(), "ゲーム".into()]),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(result.total_count, 2);
+        let ids: Vec<&str> = result.items.iter().map(|v| v.id.as_str()).collect();
+        assert!(ids.contains(&"sm1"));
+        assert!(ids.contains(&"sm4"));
+    }
+
+    #[test]
+    fn filter_by_tags_and_tags_any_combined() {
+        let mut conn = setup();
+        seed_library(&mut conn);
+        // AND: VOCALOID, OR: 初音ミク or 鏡音リン
+        let result = query_videos(
+            &conn,
+            &LibraryQuery {
+                tags: Some(vec!["VOCALOID".into()]),
+                tags_any: Some(vec!["初音ミク".into(), "鏡音リン".into()]),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(result.total_count, 2);
+        let ids: Vec<&str> = result.items.iter().map(|v| v.id.as_str()).collect();
+        assert!(ids.contains(&"sm1"));
+        assert!(ids.contains(&"sm2"));
+    }
+
+    #[test]
+    fn random_sort_returns_all_videos() {
+        let mut conn = setup();
+        seed_library(&mut conn);
+        let result = query_videos(
+            &conn,
+            &LibraryQuery {
+                sort_by: Some("random".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(result.total_count, 5);
+        assert_eq!(result.items.len(), 5);
+        // All IDs should be present, just in a random order.
+        let ids: std::collections::HashSet<&str> =
+            result.items.iter().map(|v| v.id.as_str()).collect();
+        assert!(ids.contains("sm1"));
+        assert!(ids.contains("sm2"));
+        assert!(ids.contains("sm3"));
+        assert!(ids.contains("sm4"));
+        assert!(ids.contains("sm5"));
+    }
+
+    #[test]
+    fn search_comments_finds_match() {
+        let mut conn = setup();
+        seed_library(&mut conn);
+        // "弾幕です" was inserted as a comment for sm1
+        let result = search_comments(&conn, "弾幕で", 0, 10).unwrap();
+        assert_eq!(result.total_count, 1);
+        assert_eq!(result.items[0].video_id, "sm1");
+        assert_eq!(result.items[0].content, "これはすごい弾幕です");
+    }
+
+    #[test]
+    fn search_comments_empty_library() {
+        let conn = setup();
+        let result = search_comments(&conn, "何か", 0, 10).unwrap();
+        assert_eq!(result.total_count, 0);
+        assert!(result.items.is_empty());
+    }
+
+    #[test]
+    fn list_uploaders_returns_counts() {
+        let mut conn = setup();
+        seed_library(&mut conn);
+        let uploaders = list_uploaders(&conn, 50).unwrap();
+        // sm1 was re-ingested with ..VideoRecord::default() which set
+        // uploader_id to None, so u1 only has sm2.
+        assert_eq!(uploaders.len(), 3);
+        let u1 = uploaders.iter().find(|u| u.uploader_id == "u1").unwrap();
+        assert_eq!(u1.video_count, 1); // sm2 only (sm1 uploader_id was cleared)
+        let u2 = uploaders.iter().find(|u| u.uploader_id == "u2").unwrap();
+        assert_eq!(u2.video_count, 2); // sm3 + sm5
+        let u3 = uploaders.iter().find(|u| u.uploader_id == "u3").unwrap();
+        assert_eq!(u3.video_count, 1);
     }
 }

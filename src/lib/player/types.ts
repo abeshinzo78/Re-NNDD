@@ -52,9 +52,15 @@ export type PlayerComment = {
   score?: number;
 };
 
+export type SeriesInfo = {
+  id: number;
+  title: string;
+};
+
 export type PlaybackPayload = {
   video: WatchVideoMeta;
   owner?: WatchOwner;
+  series?: SeriesInfo;
   hlsUrl: string;
   pickedQuality: PickedQuality;
   allQualities: PickedQuality[];

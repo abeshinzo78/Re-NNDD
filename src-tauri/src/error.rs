@@ -22,6 +22,9 @@ pub enum LibraryError {
 
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
+
+    #[error("{0} not found")]
+    NotFound(&'static str),
 }
 
 #[derive(Debug, Error)]
