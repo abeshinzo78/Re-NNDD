@@ -206,6 +206,17 @@
     if (payload && time > 0) {
       saveResumePosition(payload.video.id, time);
     }
+    // PiP 音声引き継ぎ中 (mini が無音ロード中) は、ページ側 currentTime を
+    // 共有ストアに書き続ける。mini は引き継ぎ瞬間にこの値へシークすることで
+    // 「ロード時間ぶんの音声巻き戻し」を防ぐ。
+    if (
+      payload &&
+      miniPlayer.active &&
+      !miniPlayer.audioOwned &&
+      miniPlayer.source?.videoId === payload.videoId
+    ) {
+      miniPlayer.setHandoffTime(time);
+    }
   }
 
   function startDrag(e: MouseEvent) {
@@ -238,9 +249,14 @@
     }, 4000);
   }
   function openPipForCurrentVideo(): boolean {
-    if (!payload || pipActiveForThis) return false;
+    if (!payload) return false;
+    // 同じ動画で既に PiP 起動済み (音声引き継ぎ中も含む) なら何もしない。
+    if (miniPlayer.active && miniPlayer.source?.videoId === payload.videoId) return false;
     const vid = playerRef?.getVideo();
     const t = vid?.currentTime ?? currentTime ?? 0;
+    // 起動時点でページ側 Player が鳴っているかを掴んでおく。
+    // 鳴っている場合のみ、mini は無音ロード→引き継ぎフローを走らせる。
+    const wasPlaying = vid != null && !vid.paused && !vid.ended;
     // `payload` は同一コンポーネントが /video/A → /video/B でパラ遷移した時
     // 後から書き換わる。クロージャに `payload` を直接参照させると、PiP 再生中の
     // 動画 A のトークン再発行が B の URL を取得してしまう。スナップショットで固める。
@@ -269,6 +285,7 @@
       resumePosition: t,
       expandHref: snapHref,
       loop,
+      wasPlaying,
     });
     return true;
   }
@@ -277,15 +294,20 @@
   // ON: 現在の再生位置を resume に書いて miniPlayer ストアへ流し込み。
   // OFF: 元ページに戻ってきた時点で MiniPlayer 側が自動 handoff する。
   function togglePip() {
-    if (pipActiveForThis) {
+    // 音声引き継ぎ中 (audioOwned=false) も同じ動画なら「PiP 化済み」扱いで閉じる。
+    if (miniPlayer.active && miniPlayer.source?.videoId === (payload?.videoId ?? '')) {
       miniPlayer.close();
       return;
     }
     openPipForCurrentVideo();
   }
 
+  // 音声引き継ぎが完了するまでは、ページ側 Player を残し続けてプレースホルダに
+  // 切り替えない。これで PiP オンの瞬間に音が途切れない。
   let pipActiveForThis = $derived(
-    miniPlayer.active && miniPlayer.source?.videoId === (payload?.videoId ?? ''),
+    miniPlayer.active &&
+      miniPlayer.audioOwned &&
+      miniPlayer.source?.videoId === (payload?.videoId ?? ''),
   );
 
   // PiP 中はミニ側で取得済みコメの方が新しい可能性があるので、ミニ側にも反映

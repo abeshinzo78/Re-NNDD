@@ -117,6 +117,18 @@ class MiniPlayerStore {
   currentTime = $state(0);
   /** ミニプレイヤー領域の位置/サイズ */
   geometry = $state<MiniGeometry>({ x: 0, y: 0, width: DEFAULT_WIDTH });
+  /** mini が実際に音声出力を担当しているか。
+   *  PiP 起動時はまずページ側の Player が鳴り続け、mini は無音でロードする。
+   *  mini が再生開始 (playing) して引き継ぎ可能になったら true にする。
+   *  ページ側はこのフラグを見てプレースホルダ ↔ Player を切り替える。 */
+  audioOwned = $state(false);
+  /** PiP 起動時点でページ側の Player が再生中だったか。
+   *  true の時のみ mini は無音ロード → 引き継ぎフローを走らせる。
+   *  false (= 一時停止中の PiP 化) は引き継ぎ不要なので audioOwned を即 true にする。 */
+  wasPlaying = $state(false);
+  /** 引き継ぎ用のソースページ側 currentTime。ページが再生中の間継続的に更新し、
+   *  mini が引き継ぐ瞬間にこの値へシークすれば「ロード時間ぶんの巻き戻し」音声を防げる。 */
+  handoffTime = $state(0);
   /** 初期化済みか (geometry を 1 度 localStorage からロードしたか) */
   private hydrated = false;
   /** close() 時に退避した復帰先情報。ページ側が consume して PiP 前の位置に復元する。 */
@@ -137,6 +149,8 @@ class MiniPlayerStore {
     resumePosition: number;
     expandHref: string;
     loop?: boolean;
+    /** ページ側 Player が再生中なら true。無音ロード → 音声引き継ぎを行う。 */
+    wasPlaying?: boolean;
   }) {
     this.hydrate();
     this.source = args.source;
@@ -146,6 +160,11 @@ class MiniPlayerStore {
     this.currentTime = this.resumePosition;
     this.expandHref = args.expandHref;
     this.loop = args.loop ?? false;
+    this.wasPlaying = !!args.wasPlaying;
+    this.handoffTime = this.resumePosition;
+    // 再生中だった場合のみ「mini ロード完了まで音声引き継ぎ保留」。
+    // 一時停止中なら音声が無いので保留する意味が無く、即時にプレースホルダへ。
+    this.audioOwned = !args.wasPlaying;
     this.active = true;
   }
 
@@ -165,6 +184,20 @@ class MiniPlayerStore {
     if (Number.isFinite(t) && t >= 0) {
       this.currentTime = t;
     }
+  }
+
+  /** mini が音声を引き継いだことを宣言。ページ側はこれを受けて Player を破棄し
+   *  プレースホルダへ切り替える。引き継ぎ完了後は handoffTime の更新を停止する
+   *  ため `audioOwned` 中のセットは無視 (`setHandoffTime`) する設計。 */
+  acquireAudio() {
+    this.audioOwned = true;
+  }
+
+  /** ソースページ側 Player の最新 currentTime を書き込む。引き継ぎ前のみ有効。 */
+  setHandoffTime(t: number) {
+    if (this.audioOwned) return;
+    if (!Number.isFinite(t) || t < 0) return;
+    this.handoffTime = t;
   }
 
   /** ページ側が PiP からの復帰位置を取得する。呼び出しで消費される。 */
@@ -192,6 +225,9 @@ class MiniPlayerStore {
     this.title = '';
     this.resumePosition = 0;
     this.currentTime = 0;
+    this.audioOwned = false;
+    this.wasPlaying = false;
+    this.handoffTime = 0;
   }
 }
 

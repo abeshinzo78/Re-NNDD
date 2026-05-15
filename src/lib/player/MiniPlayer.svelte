@@ -22,6 +22,7 @@
     clampWidth,
     type MiniGeometry,
   } from './miniPlayerStore.svelte';
+  import { getNum } from '$lib/stores/settings.svelte';
 
   type PlayerRef = {
     getVideo: () => HTMLVideoElement | null;
@@ -96,6 +97,55 @@
       }
     }
   }
+
+  // PiP 起動時の「音声引き継ぎ」フック。
+  // ページ側 Player は鳴り続けたまま、mini は無音 (volume=0) でロードしている。
+  // 内部 Player が playing になった瞬間にこれが呼ばれる。
+  //
+  // 1. ページが進んだぶんのズレを埋めるため handoffTime までシーク
+  //    (ロード時間ぶんの「音声巻き戻し」を防ぐ)
+  // 2. ミニ側の音量を設定値に戻す
+  // 3. miniPlayer.acquireAudio() でページ側にプレースホルダ切替を指示
+  //
+  // 音量の戻しは acquireAudio より「前」に行う。ページ側の Player が破棄され
+  // 音が消える瞬間に mini が既に鳴っている状態を作るため。
+  function handleReadyForAudio() {
+    if (!playerRef) return;
+    const targetTime = miniPlayer.handoffTime;
+    const v = playerRef.getVideo();
+    if (targetTime > 0) {
+      const here = playerRef.getCurrentTime();
+      // 前方にズレている (ページが先行している) 時だけシーク。
+      // 後方は通常起きないが、稀に mini が先行してしまった場合は触らない。
+      if (targetTime > here + 0.3) {
+        playerRef.seek(targetTime);
+      }
+    }
+    if (v) {
+      const vol = getNum('playback.default_volume');
+      v.volume = Number.isFinite(vol) ? Math.max(0, Math.min(1, vol)) : 1;
+    }
+    miniPlayer.acquireAudio();
+  }
+
+  // 何らかの理由で playing が来ない時 (HLS のエラー継続など) も
+  // 永遠にページ側 Player を残し続けるのは UX 上良くないので、
+  // 一定時間で強制的に引き継ぎ完了扱いにする保険。
+  let handoffFallbackTimer: ReturnType<typeof setTimeout> | null = null;
+  $effect(() => {
+    if (miniPlayer.active && miniPlayer.wasPlaying && !miniPlayer.audioOwned) {
+      if (handoffFallbackTimer) clearTimeout(handoffFallbackTimer);
+      handoffFallbackTimer = setTimeout(() => {
+        if (!miniPlayer.audioOwned) {
+          miniPlayer.acquireAudio();
+        }
+      }, 8000);
+      return () => {
+        if (handoffFallbackTimer) clearTimeout(handoffFallbackTimer);
+        handoffFallbackTimer = null;
+      };
+    }
+  });
 
   // <video> の paused/duration を 100ms ポーリング (Player.svelte の内部
   // state を直接 bind できないため)。負荷は無視できる。
@@ -344,6 +394,8 @@
             resumePosition={miniPlayer.resumePosition}
             loop={miniPlayer.loop}
             compact={true}
+            initialMuted={miniPlayer.wasPlaying}
+            onReadyForAudio={handleReadyForAudio}
           />
         {:else if localSrcObj}
           <Player
@@ -356,6 +408,8 @@
             resumePosition={miniPlayer.resumePosition}
             loop={miniPlayer.loop}
             compact={true}
+            initialMuted={miniPlayer.wasPlaying}
+            onReadyForAudio={handleReadyForAudio}
           />
         {/if}
       {/key}
