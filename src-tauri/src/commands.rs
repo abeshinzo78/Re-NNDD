@@ -1782,7 +1782,8 @@ pub async fn get_app_info(
 }
 
 async fn check_tool_version(cmd: &str, version_arg: &str) -> (bool, Option<String>) {
-    match tokio::process::Command::new(cmd)
+    // Windows でコンソールウィンドウがチラつかないようヘルパ経由で起動する。
+    match crate::downloader::tools::tokio_command(cmd)
         .arg(version_arg)
         .output()
         .await

@@ -27,7 +27,7 @@ pub async fn is_ffmpeg_available(app: Option<&tauri::AppHandle>) -> bool {
     if matches!(r.source, tools::BinarySource::NotFound) {
         return false;
     }
-    match tokio::process::Command::new(&r.command)
+    match tools::tokio_command(&r.command)
         .arg("-version")
         .output()
         .await
@@ -55,7 +55,7 @@ pub async fn remux(
         let _ = tokio::fs::remove_file(output).await;
     }
 
-    let mut cmd = tokio::process::Command::new(&ff.command);
+    let mut cmd = tools::tokio_command(&ff.command);
     cmd.arg("-hide_banner")
         .arg("-loglevel")
         .arg("error")

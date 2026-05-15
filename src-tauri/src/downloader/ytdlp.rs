@@ -9,7 +9,6 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
 use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::Command;
 use tokio::sync::{mpsc, watch};
 
 use crate::downloader::tools;
@@ -29,7 +28,7 @@ pub async fn is_available(app: Option<&tauri::AppHandle>) -> bool {
     if matches!(r.source, tools::BinarySource::NotFound) {
         return false;
     }
-    Command::new(&r.command)
+    tools::tokio_command(&r.command)
         .arg("--version")
         .output()
         .await
@@ -115,7 +114,7 @@ where
         None
     };
 
-    let mut cmd = Command::new(&yt.command);
+    let mut cmd = tools::tokio_command(&yt.command);
     // Unix: yt-dlp が裏で立ち上げる ffmpeg (mp4 マージ用) も道連れに
     // 殺せるように、yt-dlp 自身を新しいプロセスグループのリーダにする。
     // こうしておけば kill_process_tree() で `-pgid` 宛に SIGKILL を投げる
@@ -310,7 +309,7 @@ async fn cleanup_cookies(path: Option<&PathBuf>) {
 fn kill_process_tree(pid: u32) {
     #[cfg(unix)]
     {
-        let _ = std::process::Command::new("kill")
+        let _ = tools::std_command("kill")
             .arg("-KILL")
             .arg(format!("-{pid}"))
             .stdout(std::process::Stdio::null())
@@ -319,7 +318,7 @@ fn kill_process_tree(pid: u32) {
     }
     #[cfg(windows)]
     {
-        let _ = std::process::Command::new("taskkill")
+        let _ = tools::std_command("taskkill")
             .args(["/F", "/T", "/PID"])
             .arg(pid.to_string())
             .stdout(std::process::Stdio::null())
