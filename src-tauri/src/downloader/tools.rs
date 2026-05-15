@@ -164,3 +164,36 @@ pub fn ytdlp(app: Option<&tauri::AppHandle>) -> Resolved {
 pub fn ffmpeg(app: Option<&tauri::AppHandle>) -> Resolved {
     FFMPEG_CACHE.get_or_init(|| resolve(app, "ffmpeg")).clone()
 }
+
+// ====== サブプロセス起動ヘルパ ======
+// Windows では GUI アプリから素の `Command::new(...).output()` を呼ぶと
+// 子プロセスごとにコンソールウィンドウが一瞬チラつく。設定画面の
+// `get_app_info` は yt-dlp / ffmpeg の `--version` を毎回 2 本叩くため、
+// 開くたびにターミナルが立ち上がりまくる挙動になっていた。
+// `CREATE_NO_WINDOW` を付ければウィンドウを作らずに起動できる。Unix では no-op。
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+/// `tokio::process::Command::new` の代わりに使う。Windows ではコンソール
+/// ウィンドウを抑制するフラグを立てる。
+pub fn tokio_command<S: AsRef<std::ffi::OsStr>>(program: S) -> tokio::process::Command {
+    #[cfg_attr(not(windows), allow(unused_mut))]
+    let mut cmd = tokio::process::Command::new(program);
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    cmd
+}
+
+/// `std::process::Command::new` の代わりに使う。Windows ではコンソール
+/// ウィンドウを抑制するフラグを立てる。
+pub fn std_command<S: AsRef<std::ffi::OsStr>>(program: S) -> std::process::Command {
+    #[cfg_attr(not(windows), allow(unused_mut))]
+    let mut cmd = std::process::Command::new(program);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd
+}
