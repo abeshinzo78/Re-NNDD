@@ -32,6 +32,15 @@
     pipActive?: boolean;
     /** ループ設定が変わった時の通知 (親の state を更新するため) */
     onLoopChange?: (value: boolean) => void;
+    /** 音声を出さずにロード/再生開始する。
+     *  PiP 切替時、ページ側 Player が音声を出し続けているあいだに mini を
+     *  無音でバックグラウンドロードするのに使う。playing イベントが発火し
+     *  たら `onReadyForAudio` を呼ぶ。親 (MiniPlayer) はそこで音量を戻して
+     *  `audioOwned` を立て、ページ側 Player をプレースホルダに退かせる。 */
+    initialMuted?: boolean;
+    /** 無音ロードが完了し音声を引き継げる状態になった通知。`initialMuted=true`
+     *  の時のみ発火し、1 度だけ呼ばれる。 */
+    onReadyForAudio?: () => void;
   };
 
   let {
@@ -48,6 +57,8 @@
     onTogglePip,
     pipActive = false,
     onLoopChange,
+    initialMuted = false,
+    onReadyForAudio,
   }: Props = $props();
 
   let stage = $state<HTMLDivElement | null>(null);
@@ -642,17 +653,36 @@
     applyPendingSeek();
     if (!video) return;
     // 設定からデフォルト値を反映
-    const defaultVol = getNum('playback.default_volume');
     const defaultRate = getNum('playback.default_rate');
-    const autoplay = getBool('playback.autoplay');
-    if (Number.isFinite(defaultVol)) {
-      video.volume = Math.max(0, Math.min(1, defaultVol));
-    }
     if (Number.isFinite(defaultRate) && defaultRate > 0) {
       video.playbackRate = defaultRate;
     }
-    if (autoplay) {
+    if (initialMuted) {
+      // PiP 引き継ぎロード: 音量 0 のままバックグラウンド再生開始。
+      // ページ側 Player の音声を切らずに mini をウォームアップしている最中。
+      // 親 (MiniPlayer) が playing 検知後に音量を戻して引き継ぐ。
+      video.volume = 0;
       void video.play().catch(() => undefined);
+    } else {
+      const defaultVol = getNum('playback.default_volume');
+      if (Number.isFinite(defaultVol)) {
+        video.volume = Math.max(0, Math.min(1, defaultVol));
+      }
+      const autoplay = getBool('playback.autoplay');
+      if (autoplay) {
+        void video.play().catch(() => undefined);
+      }
+    }
+  }
+  // initialMuted=true で起動した時、playing イベントが 1 回目に発火したタイミングで
+  // 親に「音声を引き継いでよい」通知を投げる。`onplay` ではなく `onplaying` を使うの
+  // は、後者が「実際にフレーム送出が始まった」セマンティクスで、バッファリング中の
+  // 偽陽性が起きにくいため。
+  let audioHandoffSignaled = false;
+  function onPlaying() {
+    if (initialMuted && !audioHandoffSignaled) {
+      audioHandoffSignaled = true;
+      onReadyForAudio?.();
     }
   }
   function onPlayState() {
@@ -823,6 +853,7 @@
     style:visibility={isSeeking ? 'hidden' : 'visible'}
     onplay={onPlayState}
     onpause={onPlayState}
+    onplaying={onPlaying}
     onended={onEnded}
     ontimeupdate={onTimeUpdate}
     ondurationchange={onDurationChange}
