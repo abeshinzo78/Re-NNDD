@@ -57,7 +57,7 @@ rand = "0.8"
 # `BlockCipherEncrypt`/`BlockCipherDecrypt` トレイト境界が満たせずビルド不可。
 # 上げるなら aes と一緒に上げる必要がある。今は 0.1 系に固定する。
 aes = "0.8"
-cbc = "0.1"
+cbc = "0.2"
 
 # 内蔵 HTTP サーバー (local_server.rs)
 # WebKitGTK の <video> は Blob URL だと後方 seek で GOP リセットがうまく
