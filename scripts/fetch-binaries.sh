@@ -23,10 +23,22 @@ ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BIN_DIR="$ROOT/src-tauri/binaries"
 mkdir -p "$BIN_DIR"
 
-# Rust の host triple を取得
-TRIPLE="$(rustc -vV | awk '/^host:/ {print $2}')"
+# target triple を決定する。
+# 1) 環境変数 TARGET_TRIPLE が指定されていればそれを使う (CI matrix からの注入用)。
+# 2) なければ `rustc -vV` の host から拾う (ローカル開発用)。
+#
+# CI で rustup の PATH 反映タイミングに依存させないため、matrix 値を優先する
+# ロジックにしておく (macos-14 / aarch64 runner で rustc を spawn できず
+# build がコケた実績がある)。
+TRIPLE="${TARGET_TRIPLE:-}"
 if [[ -z "$TRIPLE" ]]; then
-  echo "error: rustc が見つからないか triple 取得失敗" >&2
+  if command -v rustc >/dev/null 2>&1; then
+    TRIPLE="$(rustc -vV 2>/dev/null | awk '/^host:/ {print $2}')"
+  fi
+fi
+if [[ -z "$TRIPLE" ]]; then
+  echo "error: target triple を解決できません" >&2
+  echo "       環境変数 TARGET_TRIPLE を指定するか、rustc を PATH に通してください" >&2
   exit 1
 fi
 echo "==> target triple: $TRIPLE"

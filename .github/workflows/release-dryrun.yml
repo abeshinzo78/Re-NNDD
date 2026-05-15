@@ -1,43 +1,37 @@
-name: Release (Tauri bundle)
+name: Release dry-run (Tauri bundle)
 
-# タグ push (v*) または手動 dispatch で各 OS 向けに Tauri バンドルをビルドする。
-# 通常 PR / push では走らない。
+# 毎 push / PR でリリースバンドルが組み上がるかを CI で検証する。
+# - release.yml と同じ matrix で実 build (`tauri build`) まで走らせる
+# - GitHub Release への upload はしない (tauri-action を使わない)
+# - 成果物は actions artifact として短期保管し、必要なら手元で取れる
+#
+# 目的: タグ push 当日に CI で初めて release build がコケる、を避ける。
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - main
+      - master
+      - 'claude/**'
+  pull_request:
   workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Release tag (e.g. v0.1.0). 必ず指定。'
-        required: true
-        type: string
-      draft:
-        description: 'draft release として作るか'
-        required: false
-        type: boolean
-        default: true
-      prerelease:
-        description: 'prerelease として作るか'
-        required: false
-        type: boolean
-        default: false
-
-permissions:
-  contents: write
 
 concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: false
+  group: release-dryrun-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: '0'
+  CARGO_NET_RETRY: '10'
+  RUSTUP_MAX_RETRIES: '10'
   NODE_VERSION: '20'
 
 jobs:
-  bundle:
-    name: Tauri bundle (${{ matrix.platform.name }})
+  bundle-dryrun:
+    name: Tauri bundle dry-run (${{ matrix.platform.name }})
     strategy:
       fail-fast: false
       matrix:
@@ -57,8 +51,7 @@ jobs:
     runs-on: ${{ matrix.platform.os }}
     timeout-minutes: 90
     env:
-      # fetch-binaries.sh から rustc に依存させない (macos-14 runner で host
-      # triple 取得に失敗した実績があるので matrix から直接渡す)。
+      # release.yml と同じく rustc spawn を回避するため matrix から渡す。
       TARGET_TRIPLE: ${{ matrix.platform.target }}
     steps:
       - name: Checkout
@@ -78,7 +71,7 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: tauri-release-${{ matrix.platform.target }}
+          shared-key: tauri-dryrun-${{ matrix.platform.target }}
           cache-on-failure: true
 
       - name: Install Linux deps (Tauri 2)
@@ -110,32 +103,40 @@ jobs:
         shell: bash
         run: bash scripts/fetch-binaries.sh
 
-      # tag push → inputs.tag は空 (= ref_name のタグ)
-      # workflow_dispatch → inputs.tag は required で必ず値が入る
-      - name: Tauri build
-        # action-v0.6.2 にピン留め (Codex review: P2 / 不変参照を要求)
-        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tagName: ${{ inputs.tag || github.ref_name }}
-          releaseName: 'Re:NNDD ${{ inputs.tag || github.ref_name }}'
-          releaseBody: |
-            ## Re:NNDD バンドルリリース
+      # tauri-action を使わず CLI 直叩き = GitHub Release への upload を伴わない。
+      # release.yml と同じく `--target` を渡してビルドする。
+      - name: Tauri build (no release upload)
+        run: npm run tauri build -- --target ${{ matrix.platform.target }}
 
-            自動生成された各プラットフォーム向け Tauri バンドル。
-            yt-dlp / ffmpeg のサイドカーバイナリは同梱されています。
-          # tag push は常に draft、dispatch は inputs.draft を尊重 (false 指定が
-          # `A && B || true` で潰れていたバグ修正: P1 codex review)
-          releaseDraft: ${{ github.event_name != 'workflow_dispatch' || inputs.draft }}
-          prerelease: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease || false }}
-          args: --target ${{ matrix.platform.target }}
-
-      - name: Upload bundle artifact
+      - name: Upload bundle artifact (dry-run)
         uses: actions/upload-artifact@v7
         with:
-          name: tauri-${{ matrix.platform.name }}
+          name: tauri-dryrun-${{ matrix.platform.name }}-${{ github.sha }}
           path: |
             src-tauri/target/${{ matrix.platform.target }}/release/bundle/**
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 7
+
+  # マージゲート用の集約ジョブ。ブランチ保護では "release-dryrun-success"
+  # 1 件だけを required にすればよい。
+  release-dryrun-success:
+    name: Release dry-run success
+    if: ${{ always() }}
+    needs:
+      - bundle-dryrun
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify all matrix jobs succeeded
+        env:
+          NEEDS_JSON: ${{ toJson(needs) }}
+        run: |
+          echo "$NEEDS_JSON"
+          echo "$NEEDS_JSON" | python3 -c '
+          import json, sys
+          data = json.load(sys.stdin)
+          failed = [name for name, info in data.items() if info.get("result") != "success"]
+          if failed:
+              print(f"Failed/skipped jobs: {failed}")
+              sys.exit(1)
+          print("All release dry-run jobs succeeded.")
+          '
