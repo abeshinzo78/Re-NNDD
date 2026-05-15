@@ -152,11 +152,12 @@
     if (!container) return;
     screenshotMsg = 'スクリーンショット準備中…';
     const rect = container.getBoundingClientRect();
-    const w = Math.round(rect.width);
-    const h = Math.round(rect.height);
+    let w = Math.round(rect.width);
+    let h = Math.round(rect.height);
     if (w === 0 || h === 0) return;
 
     // 1) Try Rust-side ffmpeg extraction (local file → remote HLS).
+    //    Higher quality (exact frame at exact timestamp) when available.
     let frame: ImageBitmap | null = null;
     let b64: string | null = null;
     if (videoId) {
@@ -182,6 +183,19 @@
       }
     }
 
+    // 2) Fall back to drawing the <video> element directly when ffmpeg
+    //    extraction is unavailable (no ffmpeg / no local file / HLS fetch
+    //    failed). HLS.js feeds the element via MSE so the canvas is not
+    //    CORS-tainted. Use the intrinsic video size for higher fidelity
+    //    than the player rect would give us.
+    let videoFallbackDrawn = false;
+    const canUseVideoFallback =
+      !!video && video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0;
+    if (!frame && canUseVideoFallback && video) {
+      w = video.videoWidth;
+      h = video.videoHeight;
+    }
+
     const c = document.createElement('canvas');
     c.width = w;
     c.height = h;
@@ -201,15 +215,31 @@
       }
       ctx.drawImage(frame, (w - dw) / 2, (h - dh) / 2, dw, dh);
       frame.close();
+    } else if (canUseVideoFallback && video) {
+      try {
+        ctx.drawImage(video, 0, 0, w, h);
+        videoFallbackDrawn = true;
+      } catch (e) {
+        console.warn('[Player] screenshot: video drawImage failed', e);
+      }
     }
 
-    // 2) Composite comment canvas overlay.
+    // 3) Composite comment canvas overlay (scaled to match the chosen size).
     const commentCanvas = container.querySelector<HTMLCanvasElement>('canvas.layer');
     if (captureComments && commentCanvas && commentCanvas.width > 0 && commentCanvas.height > 0) {
       ctx.drawImage(commentCanvas, 0, 0, w, h);
     }
 
-    // 3) Download.
+    // 4) Bail out if we have absolutely nothing to draw — a blank canvas
+    //    with only a comment overlay (or worse, fully empty) was the
+    //    pre-fix failure mode and is never what the user wants.
+    if (!frame && !videoFallbackDrawn) {
+      screenshotMsg = 'スクリーンショット取得に失敗しました';
+      setTimeout(() => (screenshotMsg = null), 2500);
+      return;
+    }
+
+    // 5) Download.
     c.toBlob((blob) => {
       if (!blob) {
         screenshotMsg = 'スクリーンショット取得に失敗しました';
@@ -223,7 +253,8 @@
       const base = videoTitle
         ? videoTitle.replace(/[/\\?%*:|"<>]/g, '_').slice(0, 80)
         : 'screenshot';
-      a.download = `${base}[${videoId || 'no-id'}]${mm}:${ss}.png`;
+      // ':' is invalid in filenames on Windows — use '-' separator.
+      a.download = `${base}[${videoId || 'no-id'}]${mm}-${ss}.png`;
       a.href = url;
       a.click();
       URL.revokeObjectURL(url);

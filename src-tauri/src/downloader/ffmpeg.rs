@@ -6,7 +6,7 @@
 //!
 //! ffmpeg がインストールされていない / 失敗した場合は呼び出し側で fallback。
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::downloader::tools;
 use crate::error::ApiError;
@@ -100,9 +100,9 @@ pub async fn extract_frame(
         return None;
     }
 
-    // Construct a temporary output path.
-    let tmp = PathBuf::from(format!("{}.screenshot.png", video.file_stem()?.to_str()?));
-
+    // Pipe PNG to stdout so we don't depend on a writable working directory.
+    // (Previous impl wrote to CWD-relative path which silently failed when
+    // the CWD wasn't writable — leaving the screenshot button blank.)
     let mut cmd = tools::tokio_command(&ff.command);
     cmd.arg("-hide_banner")
         .arg("-loglevel")
@@ -116,17 +116,22 @@ pub async fn extract_frame(
         .arg("1")
         .arg("-q:v")
         .arg("2")
-        .arg(&tmp);
+        .arg("-f")
+        .arg("image2pipe")
+        .arg("-vcodec")
+        .arg("png")
+        .arg("-")
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
 
     let result = cmd.output().await.ok()?;
     if !result.status.success() {
-        let _ = tokio::fs::remove_file(&tmp).await;
         return None;
     }
-
-    let bytes = tokio::fs::read(&tmp).await.ok()?;
-    let _ = tokio::fs::remove_file(&tmp).await;
-    Some(bytes)
+    if result.stdout.is_empty() {
+        return None;
+    }
+    Some(result.stdout)
 }
 
 /// Extract a single frame from a remote URL (e.g. HLS playlist).
