@@ -1,12 +1,14 @@
 # Re:NNDD
 
 <!-- Build / CI -->
+
 [![CI](https://github.com/abeshinzo78/Re-NNDD/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/abeshinzo78/Re-NNDD/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/abeshinzo78/Re-NNDD/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/abeshinzo78/Re-NNDD/actions/workflows/codeql.yml)
 [![Security audit](https://github.com/abeshinzo78/Re-NNDD/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/abeshinzo78/Re-NNDD/actions/workflows/security.yml)
 [![Release](https://github.com/abeshinzo78/Re-NNDD/actions/workflows/release.yml/badge.svg)](https://github.com/abeshinzo78/Re-NNDD/actions/workflows/release.yml)
 
 <!-- Tech stack -->
+
 [![Tauri 2](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white)](https://tauri.app/)
 [![Rust stable / edition 2021](https://img.shields.io/badge/Rust-stable%20%2F%20edition%202021-DEA584?logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![Svelte 5](https://img.shields.io/badge/Svelte-5-FF3E00?logo=svelte&logoColor=white)](https://svelte.dev/)
@@ -17,6 +19,7 @@
 [![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey)](#必要環境)
 
 <!-- Quality -->
+
 [![License: MIT](https://img.shields.io/github/license/abeshinzo78/Re-NNDD?color=blue)](./LICENSE)
 [![unsafe forbidden](https://img.shields.io/badge/unsafe-forbidden-success?logo=rust&logoColor=white)](./Cargo.toml)
 [![clippy: deny warnings](https://img.shields.io/badge/clippy-deny%20warnings-orange?logo=rust&logoColor=white)](https://github.com/rust-lang/rust-clippy)
@@ -29,6 +32,7 @@
 [![Tests: Vitest](https://img.shields.io/badge/tests-Vitest-6E9F18?logo=vitest&logoColor=white)](https://vitest.dev/)
 
 <!-- Repo info -->
+
 [![Last commit](https://img.shields.io/github/last-commit/abeshinzo78/Re-NNDD)](https://github.com/abeshinzo78/Re-NNDD/commits/main)
 [![Issues](https://img.shields.io/github/issues/abeshinzo78/Re-NNDD)](https://github.com/abeshinzo78/Re-NNDD/issues)
 [![Pull requests](https://img.shields.io/github/issues-pr/abeshinzo78/Re-NNDD)](https://github.com/abeshinzo78/Re-NNDD/pulls)
@@ -38,6 +42,7 @@
 [![Top language](https://img.shields.io/github/languages/top/abeshinzo78/Re-NNDD)](https://github.com/abeshinzo78/Re-NNDD)
 
 <!-- External -->
+
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/abeshinzo78/Re-NNDD)
 [![Ask Zread](https://img.shields.io/badge/Ask_Zread-_.svg?style=flat&color=00b0aa&labelColor=000000&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIHZpZXdCb3g9IjAgMCAxNiAxNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTQuOTYxNTYgMS42MDAxSDIuMjQxNTZDMS44ODgxIDEuNjAwMSAxLjYwMTU2IDEuODg2NjQgMS42MDE1NiAyLjI0MDFWNC45NjAxQzEuNjAxNTYgNS4zMTM1NiAxLjg4ODEgNS42MDAxIDIuMjQxNTYgNS42MDAxSDQuOTYxNTZDNS4zMTUwMiA1LjYwMDEgNS42MDE1NiA1LjMxMzU2IDUuNjAxNTYgNC45NjAxVjIuMjQwMUM1LjYwMTU2IDEuODg2NjQgNS4zMTUwMiAxLjYwMDEgNC45NjE1NiAxLjYwMDFaIiBmaWxsPSIjZmZmIi8%2BCjxwYXRoIGQ9Ik00Ljk2MTU2IDEwLjM5OTlIMi4yNDE1NkMxLjg4ODEgMTAuMzk5OSAxLjYwMTU2IDEwLjY4NjQgMS42MDE1NiAxMS4wMzk5VjEzLjc1OTlDMS42MDE1NiAxNC4xMTM0IDEuODg4MSAxNC4zOTk5IDIuMjQxNTYgMTQuMzk5OUg0Ljk2MTU2QzUuMzE1MDIgMTQuMzk5OSA1LjYwMTU2IDE0LjExMzQgNS42MDE1NiAxMy43NTk5VjExLjAzOTlDNS42MDE1NiAxMC42ODY0IDUuMzE1MDIgMTAuMzk5OSA0Ljk2MTU2IDEwLjM5OTlaIiBmaWxsPSIjZmZmIi8%2BCjxwYXRoIGQ9Ik0xMy43NTg0IDEuNjAwMUgxMS4wMzg0QzEwLjY4NSAxLjYwMDEgMTAuMzk4NCAxLjg4NjY0IDEwLjM5ODQgMi4yNDAxVjQuOTYwMUMxMC4zOTg0IDUuMzEzNTYgMTAuNjg1IDUuNjAwMSAxMS4wMzg0IDUuNjAwMUgxMy43NTg0QzE0LjExMTkgNS42MDAxIDE0LjM5ODQgNS4zMTM1NiAxNC4zOTg0IDQuOTYwMVYyLjI0MDFDMTQuMzk4NCAxLjg4NjY0IDE0LjExMTkgMS42MDAxIDEzLjc1ODQgMS42MDAxWiIgZmlsbD0iI2ZmZiIvPgo8cGF0aCBkPSJNNCAxMkwxMiA0TDQgMTJaIiBmaWxsPSIjZmZmIi8%2BCjxwYXRoIGQ9Ik00IDEyTDEyIDQiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLXdpZHRoPSIxLjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgo8L3N2Zz4K&logoColor=ffffff)](https://zread.ai/abeshinzo78/Re-NNDD)
 
