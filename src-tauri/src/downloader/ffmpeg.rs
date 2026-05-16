@@ -183,7 +183,10 @@ pub async fn extract_frame(
         return None;
     }
     if result.stdout.is_empty() {
-        tracing::warn!(seek_sec, "ffmpeg local frame extraction returned empty stdout");
+        tracing::warn!(
+            seek_sec,
+            "ffmpeg local frame extraction returned empty stdout"
+        );
         return None;
     }
     Some(result.stdout)
