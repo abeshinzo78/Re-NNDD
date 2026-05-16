@@ -18,9 +18,10 @@ on:
 concurrency:
   # push と pull_request は同じ commit でも github.ref が違う (refs/heads/X vs
   # refs/pull/N/merge) ので、ref そのままだと dedup されず 2 run 並走する。
-  # head_ref (PR 時のみ branch 名) を優先、無ければ ref_name (push 時の branch名)
-  # にすることで、同一ブランチの push と PR を同じ group に束ねる。
-  group: release-dryrun-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  # branch 名でまとめるが、別 fork からの同名ブランチや `main` head の fork PR
+  # が main push と衝突するのを避けるため head repo を discriminator に加える
+  # (Codex P1 review)。
+  group: release-dryrun-${{ github.workflow }}-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 permissions:

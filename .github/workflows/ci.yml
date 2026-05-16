@@ -12,9 +12,11 @@ on:
 concurrency:
   # push と pull_request は同じ commit でも github.ref が違う (refs/heads/X vs
   # refs/pull/N/merge) ので、ref そのままだと dedup されず 2 run 並走する。
-  # head_ref (PR 時のみ branch 名) を優先、無ければ ref_name (push 時の branch名)
-  # にすることで、同一ブランチの push と PR を同じ group に束ねる。
-  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  # branch 名 (head_ref || ref_name) でまとめるが、それだけだと別 fork から
+  # 同名ブランチで来た PR や、`main` を head にした fork PR が main push と
+  # 衝突するので、head repo (なければ github.repository) を discriminator に
+  # 加える (Codex P1 review)。
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 permissions:
