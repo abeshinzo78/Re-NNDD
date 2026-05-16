@@ -25,7 +25,9 @@ permissions:
   security-events: write
 
 concurrency:
-  group: security-${{ github.ref }}
+  # push と pull_request の同一 commit 2 run 並走を防ぐため head_ref を優先する。
+  # 別 fork の同名ブランチ衝突を避けるため head repo を discriminator に追加。
+  group: security-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
