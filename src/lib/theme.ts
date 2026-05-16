@@ -211,11 +211,14 @@ export const THEMES: Record<ThemeId, { label: string; description?: string; vars
 
 export const DEFAULT_THEME: ThemeId = 'niconico';
 
-/** 指定 ID のテーマを <html> に適用。未知 ID は既定にフォールバック。 */
+/** 指定 ID のテーマを <html> に適用。未知 ID は既定にフォールバック。
+ *  `Object.hasOwn` で自前キーのみ受理する (`in` や bracket access だと
+ *  `toString` 等の Object.prototype チェーンに当たって関数が返り、
+ *  `theme.vars` 参照時に TypeError を投げてしまうため)。 */
 export function applyTheme(id: string): void {
   if (typeof document === 'undefined') return;
-  const theme = THEMES[id as ThemeId] ?? THEMES[DEFAULT_THEME];
-  const resolvedId = (id as ThemeId) in THEMES ? id : DEFAULT_THEME;
+  const resolvedId: ThemeId = Object.hasOwn(THEMES, id) ? (id as ThemeId) : DEFAULT_THEME;
+  const theme = THEMES[resolvedId];
   const root = document.documentElement;
   root.setAttribute('data-theme', resolvedId);
   for (const [k, v] of Object.entries(theme.vars)) {
