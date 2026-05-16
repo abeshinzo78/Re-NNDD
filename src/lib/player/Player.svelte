@@ -145,6 +145,20 @@
     }
   }
 
+  function canvasHasRenderedVideoPixels(canvas: HTMLCanvasElement): boolean {
+    const probe = document.createElement('canvas');
+    probe.width = 8;
+    probe.height = 8;
+    const probeCtx = probe.getContext('2d', { willReadFrequently: true });
+    if (!probeCtx) return false;
+    probeCtx.drawImage(canvas, 0, 0, probe.width, probe.height);
+    const { data } = probeCtx.getImageData(0, 0, probe.width, probe.height);
+    for (let i = 3; i < data.length; i += 4) {
+      if (data[i] !== 0) return true;
+    }
+    return false;
+  }
+
   async function takeScreenshot() {
     const container = stage;
     const captureComments = commentsEnabled;
@@ -218,7 +232,10 @@
     } else if (canUseVideoFallback && video) {
       try {
         ctx.drawImage(video, 0, 0, w, h);
-        videoFallbackDrawn = true;
+        videoFallbackDrawn = canvasHasRenderedVideoPixels(c);
+        if (!videoFallbackDrawn) {
+          console.warn('[Player] screenshot: video drawImage produced a blank canvas');
+        }
       } catch (e) {
         console.warn('[Player] screenshot: video drawImage failed', e);
       }

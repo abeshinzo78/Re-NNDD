@@ -7,9 +7,17 @@
 //! ffmpeg がインストールされていない / 失敗した場合は呼び出し側で fallback。
 
 use std::path::Path;
+use std::sync::Arc;
 
+use tauri::Manager;
+
+use crate::api::auth::SessionStore;
 use crate::downloader::tools;
 use crate::error::ApiError;
+
+const BROWSER_UA: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 \
+    (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
+const NICO_REFERER: &str = "https://www.nicovideo.jp/";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MuxOutcome {
@@ -19,6 +27,40 @@ pub enum MuxOutcome {
     FfmpegNotFound,
     /// ffmpeg はあるが処理に失敗した
     FfmpegFailed { stderr: String },
+}
+
+fn session_cookie_header(app: Option<&tauri::AppHandle>) -> Option<String> {
+    let app = app?;
+    let store = app.state::<Arc<SessionStore>>();
+    store.inner().cookie_header()
+}
+
+fn domand_headers(cookie_header: Option<&str>) -> String {
+    let mut headers = String::from(
+        "Accept: */*\r\n\
+         Accept-Language: ja,en-US;q=0.9,en;q=0.8\r\n\
+         sec-fetch-mode: cors\r\n\
+         sec-fetch-site: same-site\r\n\
+         sec-fetch-dest: empty\r\n\
+         sec-ch-ua: \"Chromium\";v=\"130\", \"Not?A_Brand\";v=\"99\"\r\n\
+         sec-ch-ua-mobile: ?0\r\n\
+         sec-ch-ua-platform: \"Linux\"\r\n",
+    );
+    if let Some(cookie) = cookie_header {
+        headers.push_str("Cookie: ");
+        headers.push_str(cookie);
+        headers.push_str("\r\n");
+    }
+    headers
+}
+
+fn apply_domand_http_options(cmd: &mut tokio::process::Command, cookie_header: Option<&str>) {
+    cmd.arg("-user_agent")
+        .arg(BROWSER_UA)
+        .arg("-referer")
+        .arg(NICO_REFERER)
+        .arg("-headers")
+        .arg(domand_headers(cookie_header));
 }
 
 /// `ffmpeg` バイナリが PATH またはバンドルにあるか確認。
@@ -124,11 +166,24 @@ pub async fn extract_frame(
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
 
-    let result = cmd.output().await.ok()?;
+    let result = match cmd.output().await {
+        Ok(result) => result,
+        Err(error) => {
+            tracing::warn!(seek_sec, %error, "failed to spawn ffmpeg for local frame extraction");
+            return None;
+        }
+    };
     if !result.status.success() {
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        tracing::warn!(
+            seek_sec,
+            stderr = %stderr,
+            "ffmpeg local frame extraction failed"
+        );
         return None;
     }
     if result.stdout.is_empty() {
+        tracing::warn!(seek_sec, "ffmpeg local frame extraction returned empty stdout");
         return None;
     }
     Some(result.stdout)
@@ -146,6 +201,7 @@ pub async fn extract_frame_from_url(
     if matches!(ff.source, tools::BinarySource::NotFound) {
         return None;
     }
+    let cookie_header = session_cookie_header(app);
 
     let mut cmd = tools::tokio_command(&ff.command);
     cmd.arg("-hide_banner")
@@ -153,24 +209,55 @@ pub async fn extract_frame_from_url(
         .arg("error")
         .arg("-y")
         .arg("-ss")
-        .arg(format!("{seek_sec:.3}"))
-        .arg("-i")
+        .arg(format!("{seek_sec:.3}"));
+    apply_domand_http_options(&mut cmd, cookie_header.as_deref());
+    cmd.arg("-i")
         .arg(url)
         .arg("-vframes")
         .arg("1")
+        .arg("-vcodec")
+        .arg("png")
         .arg("-f")
-        .arg("apng")
+        .arg("image2pipe")
         .arg("-")
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
 
     // Run with a generous timeout for network HLS.
-    let result = tokio::time::timeout(std::time::Duration::from_secs(30), cmd.output())
-        .await
-        .ok()?
-        .ok()?;
+    let result = match tokio::time::timeout(std::time::Duration::from_secs(30), cmd.output()).await
+    {
+        Ok(Ok(result)) => result,
+        Ok(Err(error)) => {
+            tracing::warn!(
+                %url,
+                seek_sec,
+                %error,
+                "failed to spawn ffmpeg for remote frame extraction"
+            );
+            return None;
+        }
+        Err(_) => {
+            tracing::warn!(%url, seek_sec, "ffmpeg remote frame extraction timed out");
+            return None;
+        }
+    };
 
     if !result.status.success() {
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        tracing::warn!(
+            %url,
+            seek_sec,
+            stderr = %stderr,
+            "ffmpeg remote frame extraction failed"
+        );
+        return None;
+    }
+    if result.stdout.is_empty() {
+        tracing::warn!(
+            %url,
+            seek_sec,
+            "ffmpeg remote frame extraction returned empty stdout"
+        );
         return None;
     }
     Some(result.stdout)
