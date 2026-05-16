@@ -10,7 +10,13 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  # push と pull_request は同じ commit でも github.ref が違う (refs/heads/X vs
+  # refs/pull/N/merge) ので、ref そのままだと dedup されず 2 run 並走する。
+  # branch 名 (head_ref || ref_name) でまとめるが、それだけだと別 fork から
+  # 同名ブランチで来た PR や、`main` を head にした fork PR が main push と
+  # 衝突するので、head repo (なければ github.repository) を discriminator に
+  # 加える (Codex P1 review)。
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 permissions:
@@ -206,7 +212,12 @@ jobs:
   # ──────────────────────────────────────────────────────────────────────────
   ci-success:
     name: CI success
-    if: ${{ always() }}
+    # `always()` だと concurrency cancel-in-progress で潰された run の集約も走り、
+    # cancelled な needs を「非 success」とみなして fail 判定してしまう (UI が
+    # 赤く埋まる)。`!cancelled()` にすると、workflow 自体が cancel された場合は
+    # この job も skip になり、branch protection 上は pass 扱いになる。
+    # job 単発の failure (timeout/error) はちゃんと拾える。
+    if: ${{ !cancelled() }}
     needs:
       - frontend
       - rust

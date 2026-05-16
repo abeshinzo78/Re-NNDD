@@ -16,7 +16,12 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: release-dryrun-${{ github.workflow }}-${{ github.ref }}
+  # push と pull_request は同じ commit でも github.ref が違う (refs/heads/X vs
+  # refs/pull/N/merge) ので、ref そのままだと dedup されず 2 run 並走する。
+  # branch 名でまとめるが、別 fork からの同名ブランチや `main` head の fork PR
+  # が main push と衝突するのを避けるため head repo を discriminator に加える
+  # (Codex P1 review)。
+  group: release-dryrun-${{ github.workflow }}-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 permissions:
@@ -39,8 +44,11 @@ jobs:
           - name: linux-x86_64
             os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
+          # macos-13 (Intel) ランナーは枯渇していて queued のまま数十時間動かないため、
+          # Apple Silicon ホスト (macos-14) 上で x86_64-apple-darwin をクロスビルドする。
+          # dry-run は署名・公証・DMG マウントを伴わないのでクロスビルドで問題ない。
           - name: macos-x86_64
-            os: macos-13
+            os: macos-14
             target: x86_64-apple-darwin
           - name: macos-aarch64
             os: macos-14
@@ -121,7 +129,11 @@ jobs:
   # 1 件だけを required にすればよい。
   release-dryrun-success:
     name: Release dry-run success
-    if: ${{ always() }}
+    # `always()` だと concurrency cancel-in-progress で潰された run の集約も走り、
+    # cancelled な needs を fail 判定してしまう (UI が赤く埋まる)。`!cancelled()`
+    # で workflow 全体が cancel された時は skip させる。matrix 内の単発失敗は
+    # 引き続き fail として捕まる。
+    if: ${{ !cancelled() }}
     needs:
       - bundle-dryrun
     runs-on: ubuntu-latest
