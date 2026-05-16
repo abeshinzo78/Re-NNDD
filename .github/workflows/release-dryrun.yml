@@ -16,7 +16,11 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: release-dryrun-${{ github.workflow }}-${{ github.ref }}
+  # push と pull_request は同じ commit でも github.ref が違う (refs/heads/X vs
+  # refs/pull/N/merge) ので、ref そのままだと dedup されず 2 run 並走する。
+  # head_ref (PR 時のみ branch 名) を優先、無ければ ref_name (push 時の branch名)
+  # にすることで、同一ブランチの push と PR を同じ group に束ねる。
+  group: release-dryrun-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 permissions:
