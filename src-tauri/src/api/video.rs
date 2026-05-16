@@ -45,7 +45,7 @@ fn meta_regex() -> &'static Regex {
     RE.get_or_init(build)
 }
 
-fn html_unescape(s: &str) -> String {
+pub fn html_unescape(s: &str) -> String {
     let intermediate = s
         .replace("&quot;", "\"")
         .replace("&apos;", "'")
@@ -129,6 +129,14 @@ pub struct WatchPageData {
 pub struct SeriesInfo {
     pub id: i64,
     pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thumbnail_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub items_count: Option<i64>,
+    #[serde(default)]
+    pub is_listed: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -538,6 +546,21 @@ fn project_watch_data(root: &Value) -> Result<WatchPageData, ApiError> {
         Some(SeriesInfo {
             id: s.get("id")?.as_i64()?,
             title: s.get("title")?.as_str()?.to_string(),
+            description: s
+                .get("description")
+                .and_then(Value::as_str)
+                .map(String::from),
+            thumbnail_url: s
+                .pointer("/thumbnail/url")
+                .and_then(Value::as_str)
+                .map(String::from)
+                .or_else(|| {
+                    s.get("thumbnailUrl")
+                        .and_then(Value::as_str)
+                        .map(String::from)
+                }),
+            items_count: s.get("itemsCount").and_then(Value::as_i64),
+            is_listed: s.get("isListed").and_then(Value::as_bool).unwrap_or(true),
         })
     });
 
@@ -794,7 +817,11 @@ mod tests {
                     },
                     "series": {
                         "id": 999,
-                        "title": "テストシリーズ"
+                        "title": "テストシリーズ",
+                        "description": "シリーズの説明文",
+                        "thumbnailUrl": "https://example.test/series_thumb.jpg",
+                        "itemsCount": 5,
+                        "isListed": true
                     },
                     "client": {
                         "watchTrackId": "fixtureTrack_1234567890"
@@ -882,6 +909,13 @@ mod tests {
         let series = data.series.expect("series");
         assert_eq!(series.id, 999);
         assert_eq!(series.title, "テストシリーズ");
+        assert_eq!(series.description.as_deref(), Some("シリーズの説明文"));
+        assert_eq!(
+            series.thumbnail_url.as_deref(),
+            Some("https://example.test/series_thumb.jpg")
+        );
+        assert_eq!(series.items_count, Some(5));
+        assert!(series.is_listed);
     }
 
     #[test]

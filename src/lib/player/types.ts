@@ -55,6 +55,10 @@ export type PlayerComment = {
 export type SeriesInfo = {
   id: number;
   title: string;
+  description?: string;
+  thumbnailUrl?: string;
+  itemsCount?: number;
+  isListed: boolean;
 };
 
 export type PlaybackPayload = {

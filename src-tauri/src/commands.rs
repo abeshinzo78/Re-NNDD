@@ -18,6 +18,8 @@ use crate::api::video::{
     quality_candidates, NiconicoWatchClient, NvCommentSetup, SeriesInfo, WatchApi, WatchOwner,
     WatchVideoMeta,
 };
+use crate::downloader::tools;
+use crate::downloader::ytdlp as ytdlp_mod;
 use crate::error::{AppError, Result};
 use crate::library::db::LibraryHandle;
 use crate::library::query::{self, LibraryQuery, LibraryStats, QueryResult};
@@ -531,6 +533,12 @@ pub struct UserVideosResponse {
     pub items: Vec<UserVideoItem>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub debug_raw: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub series_title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub series_description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub series_thumbnail_url: Option<String>,
 }
 
 #[tauri::command]
@@ -681,12 +689,555 @@ pub async fn fetch_user_videos(
         total_count,
         items,
         debug_raw: Some(body.chars().take(2000).collect()),
+        series_title: None,
+        series_description: None,
+        series_thumbnail_url: None,
     })
 }
 
 #[tauri::command]
 pub async fn fetch_series_videos(
     series_id: String,
+    _page: u32,
+    _page_size: u32,
+    store: State<'_, Arc<SessionStore>>,
+) -> Result<UserVideosResponse> {
+    let client = reqwest::Client::builder()
+        .user_agent(
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 \
+             (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+        )
+        .build()
+        .map_err(crate::error::ApiError::from)?;
+
+    // Step 1: get series metadata from NV API
+    let meta_url = format!("https://nvapi.nicovideo.jp/v1/series/{series_id}",);
+
+    let mut meta_req = client
+        .get(&meta_url)
+        .header("X-Frontend-Id", "6")
+        .header("X-Frontend-Version", "0")
+        .header(header::REFERER, "https://www.nicovideo.jp/")
+        .header(header::ACCEPT, "application/json");
+
+    if let Some(cookie) = store.cookie_header() {
+        meta_req = meta_req.header(header::COOKIE, cookie);
+    }
+
+    let meta_resp = meta_req
+        .send()
+        .await
+        .map_err(crate::error::ApiError::from)?;
+    let meta_status = meta_resp.status();
+    let meta_body = meta_resp
+        .text()
+        .await
+        .map_err(crate::error::ApiError::from)?;
+
+    let meta_json: serde_json::Value = if meta_status.is_success() {
+        serde_json::from_str(&meta_body).unwrap_or_default()
+    } else {
+        serde_json::Value::Null
+    };
+
+    let series_title = meta_json["data"]["detail"]["title"]
+        .as_str()
+        .map(String::from);
+    let series_description = meta_json["data"]["detail"]["description"]
+        .as_str()
+        .map(String::from);
+    let series_thumbnail_url = meta_json["data"]["detail"]["thumbnailUrl"]
+        .as_str()
+        .or_else(|| meta_json["data"]["detail"]["thumbnail"]["url"].as_str())
+        .map(String::from);
+
+    // Step 2: try yt-dlp for video list (most reliable)
+    let cookie = store.cookie_header();
+    match fetch_series_videos_via_ytdlp(&series_id, cookie).await {
+        Ok(items) if !items.is_empty() => {
+            let total_count = items.len() as i64;
+            return Ok(UserVideosResponse {
+                total_count,
+                items,
+                debug_raw: None,
+                series_title,
+                series_description,
+                series_thumbnail_url,
+            });
+        }
+        Ok(_) => {
+            tracing::info!(
+                "yt-dlp returned empty list for series {}, trying HTML scrape",
+                series_id
+            );
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "yt-dlp failed for series {}, trying HTML scrape", series_id);
+        }
+    }
+
+    // Step 3: fallback — scrape series HTML page for video list
+    let html_url = format!("https://www.nicovideo.jp/series/{series_id}");
+    let mut html_req = client
+        .get(&html_url)
+        .header(header::ACCEPT, "text/html,application/xhtml+xml");
+
+    if let Some(cookie) = store.cookie_header() {
+        html_req = html_req.header(header::COOKIE, cookie);
+    }
+
+    let html_resp = html_req
+        .send()
+        .await
+        .map_err(crate::error::ApiError::from)?;
+    let html_status = html_resp.status();
+    let html_body = html_resp
+        .text()
+        .await
+        .map_err(crate::error::ApiError::from)?;
+
+    if !html_status.is_success() {
+        let preview: String = html_body.chars().take(200).collect();
+        return Err(AppError::Other(format!(
+            "シリーズページ取得エラー ({html_status}): {preview}"
+        )));
+    }
+
+    let items = extract_series_videos_from_html(&html_body);
+    let total_count = items.len() as i64;
+
+    Ok(UserVideosResponse {
+        total_count,
+        items,
+        debug_raw: None,
+        series_title,
+        series_description,
+        series_thumbnail_url,
+    })
+}
+
+/// Fallback: scrape server-response meta from series HTML page.
+/// Only works if the series page embeds video data in the same pattern
+/// as the watch page (unlikely for modern niconico series pages).
+fn extract_series_videos_from_html(html: &str) -> Vec<UserVideoItem> {
+    let re = regex::Regex::new(r#"<meta name="server-response" content="([^"]*)""#).ok();
+    let raw = re
+        .as_ref()
+        .and_then(|r| r.captures(html).and_then(|c| c.get(1)).map(|m| m.as_str()));
+
+    let json_str = match raw {
+        Some(s) => crate::api::video::html_unescape(s),
+        None => return Vec::new(),
+    };
+
+    let root: serde_json::Value = match serde_json::from_str(&json_str) {
+        Ok(v) => v,
+        Err(_) => return Vec::new(),
+    };
+
+    let items_val = root
+        .pointer("/data/response/series/items")
+        .and_then(|v| v.as_array())
+        .or_else(|| {
+            root.pointer("/data/response/items")
+                .and_then(|v| v.as_array())
+        })
+        .or_else(|| {
+            root.pointer("/data/response/videos")
+                .and_then(|v| v.as_array())
+        })
+        .or_else(|| root["data"]["response"]["series"]["items"].as_array())
+        .or_else(|| root["data"]["response"]["items"].as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    let mut items = Vec::with_capacity(items_val.len());
+    for raw_item in items_val {
+        let v = if raw_item["essential"].is_object() {
+            &raw_item["essential"]
+        } else if raw_item["video"].is_object() {
+            &raw_item["video"]
+        } else {
+            &raw_item
+        };
+
+        let id = v["id"]
+            .as_i64()
+            .map(|n| n.to_string())
+            .or_else(|| v["id"].as_str().map(String::from))
+            .or_else(|| v["contentId"].as_str().map(String::from))
+            .unwrap_or_default();
+        if id.is_empty() {
+            continue;
+        }
+
+        let thumb = v["thumbnail"]["url"]
+            .as_str()
+            .or_else(|| v["thumbnailUrl"].as_str())
+            .map(String::from);
+        let dur = v["duration"]
+            .as_i64()
+            .or_else(|| v["lengthSeconds"].as_i64());
+        let views = v["count"]["view"]
+            .as_i64()
+            .or_else(|| v["viewCounter"].as_i64());
+        let coms = v["count"]["comment"]
+            .as_i64()
+            .or_else(|| v["commentCounter"].as_i64());
+        let mys = v["count"]["mylist"]
+            .as_i64()
+            .or_else(|| v["mylistCounter"].as_i64());
+        let start = v["registeredAt"]
+            .as_str()
+            .or_else(|| v["startTime"].as_str())
+            .map(String::from);
+        let uid = v["owner"]["id"].as_i64().or_else(|| v["userId"].as_i64());
+        let title = v["title"].as_str().unwrap_or("(無題)").to_string();
+
+        items.push(UserVideoItem {
+            content_id: id,
+            title,
+            thumbnail_url: thumb,
+            length_seconds: dur,
+            view_counter: views,
+            comment_counter: coms,
+            mylist_counter: mys,
+            start_time: start,
+            user_id: uid,
+            channel_id: None,
+        });
+    }
+
+    items
+}
+
+/// Use yt-dlp --dump-json --flat-playlist to list series videos.
+/// Matches NicomusicBot's approach: reliable, handles API changes.
+async fn fetch_series_videos_via_ytdlp(
+    series_id: &str,
+    cookie_header: Option<String>,
+) -> Result<Vec<UserVideoItem>, AppError> {
+    let yt = tools::ytdlp(None);
+    if matches!(yt.source, tools::BinarySource::NotFound) {
+        return Err(AppError::Other(
+            "yt-dlp が見つかりません。インストールしてください。".into(),
+        ));
+    }
+
+    let url = format!("https://www.nicovideo.jp/series/{series_id}");
+
+    // Write cookies to temp file (Netscape format for yt-dlp compatibility)
+    let tmp_dir = std::env::temp_dir().join("nndd-series");
+    tokio::fs::create_dir_all(&tmp_dir)
+        .await
+        .map_err(|e| AppError::Other(format!("一時ディレクトリ作成失敗: {e}")))?;
+    let cookies_file = if let Some(ref cookie) = cookie_header {
+        let path = tmp_dir.join("cookies.txt");
+        let netscape = ytdlp_mod::build_netscape_cookies(cookie);
+        if let Err(e) = tokio::fs::write(&path, netscape).await {
+            tracing::warn!(error = %e, "failed to write yt-dlp cookies file");
+            None
+        } else {
+            Some(path)
+        }
+    } else {
+        None
+    };
+
+    let mut cmd = tools::tokio_command(&yt.command);
+    cmd.arg("--dump-json")
+        .arg("--flat-playlist")
+        .arg("--no-warnings")
+        .arg("--no-colors");
+
+    if let Some(ref p) = cookies_file {
+        cmd.arg("--cookies").arg(p);
+    }
+
+    cmd.arg(&url)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+
+    let output = cmd
+        .output()
+        .await
+        .map_err(|e| AppError::Other(format!("yt-dlp 実行失敗: {e}")))?;
+
+    // Clean up temp files
+    if let Some(ref p) = cookies_file {
+        let _ = tokio::fs::remove_file(p).await;
+    }
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let preview: String = stderr.chars().take(300).collect();
+        return Err(AppError::Other(format!(
+            "シリーズ動画の取得に失敗しました (yt-dlp exit {:?}): {preview}",
+            output.status.code()
+        )));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut items = Vec::new();
+
+    for line in stdout.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let json: serde_json::Value = match serde_json::from_str(line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let id = json["id"].as_str().unwrap_or("").to_string();
+        if id.is_empty() {
+            continue;
+        }
+        let title = json["title"].as_str().unwrap_or("(無題)").to_string();
+        let thumbnail_url = json["thumbnail"]
+            .as_str()
+            .or_else(|| json["thumbnail_url"].as_str())
+            .map(String::from);
+        let duration = json["duration"]
+            .as_i64()
+            .or_else(|| json["duration_string"].as_i64());
+
+        items.push(UserVideoItem {
+            content_id: id,
+            title,
+            thumbnail_url,
+            length_seconds: duration,
+            view_counter: None,
+            comment_counter: None,
+            mylist_counter: None,
+            start_time: None,
+            user_id: None,
+            channel_id: None,
+        });
+    }
+
+    Ok(items)
+}
+
+// =================== ユーザーマイリスト・シリーズ一覧 ===================
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserMylistSummary {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub thumbnail_url: Option<String>,
+    pub items_count: Option<i64>,
+    pub is_public: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserMylistsResponse {
+    pub items: Vec<UserMylistSummary>,
+    pub total_count: i64,
+}
+
+#[tauri::command]
+pub async fn fetch_user_mylists(
+    owner_id: String,
+    store: State<'_, Arc<SessionStore>>,
+) -> Result<UserMylistsResponse> {
+    if owner_id.is_empty()
+        || owner_id.len() > 64
+        || !owner_id.chars().all(|c| c.is_ascii_alphanumeric())
+    {
+        return Err(AppError::Other(format!("invalid owner_id: {owner_id:?}")));
+    }
+
+    let client = reqwest::Client::builder()
+        .user_agent(
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 \
+             (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+        )
+        .build()
+        .map_err(crate::error::ApiError::from)?;
+
+    let url = format!("https://nvapi.nicovideo.jp/v1/users/{owner_id}/mylists?page=1&pageSize=50");
+
+    let mut req = client
+        .get(&url)
+        .header("X-Frontend-Id", "6")
+        .header("X-Frontend-Version", "0")
+        .header(header::REFERER, "https://www.nicovideo.jp/")
+        .header(header::ACCEPT, "application/json");
+
+    if let Some(cookie) = store.cookie_header() {
+        req = req.header(header::COOKIE, cookie);
+    }
+
+    let resp = req.send().await.map_err(crate::error::ApiError::from)?;
+    let status = resp.status();
+    let body = resp.text().await.map_err(crate::error::ApiError::from)?;
+
+    if !status.is_success() {
+        let preview: String = body.chars().take(200).collect();
+        return Err(AppError::Other(format!(
+            "マイリスト一覧 API エラー ({status}): {preview}"
+        )));
+    }
+
+    let json: serde_json::Value =
+        serde_json::from_str(&body).map_err(crate::error::ApiError::from)?;
+
+    let total_count = json["data"]["totalCount"].as_i64().unwrap_or(0);
+
+    let items_val = json["data"]["mylists"]
+        .as_array()
+        .or_else(|| json["data"]["items"].as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    let mut items = Vec::with_capacity(items_val.len());
+    for node in &items_val {
+        let id = node["id"]
+            .as_i64()
+            .map(|n| n.to_string())
+            .or_else(|| node["id"].as_str().map(String::from))
+            .unwrap_or_default();
+        if id.is_empty() {
+            continue;
+        }
+        let name = node["name"].as_str().unwrap_or("(無題)").to_string();
+        let description = node["description"].as_str().map(String::from);
+        let thumbnail_url = node["thumbnailUrl"]
+            .as_str()
+            .or_else(|| node["thumbnail"]["url"].as_str())
+            .map(String::from);
+        let items_count = node["itemsCount"]
+            .as_i64()
+            .or_else(|| node["totalItemCount"].as_i64());
+        let is_public = node["isPublic"].as_bool().unwrap_or(true);
+
+        items.push(UserMylistSummary {
+            id,
+            name,
+            description,
+            thumbnail_url,
+            items_count,
+            is_public,
+        });
+    }
+
+    Ok(UserMylistsResponse { items, total_count })
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserSeriesSummary {
+    pub id: String,
+    pub title: String,
+    pub description: Option<String>,
+    pub thumbnail_url: Option<String>,
+    pub items_count: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserSeriesListResponse {
+    pub items: Vec<UserSeriesSummary>,
+    pub total_count: i64,
+}
+
+#[tauri::command]
+pub async fn fetch_user_series_list(
+    owner_id: String,
+    store: State<'_, Arc<SessionStore>>,
+) -> Result<UserSeriesListResponse> {
+    if owner_id.is_empty()
+        || owner_id.len() > 64
+        || !owner_id.chars().all(|c| c.is_ascii_alphanumeric())
+    {
+        return Err(AppError::Other(format!("invalid owner_id: {owner_id:?}")));
+    }
+
+    let client = reqwest::Client::builder()
+        .user_agent(
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 \
+             (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+        )
+        .build()
+        .map_err(crate::error::ApiError::from)?;
+
+    let url = format!("https://nvapi.nicovideo.jp/v1/users/{owner_id}/series?page=1&pageSize=50");
+
+    let mut req = client
+        .get(&url)
+        .header("X-Frontend-Id", "6")
+        .header("X-Frontend-Version", "0")
+        .header(header::REFERER, "https://www.nicovideo.jp/")
+        .header(header::ACCEPT, "application/json");
+
+    if let Some(cookie) = store.cookie_header() {
+        req = req.header(header::COOKIE, cookie);
+    }
+
+    let resp = req.send().await.map_err(crate::error::ApiError::from)?;
+    let status = resp.status();
+    let body = resp.text().await.map_err(crate::error::ApiError::from)?;
+
+    if !status.is_success() {
+        let preview: String = body.chars().take(200).collect();
+        return Err(AppError::Other(format!(
+            "シリーズ一覧 API エラー ({status}): {preview}"
+        )));
+    }
+
+    let json: serde_json::Value =
+        serde_json::from_str(&body).map_err(crate::error::ApiError::from)?;
+
+    let total_count = json["data"]["totalCount"].as_i64().unwrap_or(0);
+
+    let items_val = json["data"]["series"]
+        .as_array()
+        .or_else(|| json["data"]["items"].as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    let mut items = Vec::with_capacity(items_val.len());
+    for node in &items_val {
+        let id = node["id"]
+            .as_i64()
+            .map(|n| n.to_string())
+            .or_else(|| node["id"].as_str().map(String::from))
+            .unwrap_or_default();
+        if id.is_empty() {
+            continue;
+        }
+        let title = node["title"].as_str().unwrap_or("(無題)").to_string();
+        let description = node["description"]
+            .as_str()
+            .or_else(|| node["decoratedDescriptionHtml"].as_str())
+            .map(String::from);
+        let thumbnail_url = node["thumbnailUrl"]
+            .as_str()
+            .or_else(|| node["thumbnail"]["url"].as_str())
+            .map(String::from);
+        let items_count = node["itemsCount"]
+            .as_i64()
+            .or_else(|| node["videoCount"].as_i64());
+
+        items.push(UserSeriesSummary {
+            id,
+            title,
+            description,
+            thumbnail_url,
+            items_count,
+        });
+    }
+
+    Ok(UserSeriesListResponse { items, total_count })
+}
+
+#[tauri::command]
+pub async fn fetch_mylist_videos(
+    mylist_id: String,
     page: u32,
     page_size: u32,
     store: State<'_, Arc<SessionStore>>,
@@ -700,8 +1251,7 @@ pub async fn fetch_series_videos(
         .map_err(crate::error::ApiError::from)?;
 
     let url = format!(
-        "https://nvapi.nicovideo.jp/v1/series/{}/videos?page={}&pageSize={}&sortKey=createdAt&sortOrder=desc",
-        series_id, page, page_size
+        "https://nvapi.nicovideo.jp/v2/mylists/{mylist_id}?pageSize={page_size}&page={page}"
     );
 
     let mut req = client
@@ -721,39 +1271,40 @@ pub async fn fetch_series_videos(
 
     if !status.is_success() {
         let preview: String = body.chars().take(200).collect();
-        tracing::warn!(%url, %status, body = %preview, "series videos API error");
         return Err(AppError::Other(format!(
-            "シリーズ動画 API エラー ({status}): {preview}"
+            "マイリスト動画 API エラー ({status}): {preview}"
         )));
     }
 
     let json: serde_json::Value =
         serde_json::from_str(&body).map_err(crate::error::ApiError::from)?;
 
-    let total_count = json["data"]["totalCount"].as_i64().unwrap_or(0);
+    let preview: String = body.chars().take(500).collect();
+    tracing::info!(%url, %status, body = %preview, "mylist videos API response");
 
-    let items_val = json["data"]["items"]
-        .as_array()
-        .cloned()
-        .unwrap_or_default();
+    let mylist = &json["data"]["mylist"];
+    let total_count = mylist["totalItemCount"]
+        .as_i64()
+        .or_else(|| json["data"]["totalCount"].as_i64())
+        .unwrap_or(0);
+
+    let items_val = mylist["items"].as_array().cloned().unwrap_or_default();
 
     let mut items = Vec::with_capacity(items_val.len());
-    for raw_item in items_val {
-        let v = if raw_item["essential"].is_object() {
-            &raw_item["essential"]
-        } else {
-            &raw_item
-        };
+    for raw_item in &items_val {
+        let v = &raw_item["video"];
         let id = v["id"]
-            .as_str()
-            .or_else(|| v["contentId"].as_str())
-            .unwrap_or("")
-            .to_string();
+            .as_i64()
+            .map(|n| n.to_string())
+            .or_else(|| v["id"].as_str().map(String::from))
+            .or_else(|| v["contentId"].as_str().map(String::from))
+            .unwrap_or_default();
         if id.is_empty() {
             continue;
         }
         let thumb = v["thumbnail"]["url"]
             .as_str()
+            .or_else(|| v["thumbnail"]["listingUrl"].as_str())
             .or_else(|| v["thumbnailUrl"].as_str())
             .map(String::from);
         let dur = v["duration"]
@@ -792,6 +1343,9 @@ pub async fn fetch_series_videos(
         total_count,
         items,
         debug_raw: None,
+        series_title: None,
+        series_description: None,
+        series_thumbnail_url: None,
     })
 }
 

@@ -1,6 +1,15 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import { fetchUserVideos, type UserVideoItem } from '$lib/api';
+  import {
+    fetchUserVideos,
+    fetchUserMylists,
+    fetchUserSeriesList,
+    fetchMylistVideos,
+    fetchSeriesVideos,
+    type UserVideoItem,
+    type UserMylistSummary,
+    type UserSeriesSummary,
+  } from '$lib/api';
   import { formatDate, formatDuration, formatNumber, videoUrl } from '$lib/format';
 
   let userId = $derived(page.params.id ?? '');
@@ -10,13 +19,16 @@
   let nickname = $derived(page.url.searchParams.get('name') ?? '');
   let iconUrl = $derived(page.url.searchParams.get('icon') || null);
 
+  type Tab = 'videos' | 'mylists' | 'series';
+  let activeTab = $state<Tab>('videos');
+
+  // ---- 投稿動画 ----
   let items = $state<UserVideoItem[]>([]);
   let totalCount = $state(0);
   let loading = $state(true);
   let error = $state<string | null>(null);
   let currentPage = $state(1);
   let loadingMore = $state(false);
-  let debugRaw = $state<string | null>(null);
 
   const PAGE_SIZE = 30;
 
@@ -51,7 +63,6 @@
         items = [...items, ...resp.items];
       }
       totalCount = resp.totalCount;
-      debugRaw = resp.debugRaw ?? null;
       currentPage = (reset ? 1 : currentPage) + 1;
     } catch (e) {
       error = String(e);
@@ -61,10 +72,71 @@
     }
   }
 
+  // ---- マイリスト一覧 ----
+  let mylists = $state<UserMylistSummary[]>([]);
+  let mylistsLoading = $state(false);
+  let mylistsError = $state<string | null>(null);
+
+  // 展開中のマイリスト ID とその動画一覧
+  let expandedMylistId = $state<string | null>(null);
+  let mylistVideos = $state<UserVideoItem[]>([]);
+  let mylistVideosLoading = $state(false);
+
+  async function loadMylists() {
+    if (!userId || kind === 'channel') return;
+    mylistsLoading = true;
+    mylistsError = null;
+    try {
+      const resp = await fetchUserMylists(userId);
+      mylists = resp.items;
+    } catch (e) {
+      mylistsError = String(e);
+    } finally {
+      mylistsLoading = false;
+    }
+  }
+
+  // ---- シリーズ一覧 ----
+  let seriesList = $state<UserSeriesSummary[]>([]);
+  let seriesLoading = $state(false);
+  let seriesError = $state<string | null>(null);
+
+  let expandedSeriesId = $state<string | null>(null);
+  let seriesVideos = $state<UserVideoItem[]>([]);
+  let seriesVideosLoading = $state(false);
+
+  async function loadSeries() {
+    if (!userId || kind === 'channel') return;
+    seriesLoading = true;
+    seriesError = null;
+    try {
+      const resp = await fetchUserSeriesList(userId);
+      seriesList = resp.items;
+    } catch (e) {
+      seriesError = String(e);
+    } finally {
+      seriesLoading = false;
+    }
+  }
+
+  // ---- タブ切替時のデータロード ----
   $effect(() => {
-    // Track reactive deps so the effect re-runs when any of these change.
     void [userId, kind, sortKey, sortOrder];
-    loadVideos(true);
+    if (activeTab === 'videos') {
+      loadVideos(true);
+    }
+  });
+
+  $effect(() => {
+    if (activeTab === 'mylists' && mylists.length === 0 && !mylistsLoading) {
+      loadMylists();
+    }
+  });
+
+  $effect(() => {
+    if (activeTab === 'series' && seriesList.length === 0 && !seriesLoading) {
+      loadSeries();
+    }
   });
 
   let externalHref = $derived(
@@ -87,6 +159,42 @@
     if (nickname) qs += `&name=${encodeURIComponent(nickname)}`;
     if (iconUrl) qs += `&icon=${encodeURIComponent(iconUrl)}`;
     return `/video/${id}?${qs}`;
+  }
+
+  async function toggleMylist(id: string) {
+    if (expandedMylistId === id) {
+      expandedMylistId = null;
+      mylistVideos = [];
+      return;
+    }
+    expandedMylistId = id;
+    mylistVideosLoading = true;
+    try {
+      const resp = await fetchMylistVideos(id, 1, 100);
+      mylistVideos = resp.items;
+    } catch {
+      mylistVideos = [];
+    } finally {
+      mylistVideosLoading = false;
+    }
+  }
+
+  async function toggleSeries(id: string) {
+    if (expandedSeriesId === id) {
+      expandedSeriesId = null;
+      seriesVideos = [];
+      return;
+    }
+    expandedSeriesId = id;
+    seriesVideosLoading = true;
+    try {
+      const resp = await fetchSeriesVideos(id, 1, 100);
+      seriesVideos = resp.items;
+    } catch {
+      seriesVideos = [];
+    } finally {
+      seriesVideosLoading = false;
+    }
   }
 </script>
 
@@ -111,88 +219,285 @@
     </a>
   </header>
 
-  <div class="toolbar">
-    <button
-      class="sort-btn"
-      class:active={sortKey === 'registeredAt'}
-      onclick={() => changeSort('registeredAt')}
-    >
-      投稿日 {sortKey === 'registeredAt' ? (sortOrder === 'desc' ? '↓' : '↑') : ''}
-    </button>
-    <button
-      class="sort-btn"
-      class:active={sortKey === 'viewCount'}
-      onclick={() => changeSort('viewCount')}
-    >
-      再生数 {sortKey === 'viewCount' ? (sortOrder === 'desc' ? '↓' : '↑') : ''}
-    </button>
-    <button
-      class="sort-btn"
-      class:active={sortKey === 'mylistCount'}
-      onclick={() => changeSort('mylistCount')}
-    >
-      マイリスト {sortKey === 'mylistCount' ? (sortOrder === 'desc' ? '↓' : '↑') : ''}
-    </button>
-  </div>
+  {#if kind !== 'channel'}
+    <nav class="tabs">
+      <button
+        class="tab"
+        class:active={activeTab === 'videos'}
+        onclick={() => (activeTab = 'videos')}
+      >
+        投稿動画
+      </button>
+      <button
+        class="tab"
+        class:active={activeTab === 'mylists'}
+        onclick={() => (activeTab = 'mylists')}
+      >
+        マイリスト
+      </button>
+      <button
+        class="tab"
+        class:active={activeTab === 'series'}
+        onclick={() => (activeTab = 'series')}
+      >
+        シリーズ
+      </button>
+    </nav>
+  {/if}
 
-  {#if loading}
-    <div class="muted">読み込み中…</div>
-  {:else if error}
-    <div class="error">エラー: {error}</div>
-  {:else if items.length === 0}
-    <div class="muted">動画が見つかりませんでした。</div>
-    {#if debugRaw}
-      <details class="debug-details">
-        <summary>API レスポンス (デバッグ)</summary>
-        <pre class="debug-pre">{debugRaw}</pre>
-      </details>
+  <!-- ===== 投稿動画タブ ===== -->
+  {#if activeTab === 'videos'}
+    <div class="toolbar">
+      <button
+        class="sort-btn"
+        class:active={sortKey === 'registeredAt'}
+        onclick={() => changeSort('registeredAt')}
+      >
+        投稿日 {sortKey === 'registeredAt' ? (sortOrder === 'desc' ? '↓' : '↑') : ''}
+      </button>
+      <button
+        class="sort-btn"
+        class:active={sortKey === 'viewCount'}
+        onclick={() => changeSort('viewCount')}
+      >
+        再生数 {sortKey === 'viewCount' ? (sortOrder === 'desc' ? '↓' : '↑') : ''}
+      </button>
+      <button
+        class="sort-btn"
+        class:active={sortKey === 'mylistCount'}
+        onclick={() => changeSort('mylistCount')}
+      >
+        マイリスト {sortKey === 'mylistCount' ? (sortOrder === 'desc' ? '↓' : '↑') : ''}
+      </button>
+    </div>
+
+    {#if loading}
+      <div class="muted">読み込み中…</div>
+    {:else if error}
+      <div class="error">エラー: {error}</div>
+    {:else if items.length === 0}
+      <div class="muted">動画が見つかりませんでした。</div>
+    {:else}
+      <ul class="results">
+        {#each items as item (item.contentId)}
+          <li class="hit">
+            {#if item.thumbnailUrl}
+              <a href={videoHref(item.contentId)}>
+                <img class="thumb" src={item.thumbnailUrl} alt="" loading="lazy" />
+              </a>
+            {:else}
+              <div class="thumb placeholder"></div>
+            {/if}
+            <div class="info">
+              <div class="title">
+                <a href={videoHref(item.contentId)}>{item.title || '(無題)'}</a>
+                <a
+                  class="ext"
+                  href={videoUrl(item.contentId)}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  title="ニコニコで開く">↗</a
+                >
+              </div>
+              <div class="row-meta muted">
+                <span>{item.contentId}</span>
+                {#if item.lengthSeconds != null}<span class="dot">·</span><span
+                    >{formatDuration(item.lengthSeconds)}</span
+                  >{/if}
+                {#if item.startTime}<span class="dot">·</span><span
+                    >{formatDate(item.startTime)}</span
+                  >{/if}
+              </div>
+              <div class="row-meta">
+                <span>再生 {formatNumber(item.viewCounter)}</span>
+                <span class="dot">·</span>
+                <span>コメ {formatNumber(item.commentCounter)}</span>
+                <span class="dot">·</span>
+                <span>マイリスト {formatNumber(item.mylistCounter)}</span>
+              </div>
+            </div>
+          </li>
+        {/each}
+      </ul>
+      {#if items.length < totalCount}
+        <div class="more">
+          <button class="more-btn" onclick={() => loadVideos(false)} disabled={loadingMore}>
+            {loadingMore ? '読み込み中…' : 'もっと見る'}
+          </button>
+        </div>
+      {/if}
     {/if}
-  {:else}
-    <ul class="results">
-      {#each items as item (item.contentId)}
-        <li class="hit">
-          {#if item.thumbnailUrl}
-            <a href={videoHref(item.contentId)}>
-              <img class="thumb" src={item.thumbnailUrl} alt="" loading="lazy" />
-            </a>
-          {:else}
-            <div class="thumb placeholder"></div>
-          {/if}
-          <div class="info">
-            <div class="title">
-              <a href={videoHref(item.contentId)}>{item.title || '(無題)'}</a>
-              <a
-                class="ext"
-                href={videoUrl(item.contentId)}
-                target="_blank"
-                rel="noreferrer noopener"
-                title="ニコニコで開く">↗</a
-              >
+  {/if}
+
+  <!-- ===== マイリストタブ ===== -->
+  {#if activeTab === 'mylists'}
+    {#if mylistsLoading}
+      <div class="muted">読み込み中…</div>
+    {:else if mylistsError}
+      <div class="error">エラー: {mylistsError}</div>
+    {:else if mylists.length === 0}
+      <div class="muted">公開マイリストはありません。</div>
+    {:else}
+      <div class="card-list">
+        {#each mylists as ml (ml.id)}
+          <div
+            class="list-card"
+            role="button"
+            tabindex="0"
+            onclick={() => toggleMylist(ml.id)}
+            onkeydown={(e) => e.key === 'Enter' && toggleMylist(ml.id)}
+          >
+            <div class="list-card-thumb">
+              {#if ml.thumbnailUrl}
+                <img src={ml.thumbnailUrl} alt="" loading="lazy" />
+              {:else}
+                <div class="list-card-thumb placeholder">
+                  <svg viewBox="0 0 24 24" width="24" height="24"
+                    ><path
+                      d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12z"
+                      fill="currentColor"
+                    /></svg
+                  >
+                </div>
+              {/if}
             </div>
-            <div class="row-meta muted">
-              <span>{item.contentId}</span>
-              {#if item.lengthSeconds != null}<span class="dot">·</span><span
-                  >{formatDuration(item.lengthSeconds)}</span
-                >{/if}
-              {#if item.startTime}<span class="dot">·</span><span>{formatDate(item.startTime)}</span
-                >{/if}
+            <div class="list-card-body">
+              <div class="list-card-title">{ml.name}</div>
+              {#if ml.description}
+                <div class="list-card-desc">{ml.description}</div>
+              {/if}
+              <div class="list-card-meta">
+                {#if ml.itemsCount != null}{ml.itemsCount} 本の動画{/if}
+              </div>
             </div>
-            <div class="row-meta">
-              <span>再生 {formatNumber(item.viewCounter)}</span>
-              <span class="dot">·</span>
-              <span>コメ {formatNumber(item.commentCounter)}</span>
-              <span class="dot">·</span>
-              <span>マイリスト {formatNumber(item.mylistCounter)}</span>
-            </div>
+            <span class="list-card-arrow" aria-hidden="true"
+              >{expandedMylistId === ml.id ? '▾' : '›'}</span
+            >
           </div>
-        </li>
-      {/each}
-    </ul>
-    {#if items.length < totalCount}
-      <div class="more">
-        <button class="more-btn" onclick={() => loadVideos(false)} disabled={loadingMore}>
-          {loadingMore ? '読み込み中…' : 'もっと見る'}
-        </button>
+          {#if expandedMylistId === ml.id}
+            <div class="expanded-list">
+              {#if mylistVideosLoading}
+                <div class="muted">読み込み中…</div>
+              {:else if mylistVideos.length === 0}
+                <div class="muted">動画が見つかりませんでした。</div>
+              {:else}
+                <ul class="results">
+                  {#each mylistVideos as item (item.contentId)}
+                    <li class="hit compact">
+                      {#if item.thumbnailUrl}
+                        <a href={videoHref(item.contentId)}>
+                          <img class="thumb" src={item.thumbnailUrl} alt="" loading="lazy" />
+                        </a>
+                      {:else}
+                        <div class="thumb placeholder"></div>
+                      {/if}
+                      <div class="info">
+                        <div class="title">
+                          <a href={videoHref(item.contentId)}>{item.title || '(無題)'}</a>
+                        </div>
+                        <div class="row-meta muted">
+                          {#if item.lengthSeconds != null}<span
+                              >{formatDuration(item.lengthSeconds)}</span
+                            >{/if}
+                          {#if item.startTime}<span class="dot">·</span><span
+                              >{formatDate(item.startTime)}</span
+                            >{/if}
+                        </div>
+                      </div>
+                    </li>
+                  {/each}
+                </ul>
+              {/if}
+            </div>
+          {/if}
+        {/each}
+      </div>
+    {/if}
+  {/if}
+
+  <!-- ===== シリーズタブ ===== -->
+  {#if activeTab === 'series'}
+    {#if seriesLoading}
+      <div class="muted">読み込み中…</div>
+    {:else if seriesError}
+      <div class="error">エラー: {seriesError}</div>
+    {:else if seriesList.length === 0}
+      <div class="muted">シリーズはありません。</div>
+    {:else}
+      <div class="card-list">
+        {#each seriesList as sr (sr.id)}
+          <div
+            class="list-card"
+            role="button"
+            tabindex="0"
+            onclick={() => toggleSeries(sr.id)}
+            onkeydown={(e) => e.key === 'Enter' && toggleSeries(sr.id)}
+          >
+            <div class="list-card-thumb">
+              {#if sr.thumbnailUrl}
+                <img src={sr.thumbnailUrl} alt="" loading="lazy" />
+              {:else}
+                <div class="list-card-thumb placeholder">
+                  <svg viewBox="0 0 24 24" width="24" height="24"
+                    ><path
+                      d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12zm-8-2l6-4-6-4v8z"
+                      fill="currentColor"
+                    /></svg
+                  >
+                </div>
+              {/if}
+            </div>
+            <div class="list-card-body">
+              <div class="list-card-label">シリーズ</div>
+              <div class="list-card-title">{sr.title}</div>
+              {#if sr.description}
+                <div class="list-card-desc">{sr.description}</div>
+              {/if}
+              <div class="list-card-meta">
+                {#if sr.itemsCount != null}{sr.itemsCount} 本の動画{/if}
+              </div>
+            </div>
+            <span class="list-card-arrow" aria-hidden="true"
+              >{expandedSeriesId === sr.id ? '▾' : '›'}</span
+            >
+          </div>
+          {#if expandedSeriesId === sr.id}
+            <div class="expanded-list">
+              {#if seriesVideosLoading}
+                <div class="muted">読み込み中…</div>
+              {:else if seriesVideos.length === 0}
+                <div class="muted">動画が見つかりませんでした。</div>
+              {:else}
+                <ul class="results">
+                  {#each seriesVideos as item (item.contentId)}
+                    <li class="hit compact">
+                      {#if item.thumbnailUrl}
+                        <a href={videoHref(item.contentId)}>
+                          <img class="thumb" src={item.thumbnailUrl} alt="" loading="lazy" />
+                        </a>
+                      {:else}
+                        <div class="thumb placeholder"></div>
+                      {/if}
+                      <div class="info">
+                        <div class="title">
+                          <a href={videoHref(item.contentId)}>{item.title || '(無題)'}</a>
+                        </div>
+                        <div class="row-meta muted">
+                          {#if item.lengthSeconds != null}<span
+                              >{formatDuration(item.lengthSeconds)}</span
+                            >{/if}
+                          {#if item.startTime}<span class="dot">·</span><span
+                              >{formatDate(item.startTime)}</span
+                            >{/if}
+                        </div>
+                      </div>
+                    </li>
+                  {/each}
+                </ul>
+              {/if}
+            </div>
+          {/if}
+        {/each}
       </div>
     {/if}
   {/if}
@@ -248,6 +553,34 @@
   .external:hover {
     text-decoration: underline;
   }
+
+  /* ---- Tabs ---- */
+  .tabs {
+    display: flex;
+    gap: 2px;
+    margin-bottom: 14px;
+    border-bottom: 1px solid #2a2a2a;
+  }
+  .tab {
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: #9a9a9a;
+    padding: 8px 16px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    margin-bottom: -1px;
+  }
+  .tab:hover {
+    color: #eaeaea;
+  }
+  .tab.active {
+    color: #93c5fd;
+    border-bottom-color: #93c5fd;
+  }
+
+  /* ---- Toolbar ---- */
   .toolbar {
     display: flex;
     gap: 6px;
@@ -279,6 +612,8 @@
     border-radius: 6px;
     font-size: 13px;
   }
+
+  /* ---- Video list ---- */
   .results {
     list-style: none;
     padding: 0;
@@ -296,12 +631,21 @@
     border: 1px solid #1f1f1f;
     border-radius: 8px;
   }
+  .hit.compact {
+    grid-template-columns: 120px 1fr;
+    gap: 8px;
+    padding: 6px;
+  }
   .thumb {
     width: 160px;
     height: 90px;
     object-fit: cover;
     background: #0a0a0a;
     border-radius: 4px;
+  }
+  .compact .thumb {
+    width: 120px;
+    height: 68px;
   }
   .thumb.placeholder {
     border: 1px dashed #2a2a2a;
@@ -339,6 +683,9 @@
     align-items: center;
     color: #cfcfcf;
   }
+  .compact .row-meta {
+    font-size: 11px;
+  }
   .dot {
     color: #555;
   }
@@ -363,25 +710,103 @@
     opacity: 0.5;
     cursor: not-allowed;
   }
-  .debug-details {
-    margin-top: 12px;
+
+  /* ---- Mylist / Series card list ---- */
+  .card-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
   }
-  .debug-details summary {
-    color: #9a9a9a;
-    font-size: 12px;
+  .list-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    background: #161616;
+    border: 1px solid #1f1f1f;
+    border-radius: 8px;
     cursor: pointer;
+    transition:
+      background 0.15s,
+      border-color 0.15s;
   }
-  .debug-pre {
-    background: #111;
-    border: 1px solid #2a2a2a;
-    padding: 8px;
+  .list-card:hover {
+    background: #1c1c1c;
+    border-color: #2a2a2a;
+  }
+  .list-card:focus-visible {
+    outline: 2px solid #3a5a8a;
+    outline-offset: -2px;
+  }
+  .list-card-thumb {
+    flex-shrink: 0;
+    line-height: 0;
+  }
+  .list-card-thumb img {
+    width: 96px;
+    height: 54px;
+    object-fit: cover;
     border-radius: 4px;
+    background: #0a0a0a;
+  }
+  .list-card-thumb.placeholder {
+    width: 96px;
+    height: 54px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #1a2235;
+    border: 1px dashed #2a4a6a;
+    border-radius: 4px;
+    color: #4a7ab5;
+  }
+  .list-card-body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .list-card-label {
+    font-size: 10px;
+    color: #6ea8fe;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+  }
+  .list-card-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #eaeaea;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .list-card-desc {
     font-size: 11px;
-    color: #b0b0b0;
-    overflow-x: auto;
-    white-space: pre-wrap;
-    word-break: break-all;
-    max-height: 400px;
-    overflow-y: auto;
+    color: #9a9a9a;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .list-card-meta {
+    font-size: 11px;
+    color: #7a8a9a;
+  }
+  .list-card-arrow {
+    flex-shrink: 0;
+    font-size: 18px;
+    color: #555;
+    margin-left: 4px;
+  }
+  .list-card:hover .list-card-arrow {
+    color: #6ea8fe;
+  }
+
+  /* ---- Expanded video list ---- */
+  .expanded-list {
+    margin: 0 0 4px 12px;
+    padding-left: 12px;
+    border-left: 2px solid #2a3a4a;
   }
 </style>

@@ -157,6 +157,9 @@ export type UserVideosResponse = {
   totalCount: number;
   items: UserVideoItem[];
   debugRaw?: string;
+  seriesTitle?: string;
+  seriesDescription?: string;
+  seriesThumbnailUrl?: string;
 };
 
 export async function extractOnlineFrame(hlsUrl: string, seekSec: number): Promise<string | null> {
@@ -177,6 +180,53 @@ export async function fetchSeriesVideos(
     page,
     pageSize,
   });
+}
+
+export async function fetchMylistVideos(
+  mylistId: string,
+  page: number,
+  pageSize: number,
+): Promise<UserVideosResponse> {
+  return invoke<UserVideosResponse>('fetch_mylist_videos', {
+    mylistId,
+    page,
+    pageSize,
+  });
+}
+
+export type UserMylistSummary = {
+  id: string;
+  name: string;
+  description?: string;
+  thumbnailUrl?: string;
+  itemsCount?: number;
+  isPublic: boolean;
+};
+
+export type UserMylistsResponse = {
+  items: UserMylistSummary[];
+  totalCount: number;
+};
+
+export async function fetchUserMylists(ownerId: string): Promise<UserMylistsResponse> {
+  return invoke<UserMylistsResponse>('fetch_user_mylists', { ownerId });
+}
+
+export type UserSeriesSummary = {
+  id: string;
+  title: string;
+  description?: string;
+  thumbnailUrl?: string;
+  itemsCount?: number;
+};
+
+export type UserSeriesListResponse = {
+  items: UserSeriesSummary[];
+  totalCount: number;
+};
+
+export async function fetchUserSeriesList(ownerId: string): Promise<UserSeriesListResponse> {
+  return invoke<UserSeriesListResponse>('fetch_user_series_list', { ownerId });
 }
 
 export async function fetchUserVideos(

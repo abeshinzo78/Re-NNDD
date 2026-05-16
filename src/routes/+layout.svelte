@@ -22,11 +22,20 @@
     { href: '/ng', label: 'NG' },
     { href: '/settings', label: '設定' },
   ];
+
+  let canGoBack = $derived(
+    page.url.pathname !== '/' &&
+      !page.url.pathname.startsWith('/video/') &&
+      !page.url.pathname.startsWith('/library/'),
+  );
 </script>
 
 <div class="app">
   <aside class="sidebar">
     <h1 class="brand">Re:NNDD</h1>
+    {#if canGoBack}
+      <button class="back-btn" onclick={() => history.back()}>← 戻る</button>
+    {/if}
     <nav>
       {#each sections as section (section.href)}
         <a class="nav-item" class:active={page.url.pathname === section.href} href={section.href}
@@ -95,6 +104,24 @@
     display: flex;
     flex-direction: column;
     gap: 2px;
+  }
+
+  .back-btn {
+    display: block;
+    width: 100%;
+    padding: 8px 12px;
+    color: #9a9a9a;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+    margin-bottom: 8px;
+  }
+  .back-btn:hover {
+    background: #1f1f1f;
+    color: #eaeaea;
   }
 
   .nav-item {

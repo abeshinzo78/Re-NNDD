@@ -80,6 +80,16 @@
         backHref = '/search';
         backLabel = '← 検索に戻る';
       }
+    } else if (from === 'series') {
+      const sid = page.url.searchParams.get('seriesId') ?? '';
+      const stitle = page.url.searchParams.get('seriesTitle') ?? '';
+      if (sid) {
+        backHref = `/series/${sid}`;
+        backLabel = `← シリーズ「${stitle || sid}」に戻る`;
+      } else {
+        backHref = '/search';
+        backLabel = '← 検索に戻る';
+      }
     } else {
       const prev = loadSearchState();
       if (prev?.lastQuery) {
@@ -493,30 +503,76 @@
           >
         </div>
         {#if payload.owner}
-          <div class="row owner">
+          <div class="owner-card">
             {#if payload.owner.iconUrl}
-              <img src={payload.owner.iconUrl} alt="" loading="lazy" />
-            {/if}
-            {#if payload.owner.id}
               <a
-                href={`/user/${payload.owner.id}?kind=${payload.owner.kind}${payload.owner.nickname ? `&name=${encodeURIComponent(payload.owner.nickname)}` : ''}${payload.owner.iconUrl ? `&icon=${encodeURIComponent(payload.owner.iconUrl)}` : ''}`}
-                class="owner-link"
+                href={payload.owner.id
+                  ? `/user/${payload.owner.id}?kind=${payload.owner.kind}${payload.owner.nickname ? `&name=${encodeURIComponent(payload.owner.nickname)}` : ''}${payload.owner.iconUrl ? `&icon=${encodeURIComponent(payload.owner.iconUrl)}` : ''}`
+                  : undefined}
+                class="owner-icon-link"
               >
-                <span>{payload.owner.nickname ?? '不明'}</span>
+                <img class="owner-icon" src={payload.owner.iconUrl} alt="" loading="lazy" />
               </a>
             {:else}
-              <span>{payload.owner.nickname ?? '不明'}</span>
+              <div class="owner-icon placeholder">
+                {payload.owner.kind === 'channel' ? 'CH' : 'U'}
+              </div>
             {/if}
-            <span class="muted">({payload.owner.kind})</span>
+            <div class="owner-info">
+              <div class="owner-name-row">
+                {#if payload.owner.id}
+                  <a
+                    href={`/user/${payload.owner.id}?kind=${payload.owner.kind}${payload.owner.nickname ? `&name=${encodeURIComponent(payload.owner.nickname)}` : ''}${payload.owner.iconUrl ? `&icon=${encodeURIComponent(payload.owner.iconUrl)}` : ''}`}
+                    class="owner-link"
+                  >
+                    <span class="owner-name">{payload.owner.nickname ?? '不明'}</span>
+                  </a>
+                {:else}
+                  <span class="owner-name">{payload.owner.nickname ?? '不明'}</span>
+                {/if}
+                <span class="owner-kind-badge"
+                  >{payload.owner.kind === 'channel' ? 'チャンネル' : 'ユーザー'}</span
+                >
+              </div>
+              {#if payload.owner.id}
+                <a
+                  href={`/user/${payload.owner.id}?kind=${payload.owner.kind}${payload.owner.nickname ? `&name=${encodeURIComponent(payload.owner.nickname)}` : ''}${payload.owner.iconUrl ? `&icon=${encodeURIComponent(payload.owner.iconUrl)}` : ''}`}
+                  class="owner-videos-link"
+                >
+                  投稿動画一覧を見る
+                </a>
+              {/if}
+            </div>
           </div>
         {/if}
         {#if payload.series}
-          <div class="row">
-            <span class="muted">シリーズ:</span>
-            <a href={`/series/${payload.series.id}`} class="owner-link">
-              {payload.series.title}
-            </a>
-          </div>
+          <a class="series-card" href={`/series/${payload.series.id}`}>
+            <div class="series-thumb-wrap">
+              {#if payload.series.thumbnailUrl}
+                <img class="series-thumb" src={payload.series.thumbnailUrl} alt="" loading="lazy" />
+              {:else}
+                <div class="series-thumb placeholder">
+                  <svg viewBox="0 0 24 24" width="28" height="28">
+                    <path
+                      d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12zm-8-2l6-4-6-4v8z"
+                      fill="currentColor"
+                    />
+                  </svg>
+                </div>
+              {/if}
+            </div>
+            <div class="series-info">
+              <div class="series-label">シリーズ</div>
+              <div class="series-title">{payload.series.title}</div>
+              {#if payload.series.description}
+                <div class="series-desc">{payload.series.description}</div>
+              {/if}
+              {#if payload.series.itemsCount != null}
+                <div class="series-count">{payload.series.itemsCount} 本の動画</div>
+              {/if}
+            </div>
+            <span class="series-arrow" aria-hidden="true">›</span>
+          </a>
         {/if}
         {#if payload.video.tags && payload.video.tags.length > 0}
           <div class="tags" aria-label="タグ">
@@ -732,10 +788,52 @@
   .external:hover {
     text-decoration: underline;
   }
-  .owner img {
-    width: 24px;
-    height: 24px;
+  .owner-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 10px;
+    padding: 10px 12px;
+    background: #161616;
+    border: 1px solid #1f1f1f;
+    border-radius: 8px;
+  }
+  .owner-icon {
+    width: 40px;
+    height: 40px;
     border-radius: 999px;
+    object-fit: cover;
+    background: #1a1a1a;
+    flex-shrink: 0;
+  }
+  .owner-icon.placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #666;
+    font-weight: 600;
+    font-size: 14px;
+    border: 1px solid #2a2a2a;
+  }
+  .owner-icon-link {
+    flex-shrink: 0;
+    line-height: 0;
+  }
+  .owner-info {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+  }
+  .owner-name-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .owner-name {
+    font-weight: 600;
+    font-size: 14px;
+    color: #eaeaea;
   }
   .owner-link {
     color: #eaeaea;
@@ -743,6 +841,105 @@
   }
   .owner-link:hover {
     text-decoration: underline;
+  }
+  .owner-kind-badge {
+    background: #1f2a44;
+    color: #93c5fd;
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: 10px;
+    flex-shrink: 0;
+  }
+  .owner-videos-link {
+    color: #6ea8fe;
+    text-decoration: none;
+    font-size: 12px;
+  }
+  .owner-videos-link:hover {
+    text-decoration: underline;
+  }
+  .series-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 10px;
+    padding: 10px 12px;
+    background: #161616;
+    border: 1px solid #1f2a3a;
+    border-radius: 8px;
+    text-decoration: none;
+    color: inherit;
+    transition:
+      background 0.15s,
+      border-color 0.15s;
+  }
+  .series-card:hover {
+    background: #1a2235;
+    border-color: #2a4a6a;
+  }
+  .series-thumb-wrap {
+    flex-shrink: 0;
+    line-height: 0;
+  }
+  .series-thumb {
+    width: 64px;
+    height: 36px;
+    object-fit: cover;
+    border-radius: 4px;
+    background: #0a0a0a;
+  }
+  .series-thumb.placeholder {
+    width: 64px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #1a2235;
+    border: 1px dashed #2a4a6a;
+    border-radius: 4px;
+    color: #4a7ab5;
+  }
+  .series-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .series-label {
+    font-size: 10px;
+    color: #6ea8fe;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+  }
+  .series-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #eaeaea;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .series-desc {
+    font-size: 11px;
+    color: #9a9a9a;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .series-count {
+    font-size: 11px;
+    color: #7a8a9a;
+  }
+  .series-arrow {
+    flex-shrink: 0;
+    font-size: 20px;
+    color: #555;
+    margin-left: 4px;
+  }
+  .series-card:hover .series-arrow {
+    color: #6ea8fe;
   }
   details {
     margin-top: 12px;

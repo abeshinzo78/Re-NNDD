@@ -341,7 +341,7 @@ enum StreamKind {
 /// `"user_session=xxx; foo=bar"` 形式の Cookie ヘッダ文字列から、
 /// nicovideo.jp ドメインに scope された Netscape 形式の cookies.txt を作る。
 /// yt-dlp の `--cookies` がこの形式を期待する。
-fn build_netscape_cookies(cookie_header: &str) -> String {
+pub(crate) fn build_netscape_cookies(cookie_header: &str) -> String {
     let mut out = String::from("# Netscape HTTP Cookie File\n");
     // 期限は 2038 直前 (i32 max) で十分。yt-dlp は session cookie 扱いを嫌う。
     let exp = "2147483647";
