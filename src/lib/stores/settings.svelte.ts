@@ -187,11 +187,15 @@ export const SETTING_DEFS = [
   {
     key: 'appearance.theme',
     label: 'テーマ',
-    description: '現状ダークのみ',
+    description: '切り替えは即座に反映されます',
     section: 'appearance',
-    default: 'dark',
+    default: 'niconico',
     kind: 'select',
-    options: [{ value: 'dark', label: 'ダーク' }],
+    options: [
+      { value: 'niconico', label: 'ニコニコ風 (オリジナル)' },
+      { value: 'dark', label: 'ダーク' },
+      { value: 'light', label: 'ライト' },
+    ],
     order: 10,
   },
 

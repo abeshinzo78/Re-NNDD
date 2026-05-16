@@ -46,9 +46,10 @@
 <style>
   h2 {
     margin-top: 0;
+    color: var(--text-heading);
   }
   .muted {
-    color: #9a9a9a;
+    color: var(--text-muted);
   }
   .cards {
     display: grid;
@@ -59,22 +60,23 @@
   .card {
     display: block;
     padding: 14px 16px;
-    background: #161616;
-    border: 1px solid #1f1f1f;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
     border-radius: 8px;
-    color: inherit;
+    color: var(--text);
     text-decoration: none;
     transition:
       background 0.1s,
       border-color 0.1s;
   }
   .card:hover {
-    background: #1f1f1f;
-    border-color: #3a3a3a;
+    background: var(--surface-hover);
+    border-color: var(--border-strong);
   }
   .card h3 {
     margin: 0 0 6px;
     font-size: 15px;
+    color: var(--text-heading);
   }
   .card p {
     margin: 0;
@@ -88,6 +90,6 @@
     margin-top: 16px;
   }
   .env dt {
-    color: #9a9a9a;
+    color: var(--text-muted);
   }
 </style>

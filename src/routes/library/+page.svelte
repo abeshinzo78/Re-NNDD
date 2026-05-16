@@ -226,6 +226,7 @@
   }
   .head h2 {
     margin: 0;
+    color: var(--text-heading);
   }
   .head-actions {
     display: flex;
@@ -233,9 +234,9 @@
     align-items: center;
   }
   .search-box {
-    background: #161616;
-    border: 1px solid #2a2a2a;
-    color: #eaeaea;
+    background: var(--surface-2);
+    border: 1px solid var(--border-2);
+    color: var(--text);
     padding: 6px 12px;
     border-radius: 6px;
     font-size: 13px;
@@ -244,15 +245,15 @@
     transition: border-color 0.15s;
   }
   .search-box::placeholder {
-    color: #666;
+    color: var(--text-dim);
   }
   .search-box:focus {
-    border-color: #4a6a9a;
+    border-color: var(--accent-soft-border);
   }
   .info {
-    background: #1a2a44;
-    color: #93c5fd;
-    border: 1px solid #2a3f5a;
+    background: var(--badge-blue-bg-soft);
+    color: var(--badge-blue-text);
+    border: 1px solid var(--badge-blue-border);
     padding: 8px 12px;
     border-radius: 6px;
     font-size: 12px;
@@ -260,26 +261,26 @@
   }
   .ghost {
     background: transparent;
-    border: 1px solid #2a2a2a;
-    color: #cfcfcf;
+    border: 1px solid var(--border-2);
+    color: var(--text-2);
     padding: 6px 12px;
     border-radius: 6px;
     cursor: pointer;
     font-size: 13px;
   }
   .ghost:hover {
-    background: #1a1a1a;
+    background: var(--surface-3);
   }
   .muted {
-    color: #9a9a9a;
+    color: var(--text-muted);
   }
   .small {
     font-size: 11px;
   }
   .error {
-    background: #2a1212;
-    border: 1px solid #5a2222;
-    color: #f5b3b3;
+    background: var(--error-bg);
+    border: 1px solid var(--error-border);
+    color: var(--error-text);
     padding: 8px 12px;
     border-radius: 6px;
     font-size: 13px;
@@ -288,11 +289,11 @@
   .empty {
     padding: 32px;
     text-align: center;
-    border: 1px dashed #2a2a2a;
+    border: 1px dashed var(--border-2);
     border-radius: 8px;
   }
   .empty a {
-    color: #6ea8fe;
+    color: var(--link);
   }
   .grid {
     display: grid;
@@ -307,9 +308,9 @@
     top: 6px;
     right: 6px;
     z-index: 2;
-    background: rgba(20, 20, 20, 0.85);
-    color: #f5b3b3;
-    border: 1px solid #5a2222;
+    background: var(--surface-active);
+    color: var(--error-text);
+    border: 1px solid var(--error-border);
     width: 26px;
     height: 26px;
     border-radius: 50%;
@@ -324,7 +325,7 @@
     opacity: 1;
   }
   .del-btn:hover {
-    background: #2a1212;
+    background: var(--error-bg);
   }
   .del-btn:disabled {
     opacity: 0.5;
@@ -332,8 +333,8 @@
   }
   .card {
     display: block;
-    background: #161616;
-    border: 1px solid #1f1f1f;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
     border-radius: 8px;
     overflow: hidden;
     text-decoration: none;
@@ -344,8 +345,8 @@
       transform 0.1s;
   }
   .card:hover {
-    background: #1c1c1c;
-    border-color: #3a3a3a;
+    background: var(--surface-hover);
+    border-color: var(--border-strong);
     transform: translateY(-1px);
   }
   .thumb-wrap {
@@ -365,7 +366,7 @@
     justify-content: center;
     width: 100%;
     height: 100%;
-    color: #555;
+    color: var(--text-faint);
     font-size: 32px;
   }
   .duration {
@@ -402,6 +403,7 @@
     line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
+    color: var(--text);
   }
   .row {
     display: flex;
@@ -411,7 +413,7 @@
     margin-top: 4px;
   }
   .dot {
-    color: #555;
+    color: var(--text-faint);
   }
   .tags {
     display: flex;
@@ -420,8 +422,8 @@
     margin-top: 6px;
   }
   .tag {
-    background: #1f1f1f;
-    color: #c0c0c0;
+    background: var(--tag-bg);
+    color: var(--tag-text);
     padding: 1px 8px;
     border-radius: 999px;
     font-size: 11px;

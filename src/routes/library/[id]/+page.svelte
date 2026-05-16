@@ -490,7 +490,7 @@
     white-space: nowrap;
   }
   .back {
-    color: #6ea8fe;
+    color: var(--link);
     text-decoration: none;
     font-size: 13px;
     flex-shrink: 0;
@@ -499,9 +499,9 @@
     text-decoration: underline;
   }
   .local-badge {
-    background: #1a3a26;
-    color: #b3f5b3;
-    border: 1px solid #2a5a3a;
+    background: var(--success-icon-bg);
+    color: var(--success-icon-text);
+    border: 1px solid var(--success-icon-border);
     padding: 2px 10px;
     border-radius: 999px;
     font-size: 11px;
@@ -509,15 +509,15 @@
   }
   .ghost-btn {
     background: transparent;
-    border: 1px solid #3a5a6a;
-    color: #93c5fd;
+    border: 1px solid var(--accent-soft-border);
+    color: var(--link-strong);
     padding: 2px 10px;
     border-radius: 999px;
     font-size: 11px;
     cursor: pointer;
   }
   .ghost-btn:hover:not(:disabled) {
-    background: #1f2a44;
+    background: var(--badge-blue-bg);
   }
   .ghost-btn:disabled {
     opacity: 0.5;
@@ -525,32 +525,32 @@
   }
   .danger-btn {
     background: transparent;
-    border: 1px solid #5a2222;
-    color: #f5b3b3;
+    border: 1px solid var(--error-border);
+    color: var(--error-text);
     padding: 2px 10px;
     border-radius: 999px;
     font-size: 11px;
     cursor: pointer;
   }
   .danger-btn:hover {
-    background: #2a1212;
+    background: var(--error-bg);
   }
   .muted {
-    color: #9a9a9a;
+    color: var(--text-muted);
   }
   .error {
-    background: #2a1212;
-    border: 1px solid #5a2222;
-    color: #f5b3b3;
+    background: var(--error-bg);
+    border: 1px solid var(--error-border);
+    color: var(--error-text);
     padding: 10px 12px;
     border-radius: 6px;
     font-size: 13px;
     white-space: pre-wrap;
   }
   .info {
-    background: #1a2a44;
-    color: #93c5fd;
-    border: 1px solid #2a3f5a;
+    background: var(--badge-blue-bg-soft);
+    color: var(--badge-blue-text);
+    border: 1px solid var(--badge-blue-border);
     padding: 8px 12px;
     border-radius: 6px;
     font-size: 12px;
@@ -560,17 +560,17 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    background: linear-gradient(90deg, #0f2a18 0%, #1a3a26 100%);
-    border: 1px solid #2a5a3a;
-    border-left: 4px solid #4ade80;
-    color: #b3f5b3;
+    background: var(--success-bg);
+    border: 1px solid var(--success-border);
+    border-left: 4px solid var(--success-strong);
+    color: var(--success-text);
     padding: 10px 16px;
     border-radius: 6px;
     margin-bottom: 10px;
   }
   .local-marker {
-    background: #4ade80;
-    color: #052010;
+    background: var(--success-strong);
+    color: var(--accent-text);
     font-weight: 700;
     font-size: 11px;
     letter-spacing: 0.05em;
@@ -587,23 +587,23 @@
   }
   .local-banner-text strong {
     font-size: 14px;
-    color: #d1fae5;
+    color: var(--success-text);
   }
   .local-banner-sub {
     font-size: 11px;
-    color: #86efac;
+    color: var(--success-strong);
   }
   .local-banner-online {
-    color: #93c5fd;
+    color: var(--badge-blue-text);
     text-decoration: none;
     font-size: 12px;
     padding: 4px 10px;
-    border: 1px solid #2a3f5a;
+    border: 1px solid var(--badge-blue-border);
     border-radius: 999px;
     flex-shrink: 0;
   }
   .local-banner-online:hover {
-    background: rgba(45, 65, 100, 0.4);
+    background: var(--badge-blue-bg);
   }
   .player-row {
     display: flex;
@@ -621,17 +621,17 @@
   .divider {
     width: 5px;
     cursor: col-resize;
-    background: #1a1a1a;
-    border-left: 1px solid #2a2a2a;
-    border-right: 1px solid #2a2a2a;
+    background: var(--surface-3);
+    border-left: 1px solid var(--border-2);
+    border-right: 1px solid var(--border-2);
     flex-shrink: 0;
     transition: background 0.1s;
   }
   .divider:hover {
-    background: #333;
+    background: var(--menu-border);
   }
   .dragging .divider {
-    background: #2563eb;
+    background: var(--accent);
   }
   .comment-panel {
     flex-shrink: 0;
@@ -645,7 +645,7 @@
     margin-top: 12px;
   }
   .meta {
-    color: #cfcfcf;
+    color: var(--text-2);
     font-size: 13px;
     min-width: 0;
     overflow: hidden;
@@ -658,18 +658,18 @@
     margin-top: 6px;
   }
   .dot {
-    color: #555;
+    color: var(--text-faint);
   }
   .external {
     margin-left: auto;
-    color: #6ea8fe;
+    color: var(--link);
     text-decoration: none;
   }
   .external:hover {
     text-decoration: underline;
   }
   .owner-link {
-    color: #eaeaea;
+    color: var(--text);
     text-decoration: none;
   }
   .owner-link:hover {
@@ -677,18 +677,18 @@
   }
   details {
     margin-top: 12px;
-    color: #cfcfcf;
+    color: var(--text-2);
   }
   details > summary {
     cursor: pointer;
-    color: #b0b0b0;
+    color: var(--text-3);
     margin-bottom: 6px;
   }
   .desc {
     white-space: pre-wrap;
     line-height: 1.6;
-    background: #161616;
-    border: 1px solid #1f1f1f;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
     padding: 10px 12px;
     border-radius: 6px;
     overflow: hidden;
@@ -696,9 +696,9 @@
     word-break: break-word;
   }
   .ng-banner {
-    background: #2a1f1a;
-    color: #f5b3b3;
-    border: 1px solid #5a2222;
+    background: var(--error-bg);
+    color: var(--error-text);
+    border: 1px solid var(--error-border);
     padding: 4px 10px;
     border-radius: 6px;
     font-size: 12px;
@@ -745,8 +745,8 @@
   }
   .pip-resume {
     margin-top: 4px;
-    background: #2563eb;
-    color: #fff;
+    background: var(--accent);
+    color: var(--accent-text);
     border: none;
     padding: 8px 16px;
     border-radius: 8px;
@@ -755,7 +755,7 @@
     font-weight: 600;
   }
   .pip-resume:hover {
-    background: #3b78f0;
+    background: var(--accent-hover);
   }
   .tags {
     display: flex;
@@ -767,20 +767,20 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    background: #1f1f1f;
-    color: #c0c0c0;
+    background: var(--tag-bg);
+    color: var(--tag-text);
     padding: 3px 10px;
     border-radius: 999px;
     font-size: 12px;
     text-decoration: none;
   }
   .tag:hover {
-    background: #2a2a2a;
-    color: #fff;
+    background: var(--tag-hover-bg);
+    color: var(--tag-hover-text);
   }
   .tag.locked {
-    background: #1e2a3a;
-    color: #b3c5ff;
+    background: var(--tag-locked-bg);
+    color: var(--tag-locked-text);
   }
   .lock {
     font-size: 9px;

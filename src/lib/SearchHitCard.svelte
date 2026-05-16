@@ -207,8 +207,8 @@
     grid-template-columns: 160px 1fr;
     gap: 12px;
     padding: 8px;
-    background: #161616;
-    border: 1px solid #1f1f1f;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
     border-radius: 8px;
     list-style: none;
   }
@@ -221,7 +221,7 @@
     width: 160px;
     height: 90px;
     object-fit: cover;
-    background: #0a0a0a;
+    background: var(--code-bg);
     border-radius: 4px;
   }
   .compact .thumb {
@@ -229,10 +229,10 @@
     height: 68px;
   }
   .thumb.placeholder {
-    border: 1px dashed #2a2a2a;
+    border: 1px dashed var(--border-2);
   }
   .muted {
-    color: #9a9a9a;
+    color: var(--text-muted);
   }
   .info {
     display: flex;
@@ -244,7 +244,7 @@
     padding-right: 28px;
   }
   .title a {
-    color: #eaeaea;
+    color: var(--text);
     text-decoration: none;
     font-weight: 600;
   }
@@ -252,7 +252,7 @@
     text-decoration: underline;
   }
   .title .external {
-    color: #6ea8fe;
+    color: var(--link);
     margin-left: 6px;
     font-weight: 400;
     text-decoration: none;
@@ -271,7 +271,7 @@
     font-size: 11px;
   }
   .dot {
-    color: #555;
+    color: var(--text-faint);
   }
   .tags {
     display: flex;
@@ -280,8 +280,8 @@
     margin-top: 4px;
   }
   .tag {
-    background: #1f1f1f;
-    color: #c0c0c0;
+    background: var(--tag-bg);
+    color: var(--tag-text);
     padding: 2px 8px;
     border-radius: 999px;
     font-size: 11px;
@@ -295,9 +295,9 @@
     gap: 4px;
   }
   .dl-icon-btn {
-    background: rgba(26, 58, 38, 0.85);
-    color: #b3f5b3;
-    border: 1px solid #2a5a3a;
+    background: var(--success-icon-bg);
+    color: var(--success-icon-text);
+    border: 1px solid var(--success-icon-border);
     border-radius: 6px;
     padding: 0 8px;
     font-size: 14px;
@@ -305,17 +305,17 @@
     cursor: pointer;
   }
   .dl-icon-btn:hover:not(:disabled) {
-    background: #2a5a3a;
-    color: #fff;
+    background: var(--success-icon-border);
+    color: var(--text-heading);
   }
   .dl-icon-btn:disabled {
     opacity: 0.6;
     cursor: wait;
   }
   .menu-btn {
-    background: rgba(0, 0, 0, 0.4);
-    color: #cfcfcf;
-    border: 1px solid #2a2a2a;
+    background: var(--surface-3);
+    color: var(--text-2);
+    border: 1px solid var(--border-2);
     border-radius: 6px;
     padding: 0 8px;
     font-size: 16px;
@@ -323,8 +323,8 @@
     cursor: pointer;
   }
   .menu-btn:hover {
-    background: #2a2a2a;
-    color: #fff;
+    background: var(--surface-active);
+    color: var(--text-heading);
   }
   .menu {
     position: absolute;
@@ -332,10 +332,10 @@
     right: 0;
     z-index: 30;
     width: 240px;
-    background: #181818;
-    border: 1px solid #333;
+    background: var(--menu-bg);
+    border: 1px solid var(--menu-border);
     border-radius: 8px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+    box-shadow: var(--menu-shadow);
     padding: 6px;
     display: flex;
     flex-direction: column;
@@ -343,9 +343,9 @@
   }
   .menu-head {
     font-size: 11px;
-    color: #9a9a9a;
+    color: var(--text-muted);
     padding: 4px 8px 6px;
-    border-bottom: 1px solid #2a2a2a;
+    border-bottom: 1px solid var(--border-2);
     margin-bottom: 4px;
   }
   .menu button,
@@ -354,7 +354,7 @@
     text-align: left;
     background: transparent;
     border: none;
-    color: #eaeaea;
+    color: var(--text);
     padding: 6px 8px;
     border-radius: 4px;
     font-size: 12px;
@@ -363,27 +363,27 @@
   }
   .menu button:hover,
   .menu .menu-link:hover {
-    background: #2a2a2a;
+    background: var(--surface-active);
   }
   .menu-sep {
     font-size: 10px;
-    color: #888;
+    color: var(--text-dim);
     padding: 6px 8px 2px;
     margin-top: 4px;
-    border-top: 1px solid #2a2a2a;
+    border-top: 1px solid var(--border-2);
     text-transform: uppercase;
   }
   .tag-row {
-    color: #c0c0c0 !important;
+    color: var(--tag-text) !important;
     font-size: 11px !important;
   }
   .toast {
     position: absolute;
     top: 6px;
     right: 40px;
-    background: #1a2a1a;
-    color: #b3f5b3;
-    border: 1px solid #2a5a2a;
+    background: var(--success-icon-bg);
+    color: var(--success-icon-text);
+    border: 1px solid var(--success-icon-border);
     padding: 3px 10px;
     border-radius: 6px;
     font-size: 11px;

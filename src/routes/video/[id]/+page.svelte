@@ -640,6 +640,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    color: var(--text-heading);
   }
   .head-actions {
     flex-shrink: 0;
@@ -648,17 +649,17 @@
     align-items: center;
   }
   .dl-btn {
-    background: #1a3a26;
-    color: #b3f5b3;
-    border: 1px solid #2a5a3a;
+    background: var(--success-icon-bg);
+    color: var(--success-icon-text);
+    border: 1px solid var(--success-icon-border);
     padding: 6px 14px;
     border-radius: 6px;
     cursor: pointer;
     font-size: 13px;
   }
   .dl-btn:hover:not(:disabled) {
-    background: #2a5a3a;
-    color: #fff;
+    background: var(--success-icon-border);
+    color: var(--text-heading);
   }
   .dl-btn:disabled {
     opacity: 0.6;
@@ -671,17 +672,17 @@
     margin-bottom: 8px;
   }
   .dl-msg.ok {
-    background: #102d20;
-    border: 1px solid #1e6b48;
-    color: #bbf7d0;
+    background: var(--success-bg);
+    border: 1px solid var(--success-border);
+    color: var(--success-text);
   }
   .dl-msg.error {
-    background: #2a1212;
-    border: 1px solid #5a2222;
-    color: #f5b3b3;
+    background: var(--error-bg);
+    border: 1px solid var(--error-border);
+    color: var(--error-text);
   }
   .back {
-    color: #6ea8fe;
+    color: var(--link);
     text-decoration: none;
     font-size: 13px;
     flex-shrink: 0;
@@ -690,15 +691,15 @@
     text-decoration: underline;
   }
   .muted {
-    color: #9a9a9a;
+    color: var(--text-muted);
   }
   .small {
     font-size: 12px;
   }
   .error {
-    background: #2a1212;
-    border: 1px solid #5a2222;
-    color: #f5b3b3;
+    background: var(--error-bg);
+    border: 1px solid var(--error-border);
+    color: var(--error-text);
     padding: 10px 12px;
     border-radius: 6px;
     font-size: 13px;
@@ -720,17 +721,17 @@
   .divider {
     width: 5px;
     cursor: col-resize;
-    background: #1a1a1a;
-    border-left: 1px solid #2a2a2a;
-    border-right: 1px solid #2a2a2a;
+    background: var(--surface-3);
+    border-left: 1px solid var(--border-2);
+    border-right: 1px solid var(--border-2);
     flex-shrink: 0;
     transition: background 0.1s;
   }
   .divider:hover {
-    background: #333;
+    background: var(--menu-border);
   }
   .dragging .divider {
-    background: #2563eb;
+    background: var(--accent);
   }
   .comment-panel {
     flex-shrink: 0;
@@ -742,7 +743,7 @@
     top: 42px;
     left: 12px;
     z-index: 1;
-    color: #9a9a9a;
+    color: var(--text-muted);
     font-size: 12px;
   }
   .below {
@@ -758,7 +759,7 @@
     }
   }
   .meta {
-    color: #cfcfcf;
+    color: var(--text-2);
     font-size: 13px;
     min-width: 0;
     overflow: hidden;
@@ -771,18 +772,18 @@
     margin-top: 6px;
   }
   .dot {
-    color: #555;
+    color: var(--text-faint);
   }
   .quality {
-    background: #1f2a44;
-    color: #93c5fd;
+    background: var(--badge-blue-bg);
+    color: var(--badge-blue-text);
     border-radius: 999px;
     padding: 0 8px;
     font-size: 11px;
   }
   .external {
     margin-left: auto;
-    color: #6ea8fe;
+    color: var(--link);
     text-decoration: none;
   }
   .external:hover {
@@ -794,8 +795,8 @@
     gap: 12px;
     margin-top: 10px;
     padding: 10px 12px;
-    background: #161616;
-    border: 1px solid #1f1f1f;
+    background: var(--owner-card-bg);
+    border: 1px solid var(--border);
     border-radius: 8px;
   }
   .owner-icon {
@@ -803,17 +804,17 @@
     height: 40px;
     border-radius: 999px;
     object-fit: cover;
-    background: #1a1a1a;
+    background: var(--surface-3);
     flex-shrink: 0;
   }
   .owner-icon.placeholder {
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #666;
+    color: var(--text-dim);
     font-weight: 600;
     font-size: 14px;
-    border: 1px solid #2a2a2a;
+    border: 1px solid var(--border-2);
   }
   .owner-icon-link {
     flex-shrink: 0;
@@ -833,25 +834,25 @@
   .owner-name {
     font-weight: 600;
     font-size: 14px;
-    color: #eaeaea;
+    color: var(--text);
   }
   .owner-link {
-    color: #eaeaea;
+    color: var(--text);
     text-decoration: none;
   }
   .owner-link:hover {
     text-decoration: underline;
   }
   .owner-kind-badge {
-    background: #1f2a44;
-    color: #93c5fd;
+    background: var(--badge-blue-bg);
+    color: var(--badge-blue-text);
     padding: 1px 8px;
     border-radius: 999px;
     font-size: 10px;
     flex-shrink: 0;
   }
   .owner-videos-link {
-    color: #6ea8fe;
+    color: var(--link);
     text-decoration: none;
     font-size: 12px;
   }
@@ -864,8 +865,8 @@
     gap: 12px;
     margin-top: 10px;
     padding: 10px 12px;
-    background: #161616;
-    border: 1px solid #1f2a3a;
+    background: var(--owner-card-bg);
+    border: 1px solid var(--badge-blue-border);
     border-radius: 8px;
     text-decoration: none;
     color: inherit;
@@ -874,8 +875,8 @@
       border-color 0.15s;
   }
   .series-card:hover {
-    background: #1a2235;
-    border-color: #2a4a6a;
+    background: var(--badge-blue-bg-soft);
+    border-color: var(--accent-soft-border);
   }
   .series-thumb-wrap {
     flex-shrink: 0;
@@ -886,7 +887,7 @@
     height: 36px;
     object-fit: cover;
     border-radius: 4px;
-    background: #0a0a0a;
+    background: var(--code-bg);
   }
   .series-thumb.placeholder {
     width: 64px;
@@ -894,10 +895,10 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: #1a2235;
-    border: 1px dashed #2a4a6a;
+    background: var(--badge-blue-bg-soft);
+    border: 1px dashed var(--badge-blue-border);
     border-radius: 4px;
-    color: #4a7ab5;
+    color: var(--link);
   }
   .series-info {
     flex: 1;
@@ -908,7 +909,7 @@
   }
   .series-label {
     font-size: 10px;
-    color: #6ea8fe;
+    color: var(--link);
     text-transform: uppercase;
     letter-spacing: 0.5px;
     font-weight: 600;
@@ -916,45 +917,45 @@
   .series-title {
     font-size: 14px;
     font-weight: 600;
-    color: #eaeaea;
+    color: var(--text);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .series-desc {
     font-size: 11px;
-    color: #9a9a9a;
+    color: var(--text-muted);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .series-count {
     font-size: 11px;
-    color: #7a8a9a;
+    color: var(--text-dim);
   }
   .series-arrow {
     flex-shrink: 0;
     font-size: 20px;
-    color: #555;
+    color: var(--text-faint);
     margin-left: 4px;
   }
   .series-card:hover .series-arrow {
-    color: #6ea8fe;
+    color: var(--link);
   }
   details {
     margin-top: 12px;
-    color: #cfcfcf;
+    color: var(--text-2);
   }
   details > summary {
     cursor: pointer;
-    color: #b0b0b0;
+    color: var(--text-3);
     margin-bottom: 6px;
   }
   .desc {
     white-space: pre-wrap;
     line-height: 1.6;
-    background: #161616;
-    border: 1px solid #1f1f1f;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
     padding: 10px 12px;
     border-radius: 6px;
     overflow: hidden;
@@ -962,9 +963,9 @@
     word-break: break-word;
   }
   .ng-banner {
-    background: #2a1f1a;
-    color: #f5b3b3;
-    border: 1px solid #5a2222;
+    background: var(--error-bg);
+    color: var(--error-text);
+    border: 1px solid var(--error-border);
     padding: 4px 10px;
     border-radius: 6px;
     font-size: 12px;
@@ -982,8 +983,8 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    background: #1f1f1f;
-    color: #c0c0c0;
+    background: var(--tag-bg);
+    color: var(--tag-text);
     padding: 3px 10px;
     border-radius: 999px;
     font-size: 12px;
@@ -991,17 +992,17 @@
     border: 1px solid transparent;
   }
   .tag:hover {
-    background: #2a2a2a;
-    color: #fff;
-    border-color: #3a3a3a;
+    background: var(--tag-hover-bg);
+    color: var(--tag-hover-text);
+    border-color: var(--tag-hover-border);
   }
   .tag.locked {
-    background: #1e2a3a;
-    color: #b3c5ff;
+    background: var(--tag-locked-bg);
+    color: var(--tag-locked-text);
   }
   .tag.locked:hover {
-    background: #243246;
-    color: #fff;
+    background: var(--tag-locked-hover-bg);
+    color: var(--tag-hover-text);
   }
   .lock {
     font-size: 9px;
@@ -1010,7 +1011,7 @@
   .related h3 {
     margin: 0 0 8px;
     font-size: 14px;
-    color: #cfcfcf;
+    color: var(--text-2);
   }
   .related-list {
     list-style: none;
