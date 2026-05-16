@@ -1,5 +1,45 @@
 # Re:NNDD
 
+<!-- Build / CI -->
+[![CI](https://github.com/abeshinzo78/Re-NNDD/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/abeshinzo78/Re-NNDD/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/abeshinzo78/Re-NNDD/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/abeshinzo78/Re-NNDD/actions/workflows/codeql.yml)
+[![Security audit](https://github.com/abeshinzo78/Re-NNDD/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/abeshinzo78/Re-NNDD/actions/workflows/security.yml)
+[![Release](https://github.com/abeshinzo78/Re-NNDD/actions/workflows/release.yml/badge.svg)](https://github.com/abeshinzo78/Re-NNDD/actions/workflows/release.yml)
+
+<!-- Tech stack -->
+[![Tauri 2](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white)](https://tauri.app/)
+[![Rust stable / edition 2021](https://img.shields.io/badge/Rust-stable%20%2F%20edition%202021-DEA584?logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![Svelte 5](https://img.shields.io/badge/Svelte-5-FF3E00?logo=svelte&logoColor=white)](https://svelte.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Vite](https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
+[![SQLite](https://img.shields.io/badge/SQLite-bundled-003B57?logo=sqlite&logoColor=white)](https://www.sqlite.org/)
+[![Node.js 20+](https://img.shields.io/badge/Node.js-20%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
+[![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey)](#必要環境)
+
+<!-- Quality -->
+[![License: MIT](https://img.shields.io/github/license/abeshinzo78/Re-NNDD?color=blue)](./LICENSE)
+[![unsafe forbidden](https://img.shields.io/badge/unsafe-forbidden-success?logo=rust&logoColor=white)](./Cargo.toml)
+[![clippy: deny warnings](https://img.shields.io/badge/clippy-deny%20warnings-orange?logo=rust&logoColor=white)](https://github.com/rust-lang/rust-clippy)
+[![rustfmt](https://img.shields.io/badge/code%20style-rustfmt-000000?logo=rust&logoColor=white)](./rustfmt.toml)
+[![ESLint](https://img.shields.io/badge/lint-ESLint-4B32C3?logo=eslint&logoColor=white)](./eslint.config.js)
+[![Prettier](https://img.shields.io/badge/code%20style-Prettier-F7B93E?logo=prettier&logoColor=black)](./.prettierrc)
+[![typos](https://img.shields.io/badge/spellcheck-typos-0F8C40)](https://github.com/crate-ci/typos)
+[![cargo-deny](https://img.shields.io/badge/audit-cargo--deny-orange?logo=rust&logoColor=white)](./deny.toml)
+[![Dependabot](https://img.shields.io/badge/deps-Dependabot-025E8C?logo=dependabot&logoColor=white)](./.github/dependabot.yml)
+[![Tests: Vitest](https://img.shields.io/badge/tests-Vitest-6E9F18?logo=vitest&logoColor=white)](https://vitest.dev/)
+
+<!-- Repo info -->
+[![Last commit](https://img.shields.io/github/last-commit/abeshinzo78/Re-NNDD)](https://github.com/abeshinzo78/Re-NNDD/commits/main)
+[![Issues](https://img.shields.io/github/issues/abeshinzo78/Re-NNDD)](https://github.com/abeshinzo78/Re-NNDD/issues)
+[![Pull requests](https://img.shields.io/github/issues-pr/abeshinzo78/Re-NNDD)](https://github.com/abeshinzo78/Re-NNDD/pulls)
+[![Stars](https://img.shields.io/github/stars/abeshinzo78/Re-NNDD?style=flat)](https://github.com/abeshinzo78/Re-NNDD/stargazers)
+[![Contributors](https://img.shields.io/github/contributors/abeshinzo78/Re-NNDD)](https://github.com/abeshinzo78/Re-NNDD/graphs/contributors)
+[![Repo size](https://img.shields.io/github/repo-size/abeshinzo78/Re-NNDD)](https://github.com/abeshinzo78/Re-NNDD)
+[![Top language](https://img.shields.io/github/languages/top/abeshinzo78/Re-NNDD)](https://github.com/abeshinzo78/Re-NNDD)
+
+<!-- External -->
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/abeshinzo78/Re-NNDD)
+
 ニコニコ動画専用クライアント NNDD の精神的後継を目指したい。  
 Tauri 2 + Rust + Svelte 5 で実装するデスクトップアーカイブクライアントです。
 現在開發途中です。
