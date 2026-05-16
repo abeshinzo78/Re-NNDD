@@ -210,7 +210,12 @@ jobs:
   # ──────────────────────────────────────────────────────────────────────────
   ci-success:
     name: CI success
-    if: ${{ always() }}
+    # `always()` だと concurrency cancel-in-progress で潰された run の集約も走り、
+    # cancelled な needs を「非 success」とみなして fail 判定してしまう (UI が
+    # 赤く埋まる)。`!cancelled()` にすると、workflow 自体が cancel された場合は
+    # この job も skip になり、branch protection 上は pass 扱いになる。
+    # job 単発の failure (timeout/error) はちゃんと拾える。
+    if: ${{ !cancelled() }}
     needs:
       - frontend
       - rust

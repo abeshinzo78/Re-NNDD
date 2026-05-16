@@ -128,7 +128,11 @@ jobs:
   # 1 件だけを required にすればよい。
   release-dryrun-success:
     name: Release dry-run success
-    if: ${{ always() }}
+    # `always()` だと concurrency cancel-in-progress で潰された run の集約も走り、
+    # cancelled な needs を fail 判定してしまう (UI が赤く埋まる)。`!cancelled()`
+    # で workflow 全体が cancel された時は skip させる。matrix 内の単発失敗は
+    # 引き続き fail として捕まる。
+    if: ${{ !cancelled() }}
     needs:
       - bundle-dryrun
     runs-on: ubuntu-latest
