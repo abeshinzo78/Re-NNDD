@@ -188,9 +188,10 @@
 <style>
   h2 {
     margin-top: 0;
+    color: var(--text-heading);
   }
   .muted {
-    color: #9a9a9a;
+    color: var(--text-muted);
   }
   .small {
     font-size: 12px;
@@ -207,8 +208,8 @@
     }
   }
   .sidebar {
-    background: #161616;
-    border: 1px solid #1f1f1f;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
     border-radius: 8px;
     padding: 8px;
     align-self: start;
@@ -226,7 +227,7 @@
     text-align: left;
     background: transparent;
     border: 1px solid transparent;
-    color: #cfcfcf;
+    color: var(--text-2);
     border-radius: 6px;
     padding: 8px 10px;
     cursor: pointer;
@@ -236,12 +237,12 @@
     font-size: 13px;
   }
   .ml:hover {
-    background: #1f1f1f;
+    background: var(--surface-hover);
   }
   .ml.active {
-    background: #2a2a2a;
-    border-color: #3a3a3a;
-    color: #fff;
+    background: var(--surface-active);
+    border-color: var(--border-strong);
+    color: var(--text-heading);
   }
   .ml-name {
     flex: 1;
@@ -250,21 +251,21 @@
     white-space: nowrap;
   }
   .ml-count {
-    color: #888;
+    color: var(--text-dim);
     font-size: 11px;
   }
   .badge {
-    background: #2563eb;
-    color: white;
+    background: var(--accent);
+    color: var(--accent-text);
     font-size: 10px;
     padding: 1px 6px;
     border-radius: 999px;
   }
   .rename {
     flex: 1;
-    background: #0f0f0f;
-    border: 1px solid #2f2f2f;
-    color: #f5f5f5;
+    background: var(--input-bg);
+    border: 1px solid var(--border-3);
+    color: var(--text-heading);
     border-radius: 4px;
     padding: 2px 6px;
     font-size: 13px;
@@ -275,13 +276,13 @@
     gap: 6px;
     margin-top: 8px;
     padding-top: 8px;
-    border-top: 1px solid #2a2a2a;
+    border-top: 1px solid var(--border-2);
   }
   .create input {
     flex: 1;
-    background: #0f0f0f;
-    border: 1px solid #2f2f2f;
-    color: #f5f5f5;
+    background: var(--input-bg);
+    border: 1px solid var(--border-3);
+    color: var(--text-heading);
     border-radius: 4px;
     padding: 4px 8px;
     font-size: 12px;
@@ -289,9 +290,9 @@
   }
   .create button,
   .actions button {
-    background: #1f1f1f;
-    border: 1px solid #333;
-    color: #eaeaea;
+    background: var(--surface-hover);
+    border: 1px solid var(--menu-border);
+    color: var(--text);
     border-radius: 6px;
     padding: 4px 10px;
     font-size: 12px;
@@ -299,18 +300,18 @@
   }
   .create button:hover,
   .actions button:hover {
-    background: #2a2a2a;
+    background: var(--surface-active);
   }
   .create button:disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }
   .danger {
-    border-color: #5a2222 !important;
-    color: #f5b3b3 !important;
+    border-color: var(--error-border) !important;
+    color: var(--error-text) !important;
   }
   .danger:hover {
-    background: #2a1212 !important;
+    background: var(--error-bg) !important;
   }
   .detail {
     min-width: 0;
@@ -324,6 +325,7 @@
   .detail-head h3 {
     margin: 0;
     font-size: 16px;
+    color: var(--text-heading);
   }
   .actions {
     display: flex;
@@ -342,8 +344,8 @@
     grid-template-columns: 140px 1fr auto;
     gap: 12px;
     align-items: center;
-    background: #161616;
-    border: 1px solid #1f1f1f;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
     border-radius: 8px;
     padding: 8px;
   }
@@ -352,12 +354,12 @@
     width: 140px;
     height: 78px;
     object-fit: cover;
-    background: #0a0a0a;
+    background: var(--code-bg);
     border-radius: 4px;
     display: block;
   }
   .thumb-placeholder {
-    border: 1px dashed #2a2a2a;
+    border: 1px dashed var(--border-2);
   }
   .info {
     min-width: 0;
@@ -366,7 +368,7 @@
     gap: 4px;
   }
   .title {
-    color: #eaeaea;
+    color: var(--text);
     text-decoration: none;
     font-weight: 600;
     overflow: hidden;
@@ -384,20 +386,20 @@
     align-items: center;
   }
   .dot {
-    color: #555;
+    color: var(--text-faint);
   }
   .remove {
     background: transparent;
-    border: 1px solid #333;
-    color: #b0b0b0;
+    border: 1px solid var(--menu-border);
+    color: var(--text-3);
     border-radius: 6px;
     padding: 4px 8px;
     font-size: 12px;
     cursor: pointer;
   }
   .remove:hover {
-    background: #1f1f1f;
-    color: #f5b3b3;
-    border-color: #5a2222;
+    background: var(--surface-hover);
+    color: var(--error-text);
+    border-color: var(--error-border);
   }
 </style>

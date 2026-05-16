@@ -206,8 +206,8 @@
   .comment-list {
     display: flex;
     flex-direction: column;
-    background: #121212;
-    border-left: 1px solid #1f1f1f;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
     overflow: hidden;
     width: 320px;
     flex: 0 0 320px;
@@ -219,9 +219,9 @@
     justify-content: space-between;
     align-items: center;
     padding: 8px 12px;
-    border-bottom: 1px solid #1f1f1f;
+    border-bottom: 1px solid var(--border);
     font-size: 12px;
-    color: #b0b0b0;
+    color: var(--text-3);
   }
   .follow {
     display: inline-flex;
@@ -242,12 +242,12 @@
     gap: 8px;
     padding: 4px 12px;
     font-size: 12px;
-    border-bottom: 1px solid #181818;
+    border-bottom: 1px solid var(--surface-3);
     align-items: baseline;
     position: relative;
   }
   li.active {
-    background: #1f2a44;
+    background: var(--badge-blue-bg);
   }
   li.owner .content {
     color: #ffcc66;
@@ -255,7 +255,7 @@
   .time {
     background: transparent;
     border: none;
-    color: #6ea8fe;
+    color: var(--link);
     cursor: pointer;
     font-variant-numeric: tabular-nums;
     font-size: 11px;
@@ -274,12 +274,12 @@
   }
   .content {
     word-break: break-word;
-    color: #eaeaea;
+    color: var(--text);
   }
   .ng-btn {
     background: transparent;
     border: none;
-    color: #555;
+    color: var(--text-faint);
     cursor: pointer;
     font-size: 14px;
     line-height: 1;
@@ -292,16 +292,16 @@
     opacity: 1;
   }
   .ng-btn:hover {
-    color: #f5b3b3;
+    color: var(--error-text);
   }
   .menu {
     position: fixed;
     z-index: 1000;
     width: 280px;
-    background: #181818;
-    border: 1px solid #333;
+    background: var(--menu-bg);
+    border: 1px solid var(--menu-border);
     border-radius: 8px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+    box-shadow: var(--menu-shadow);
     padding: 6px;
     display: flex;
     flex-direction: column;
@@ -310,14 +310,14 @@
   }
   .menu-head {
     font-size: 11px;
-    color: #9a9a9a;
+    color: var(--text-muted);
     padding: 4px 8px 4px;
   }
   .menu-preview {
     font-size: 11px;
-    color: #cfcfcf;
+    color: var(--text-2);
     padding: 0 8px 6px;
-    border-bottom: 1px solid #2a2a2a;
+    border-bottom: 1px solid var(--border-2);
     margin-bottom: 4px;
     word-break: break-all;
   }
@@ -325,26 +325,26 @@
     text-align: left;
     background: transparent;
     border: none;
-    color: #eaeaea;
+    color: var(--text);
     padding: 6px 8px;
     border-radius: 4px;
     font-size: 12px;
     cursor: pointer;
   }
   .menu button:hover:not(:disabled) {
-    background: #2a2a2a;
+    background: var(--surface-active);
   }
   .menu button:disabled {
-    color: #555;
+    color: var(--text-faint);
     cursor: not-allowed;
   }
   .toast {
     position: fixed;
     bottom: 24px;
     right: 24px;
-    background: #1a2a1a;
-    color: #b3f5b3;
-    border: 1px solid #2a5a2a;
+    background: var(--success-icon-bg);
+    color: var(--success-icon-text);
+    border: 1px solid var(--success-icon-border);
     padding: 6px 14px;
     border-radius: 6px;
     font-size: 12px;

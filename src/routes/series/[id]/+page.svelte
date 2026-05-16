@@ -122,14 +122,14 @@
     gap: 16px;
     margin-bottom: 24px;
     padding-bottom: 20px;
-    border-bottom: 1px solid #2a2a2a;
+    border-bottom: 1px solid var(--border-2);
   }
   .series-thumb img {
     width: 160px;
     height: 90px;
     object-fit: cover;
     border-radius: 6px;
-    background: #0a0a0a;
+    background: var(--code-bg);
   }
   .series-thumb-placeholder {
     width: 160px;
@@ -137,10 +137,10 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: #1a2235;
-    border: 1px dashed #2a4a6a;
+    background: var(--badge-blue-bg-soft);
+    border: 1px dashed var(--badge-blue-border);
     border-radius: 6px;
-    color: #4a7ab5;
+    color: var(--link);
   }
   .header .info {
     flex: 1;
@@ -150,7 +150,7 @@
   }
   .label {
     font-size: 11px;
-    color: #6ea8fe;
+    color: var(--link);
     text-transform: uppercase;
     letter-spacing: 0.5px;
     font-weight: 600;
@@ -158,28 +158,28 @@
   .title {
     font-size: 20px;
     font-weight: 700;
-    color: #eaeaea;
+    color: var(--text);
     margin: 0;
   }
   .desc {
     font-size: 13px;
-    color: #9a9a9a;
+    color: var(--text-muted);
     margin: 0;
     line-height: 1.5;
   }
   .count {
     font-size: 12px;
-    color: #7a8a9a;
+    color: var(--text-dim);
     margin: 0;
   }
   .muted {
-    color: #9a9a9a;
+    color: var(--text-muted);
     font-size: 13px;
     text-align: center;
     padding: 40px 0;
   }
   .error {
-    color: #f87171;
+    color: var(--error-strong);
     font-size: 13px;
     text-align: center;
     padding: 40px 0;
@@ -197,19 +197,19 @@
     grid-template-columns: 160px 1fr;
     gap: 12px;
     padding: 8px;
-    background: #161616;
-    border: 1px solid #1f1f1f;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
     border-radius: 8px;
   }
   .thumb {
     width: 160px;
     height: 90px;
     object-fit: cover;
-    background: #0a0a0a;
+    background: var(--code-bg);
     border-radius: 4px;
   }
   .thumb.placeholder {
-    border: 1px dashed #2a2a2a;
+    border: 1px dashed var(--border-2);
   }
   .hit .info {
     display: flex;
@@ -222,20 +222,20 @@
     font-weight: 600;
   }
   .title a {
-    color: #eaeaea;
+    color: var(--text);
     text-decoration: none;
   }
   .title a:hover {
-    color: #93c5fd;
+    color: var(--link-strong);
   }
   .row-meta {
     font-size: 12px;
     display: flex;
     align-items: center;
     gap: 4px;
-    color: #cfcfcf;
+    color: var(--text-2);
   }
   .dot {
-    color: #555;
+    color: var(--text-faint);
   }
 </style>

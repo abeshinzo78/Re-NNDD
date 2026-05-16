@@ -18,13 +18,14 @@
     display: flex;
     align-items: center;
     gap: 10px;
+    color: var(--text-heading);
   }
   .muted {
-    color: #9a9a9a;
+    color: var(--text-muted);
   }
   .badge {
-    background: #2a2a2a;
-    color: #b0b0b0;
+    background: var(--surface-active);
+    color: var(--text-3);
     font-size: 11px;
     font-weight: 400;
     padding: 2px 8px;

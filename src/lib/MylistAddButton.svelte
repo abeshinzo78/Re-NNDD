@@ -139,16 +139,16 @@
     gap: 6px;
   }
   button {
-    background: #1f1f1f;
-    border: 1px solid #333;
-    color: #eaeaea;
+    background: var(--surface-hover);
+    border: 1px solid var(--menu-border);
+    color: var(--text);
     border-radius: 6px;
     padding: 4px 10px;
     font-size: 12px;
     cursor: pointer;
   }
   button:hover {
-    background: #2a2a2a;
+    background: var(--surface-active);
   }
   .save.active {
     background: #b45309;
@@ -161,17 +161,17 @@
     right: 0;
     z-index: 50;
     width: 280px;
-    background: #181818;
-    border: 1px solid #333;
+    background: var(--menu-bg);
+    border: 1px solid var(--menu-border);
     border-radius: 8px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+    box-shadow: var(--menu-shadow);
     padding: 8px;
   }
   .header {
     font-size: 12px;
-    color: #9a9a9a;
+    color: var(--text-muted);
     padding: 4px 6px 8px;
-    border-bottom: 1px solid #2a2a2a;
+    border-bottom: 1px solid var(--border-2);
     margin-bottom: 6px;
   }
   .list {
@@ -191,7 +191,7 @@
     font-size: 13px;
   }
   .list li label:hover {
-    background: #222;
+    background: var(--surface-active);
   }
   .name {
     flex: 1;
@@ -200,14 +200,14 @@
     white-space: nowrap;
   }
   .badge {
-    background: #2563eb;
-    color: white;
+    background: var(--accent);
+    color: var(--accent-text);
     font-size: 10px;
     padding: 1px 6px;
     border-radius: 999px;
   }
   .count {
-    color: #888;
+    color: var(--text-dim);
     font-size: 11px;
   }
   .create {
@@ -215,13 +215,13 @@
     gap: 6px;
     margin-top: 8px;
     padding-top: 8px;
-    border-top: 1px solid #2a2a2a;
+    border-top: 1px solid var(--border-2);
   }
   .create input {
     flex: 1;
-    background: #0f0f0f;
-    border: 1px solid #2f2f2f;
-    color: #f5f5f5;
+    background: var(--input-bg);
+    border: 1px solid var(--border-3);
+    color: var(--text-heading);
     border-radius: 4px;
     padding: 4px 8px;
     font-size: 12px;

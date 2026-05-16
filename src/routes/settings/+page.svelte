@@ -384,29 +384,31 @@
   }
   h2 {
     margin-top: 0;
+    color: var(--text-heading);
   }
   h3 {
     margin: 0 0 4px;
     font-size: 15px;
+    color: var(--text-heading);
   }
   .muted {
-    color: #9a9a9a;
+    color: var(--text-muted);
   }
   .hint {
-    color: #9a9a9a;
+    color: var(--text-muted);
     font-size: 12px;
     margin: 0;
     line-height: 1.5;
   }
   .ok {
-    color: #4ade80;
+    color: var(--success-strong);
   }
   .error-text {
-    color: #f87171;
+    color: var(--error-strong);
   }
   .card {
-    background: #161616;
-    border: 1px solid #1f1f1f;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
     border-radius: 8px;
     padding: 14px 16px;
     margin-bottom: 12px;
@@ -418,7 +420,7 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
-    border-bottom: 1px solid #1f1f1f;
+    border-bottom: 1px solid var(--border);
     padding-bottom: 10px;
   }
   .settings-list {
@@ -432,16 +434,16 @@
     gap: 16px;
     align-items: center;
     padding: 8px 0;
-    border-bottom: 1px solid #1a1a1a;
+    border-bottom: 1px solid var(--surface-3);
   }
   .setting-row:last-child {
     border-bottom: none;
   }
   .setting-row.overridden {
-    background: linear-gradient(90deg, rgba(37, 99, 235, 0.05), transparent);
+    background: var(--accent-soft-bg);
   }
   .setting-label label {
-    color: #eaeaea;
+    color: var(--text);
     font-size: 13px;
     cursor: pointer;
   }
@@ -453,8 +455,8 @@
   }
   .reset-btn {
     background: transparent;
-    border: 1px solid #2a2a2a;
-    color: #93c5fd;
+    border: 1px solid var(--border-2);
+    color: var(--link-strong);
     width: 28px;
     height: 28px;
     border-radius: 50%;
@@ -463,7 +465,7 @@
     line-height: 1;
   }
   .reset-btn:hover {
-    background: #1a1a1a;
+    background: var(--surface-3);
   }
   /* number/text inputs */
   input[type='number'],
@@ -471,9 +473,9 @@
   input[type='email'],
   input[type='password'],
   select {
-    background: #0f0f0f;
-    border: 1px solid #2f2f2f;
-    color: #f5f5f5;
+    background: var(--input-bg);
+    border: 1px solid var(--border-3);
+    color: var(--text-heading);
     border-radius: 6px;
     padding: 6px 10px;
     font-size: 13px;
@@ -482,7 +484,7 @@
   input:focus,
   select:focus {
     outline: none;
-    border-color: #5a5a5a;
+    border-color: var(--border-strong);
   }
   /* toggle switch */
   .switch {
@@ -499,7 +501,7 @@
   .switch-thumb {
     position: absolute;
     inset: 0;
-    background: #2a2a2a;
+    background: var(--surface-active);
     border-radius: 22px;
     transition: background 0.15s;
     cursor: pointer;
@@ -511,14 +513,14 @@
     width: 16px;
     left: 3px;
     top: 3px;
-    background: #b0b0b0;
+    background: var(--text-3);
     border-radius: 50%;
     transition:
       transform 0.15s,
       background 0.15s;
   }
   .switch input:checked + .switch-thumb {
-    background: #2563eb;
+    background: var(--accent);
   }
   .switch input:checked + .switch-thumb::before {
     transform: translateX(22px);
@@ -535,11 +537,11 @@
   .dot {
     width: 10px;
     height: 10px;
-    background: #555;
+    background: var(--text-faint);
     border-radius: 999px;
   }
   .dot.on {
-    background: #4ade80;
+    background: var(--success-strong);
   }
   .login-form {
     display: flex;
@@ -550,7 +552,7 @@
     display: flex;
     flex-direction: column;
     font-size: 12px;
-    color: #b0b0b0;
+    color: var(--text-3);
     gap: 4px;
   }
   .actions {
@@ -559,13 +561,16 @@
     align-items: center;
   }
   .primary {
-    background: #2563eb;
-    color: white;
+    background: var(--accent);
+    color: var(--accent-text);
     border: none;
     border-radius: 6px;
     padding: 8px 18px;
     font-size: 14px;
     cursor: pointer;
+  }
+  .primary:hover:not(:disabled) {
+    background: var(--accent-hover);
   }
   .primary:disabled {
     opacity: 0.5;
@@ -574,7 +579,7 @@
   .link {
     background: transparent;
     border: none;
-    color: #6ea8fe;
+    color: var(--link);
     cursor: pointer;
     text-decoration: underline;
     font-size: 13px;
@@ -582,11 +587,11 @@
     margin-left: auto;
   }
   .link.danger {
-    color: #f87171;
+    color: var(--error-strong);
   }
   details > summary {
     cursor: pointer;
-    color: #cfcfcf;
+    color: var(--text-2);
     font-size: 13px;
     user-select: none;
     padding: 4px 0;
@@ -598,19 +603,19 @@
     margin-bottom: 12px;
   }
   .msg.ok {
-    background: #102d20;
-    border: 1px solid #1e6b48;
-    color: #bbf7d0;
+    background: var(--success-bg);
+    border: 1px solid var(--success-border);
+    color: var(--success-text);
   }
   .msg.warn {
-    background: #2a2410;
-    border: 1px solid #5a4a1a;
-    color: #fde68a;
+    background: var(--warn-bg);
+    border: 1px solid var(--warn-border);
+    color: var(--warn-text);
   }
   .msg.error {
-    background: #2a1212;
-    border: 1px solid #5a2222;
-    color: #f5b3b3;
+    background: var(--error-bg);
+    border: 1px solid var(--error-border);
+    color: var(--error-text);
   }
   .info-grid {
     display: grid;
@@ -620,11 +625,11 @@
     font-size: 13px;
   }
   .info-grid dt {
-    color: #9a9a9a;
+    color: var(--text-muted);
   }
   .info-grid dd {
     margin: 0;
-    color: #eaeaea;
+    color: var(--text);
     word-break: break-all;
   }
   .src-badge {
@@ -636,34 +641,34 @@
     font-weight: 500;
   }
   .src-bundled {
-    background: #1a3a26;
-    color: #b3f5b3;
-    border: 1px solid #2a5a3a;
+    background: var(--success-icon-bg);
+    color: var(--success-icon-text);
+    border: 1px solid var(--success-icon-border);
   }
   .src-sidecar {
-    background: #1a2a44;
-    color: #93c5fd;
-    border: 1px solid #2a3f5a;
+    background: var(--badge-blue-bg-soft);
+    color: var(--badge-blue-text);
+    border: 1px solid var(--badge-blue-border);
   }
   .src-system_path {
-    background: #2a2418;
-    color: #fde68a;
-    border: 1px solid #5a4a1a;
+    background: var(--warn-bg);
+    color: var(--warn-text);
+    border: 1px solid var(--warn-border);
   }
   .src-not_found {
-    background: #2a1212;
-    color: #f5b3b3;
-    border: 1px solid #5a2222;
+    background: var(--error-bg);
+    color: var(--error-text);
+    border: 1px solid var(--error-border);
   }
   .path-tiny {
     display: block;
     font-size: 10px;
     margin-top: 4px;
-    color: #9a9a9a;
+    color: var(--text-muted);
   }
   code {
-    background: #0a0a0a;
-    border: 1px solid #1f1f1f;
+    background: var(--code-bg);
+    border: 1px solid var(--border);
     border-radius: 3px;
     padding: 0 4px;
     font-size: 12px;
