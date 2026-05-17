@@ -195,8 +195,6 @@
     playerRef?.seek(t);
   }
 
-  let classicQueueCount = $derived(1 + related.length);
-
   function getResumePosition(id: string): number {
     const pipPos = miniPlayer.consumeReturnPosition(id);
     if (pipPos > 0) return pipPos;
@@ -491,61 +489,28 @@
             <div class="ng-banner">NG: {ngFilteredCount} 件のコメを除外中</div>
           {/if}
         </div>
-        {#if isClassicTheme}
-          <aside class="classic-side-panel">
+        <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+        <div
+          class="divider"
+          role="separator"
+          aria-label="コメントパネル幅調整"
+          onmousedown={startDrag}
+        ></div>
+        <div class="comment-panel" style:width="{panelWidth}px" style:min-width="{panelWidth}px">
+          {#if isClassicTheme}
             <div class="side-header">
-              <span>{classicQueueCount} 件</span>
+              <span>{formatNumber(visibleComments.length)} 件</span>
               <label class="side-toggle">
                 <input type="checkbox" checked={loop} onchange={() => (loop = !loop)} />
                 <span>連続再生</span>
               </label>
             </div>
-            <div class="classic-queue">
-              <div class="classic-queue-item current">
-                <div class="classic-queue-time">
-                  {formatDuration(payload.video.duration)}
-                </div>
-                <div class="classic-queue-body">
-                  <div class="classic-queue-title">{payload.video.title}</div>
-                  <div class="classic-queue-meta">再生中</div>
-                </div>
-              </div>
-              {#if relatedLoading}
-                <div class="classic-queue-empty">関連動画を取得中…</div>
-              {:else if related.length === 0}
-                <div class="classic-queue-empty">関連候補はまだありません。</div>
-              {:else}
-                {#each related.slice(0, 8) as hit (hit.contentId)}
-                  <a class="classic-queue-item" href={`/video/${hit.contentId}`}>
-                    <div class="classic-queue-time">
-                      {hit.lengthSeconds != null ? formatDuration(hit.lengthSeconds) : '0:00'}
-                    </div>
-                    <div class="classic-queue-body">
-                      <div class="classic-queue-title">
-                        {hit.title || hit.contentId || '関連動画'}
-                      </div>
-                      <div class="classic-queue-meta">関連動画</div>
-                    </div>
-                  </a>
-                {/each}
-              {/if}
-            </div>
-          </aside>
-        {:else}
-          <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-          <div
-            class="divider"
-            role="separator"
-            aria-label="コメントパネル幅調整"
-            onmousedown={startDrag}
-          ></div>
-          <div class="comment-panel" style:width="{panelWidth}px" style:min-width="{panelWidth}px">
-            {#if commentsLoading}
-              <div class="comment-loading">コメント取得中…</div>
-            {/if}
-            <CommentList comments={visibleComments} {currentTime} onSeek={handleSeek} />
-          </div>
-        {/if}
+          {/if}
+          {#if commentsLoading}
+            <div class="comment-loading">コメント取得中…</div>
+          {/if}
+          <CommentList comments={visibleComments} {currentTime} onSeek={handleSeek} />
+        </div>
       </div>
     </div>
 
@@ -801,10 +766,6 @@
     display: flex;
     align-items: stretch;
   }
-  .page.classic .player-row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 320px;
-  }
   .player-frame {
     display: flex;
     flex-direction: column;
@@ -885,9 +846,6 @@
     background: var(--theme-surface-2);
     border-left: 1px solid var(--theme-border);
   }
-  .classic-side-panel {
-    display: none;
-  }
   .side-header {
     display: none;
   }
@@ -902,61 +860,6 @@
     color: var(--theme-text);
     font-size: 13px;
     font-weight: 700;
-  }
-  .page.classic .classic-side-panel {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    background: var(--theme-surface-2);
-    border-left: 1px solid var(--theme-border);
-  }
-  .classic-queue {
-    display: flex;
-    flex-direction: column;
-    min-height: 100%;
-  }
-  .classic-queue-item {
-    display: grid;
-    grid-template-columns: 56px 1fr;
-    gap: 10px;
-    align-items: start;
-    padding: 12px 14px;
-    border-bottom: 1px solid var(--theme-border);
-    color: var(--theme-text);
-    text-decoration: none;
-    background: transparent;
-  }
-  .classic-queue-item.current {
-    background: linear-gradient(180deg, #eef4ff 0%, #dfe9fb 100%);
-  }
-  .classic-queue-item:not(.current):hover {
-    background: #f7f0e6;
-  }
-  .classic-queue-time {
-    color: var(--theme-accent-soft);
-    font-size: 13px;
-    line-height: 1.3;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-  }
-  .classic-queue-body {
-    min-width: 0;
-  }
-  .classic-queue-title {
-    color: var(--theme-text);
-    font-size: 13px;
-    line-height: 1.45;
-    word-break: break-word;
-  }
-  .classic-queue-meta {
-    margin-top: 4px;
-    color: var(--theme-text-muted);
-    font-size: 11px;
-  }
-  .classic-queue-empty {
-    padding: 14px;
-    color: var(--theme-text-muted);
-    font-size: 12px;
   }
   .side-toggle {
     display: inline-flex;
@@ -988,13 +891,6 @@
   @media (max-width: 1100px) {
     .below {
       grid-template-columns: 1fr;
-    }
-    .page.classic .player-row {
-      grid-template-columns: 1fr;
-    }
-    .page.classic .classic-side-panel {
-      border-left: none;
-      border-top: 1px solid var(--theme-border);
     }
   }
   .meta {
