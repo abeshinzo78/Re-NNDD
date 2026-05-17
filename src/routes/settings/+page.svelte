@@ -390,23 +390,23 @@
     font-size: 15px;
   }
   .muted {
-    color: #9a9a9a;
+    color: var(--theme-text-muted);
   }
   .hint {
-    color: #9a9a9a;
+    color: var(--theme-text-muted);
     font-size: 12px;
     margin: 0;
     line-height: 1.5;
   }
   .ok {
-    color: #4ade80;
+    color: var(--theme-success-strong);
   }
   .error-text {
-    color: #f87171;
+    color: var(--theme-danger-text);
   }
   .card {
-    background: #161616;
-    border: 1px solid #1f1f1f;
+    background: var(--theme-surface-2);
+    border: 1px solid var(--theme-border);
     border-radius: 8px;
     padding: 14px 16px;
     margin-bottom: 12px;
@@ -418,7 +418,7 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
-    border-bottom: 1px solid #1f1f1f;
+    border-bottom: 1px solid var(--theme-border);
     padding-bottom: 10px;
   }
   .settings-list {
@@ -432,7 +432,7 @@
     gap: 16px;
     align-items: center;
     padding: 8px 0;
-    border-bottom: 1px solid #1a1a1a;
+    border-bottom: 1px solid var(--theme-surface-3);
   }
   .setting-row:last-child {
     border-bottom: none;
@@ -441,7 +441,7 @@
     background: linear-gradient(90deg, rgba(37, 99, 235, 0.05), transparent);
   }
   .setting-label label {
-    color: #eaeaea;
+    color: var(--theme-text);
     font-size: 13px;
     cursor: pointer;
   }
@@ -453,8 +453,8 @@
   }
   .reset-btn {
     background: transparent;
-    border: 1px solid #2a2a2a;
-    color: #93c5fd;
+    border: 1px solid var(--theme-border-strong);
+    color: var(--theme-accent-soft);
     width: 28px;
     height: 28px;
     border-radius: 50%;
@@ -463,7 +463,7 @@
     line-height: 1;
   }
   .reset-btn:hover {
-    background: #1a1a1a;
+    background: var(--theme-surface-3);
   }
   /* number/text inputs */
   input[type='number'],
@@ -471,9 +471,9 @@
   input[type='email'],
   input[type='password'],
   select {
-    background: #0f0f0f;
-    border: 1px solid #2f2f2f;
-    color: #f5f5f5;
+    background: var(--theme-input-bg);
+    border: 1px solid var(--theme-border-strong);
+    color: var(--theme-text);
     border-radius: 6px;
     padding: 6px 10px;
     font-size: 13px;
@@ -482,7 +482,7 @@
   input:focus,
   select:focus {
     outline: none;
-    border-color: #5a5a5a;
+    border-color: var(--theme-border-focus);
   }
   /* toggle switch */
   .switch {
@@ -499,7 +499,7 @@
   .switch-thumb {
     position: absolute;
     inset: 0;
-    background: #2a2a2a;
+    background: var(--theme-border-strong);
     border-radius: 22px;
     transition: background 0.15s;
     cursor: pointer;
@@ -511,18 +511,18 @@
     width: 16px;
     left: 3px;
     top: 3px;
-    background: #b0b0b0;
+    background: var(--theme-text-soft);
     border-radius: 50%;
     transition:
       transform 0.15s,
       background 0.15s;
   }
   .switch input:checked + .switch-thumb {
-    background: #2563eb;
+    background: var(--theme-accent);
   }
   .switch input:checked + .switch-thumb::before {
     transform: translateX(22px);
-    background: #fff;
+    background: var(--theme-surface-2);
   }
 
   /* status / login / cookie */
@@ -535,11 +535,11 @@
   .dot {
     width: 10px;
     height: 10px;
-    background: #555;
+    background: var(--theme-text-faint);
     border-radius: 999px;
   }
   .dot.on {
-    background: #4ade80;
+    background: var(--theme-success-strong);
   }
   .login-form {
     display: flex;
@@ -550,7 +550,7 @@
     display: flex;
     flex-direction: column;
     font-size: 12px;
-    color: #b0b0b0;
+    color: var(--theme-text-soft);
     gap: 4px;
   }
   .actions {
@@ -559,7 +559,7 @@
     align-items: center;
   }
   .primary {
-    background: #2563eb;
+    background: var(--theme-accent);
     color: white;
     border: none;
     border-radius: 6px;
@@ -574,7 +574,7 @@
   .link {
     background: transparent;
     border: none;
-    color: #6ea8fe;
+    color: var(--theme-accent-soft);
     cursor: pointer;
     text-decoration: underline;
     font-size: 13px;
@@ -582,11 +582,11 @@
     margin-left: auto;
   }
   .link.danger {
-    color: #f87171;
+    color: var(--theme-danger-text);
   }
   details > summary {
     cursor: pointer;
-    color: #cfcfcf;
+    color: var(--theme-text-soft);
     font-size: 13px;
     user-select: none;
     padding: 4px 0;
@@ -598,19 +598,19 @@
     margin-bottom: 12px;
   }
   .msg.ok {
-    background: #102d20;
-    border: 1px solid #1e6b48;
-    color: #bbf7d0;
+    background: var(--theme-success-bg-2);
+    border: 1px solid var(--theme-success-border);
+    color: var(--theme-success-text);
   }
   .msg.warn {
-    background: #2a2410;
-    border: 1px solid #5a4a1a;
-    color: #fde68a;
+    background: var(--theme-warning-bg);
+    border: 1px solid var(--theme-warning-border);
+    color: var(--theme-warning-text);
   }
   .msg.error {
-    background: #2a1212;
-    border: 1px solid #5a2222;
-    color: #f5b3b3;
+    background: var(--theme-danger-bg);
+    border: 1px solid var(--theme-danger-border);
+    color: var(--theme-danger-text);
   }
   .info-grid {
     display: grid;
@@ -620,11 +620,11 @@
     font-size: 13px;
   }
   .info-grid dt {
-    color: #9a9a9a;
+    color: var(--theme-text-muted);
   }
   .info-grid dd {
     margin: 0;
-    color: #eaeaea;
+    color: var(--theme-text);
     word-break: break-all;
   }
   .src-badge {
@@ -636,34 +636,34 @@
     font-weight: 500;
   }
   .src-bundled {
-    background: #1a3a26;
-    color: #b3f5b3;
-    border: 1px solid #2a5a3a;
+    background: var(--theme-success-bg);
+    color: var(--theme-success-text);
+    border: 1px solid var(--theme-success-border);
   }
   .src-sidecar {
-    background: #1a2a44;
-    color: #93c5fd;
-    border: 1px solid #2a3f5a;
+    background: var(--theme-accent-bg);
+    color: var(--theme-accent-soft);
+    border: 1px solid var(--theme-accent-border);
   }
   .src-system_path {
-    background: #2a2418;
-    color: #fde68a;
-    border: 1px solid #5a4a1a;
+    background: var(--theme-warning-bg);
+    color: var(--theme-warning-text);
+    border: 1px solid var(--theme-warning-border);
   }
   .src-not_found {
-    background: #2a1212;
-    color: #f5b3b3;
-    border: 1px solid #5a2222;
+    background: var(--theme-danger-bg);
+    color: var(--theme-danger-text);
+    border: 1px solid var(--theme-danger-border);
   }
   .path-tiny {
     display: block;
     font-size: 10px;
     margin-top: 4px;
-    color: #9a9a9a;
+    color: var(--theme-text-muted);
   }
   code {
-    background: #0a0a0a;
-    border: 1px solid #1f1f1f;
+    background: var(--theme-bg);
+    border: 1px solid var(--theme-border);
     border-radius: 3px;
     padding: 0 4px;
     font-size: 12px;

@@ -187,11 +187,14 @@ export const SETTING_DEFS = [
   {
     key: 'appearance.theme',
     label: 'テーマ',
-    description: '現状ダークのみ',
+    description: 'アプリ全体の配色と質感',
     section: 'appearance',
     default: 'dark',
     kind: 'select',
-    options: [{ value: 'dark', label: 'ダーク' }],
+    options: [
+      { value: 'dark', label: 'ダーク' },
+      { value: 'niconico-classic', label: 'ニコニコクラシック' },
+    ],
     order: 10,
   },
 

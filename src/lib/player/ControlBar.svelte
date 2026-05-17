@@ -189,11 +189,13 @@
 
   <div class="controls">
     <button type="button" class="btn primary" onclick={onTogglePlay} aria-label="再生/一時停止">
-      {paused ? '▶' : '❚❚'}
+      <span class="btn-icon">{paused ? '▶' : '❚❚'}</span>
+      <span class="classic-label">{paused ? '再生' : '一時停止'}</span>
     </button>
     <div class="volume">
       <button type="button" class="btn" onclick={onToggleMute} aria-label="ミュート">
-        {muted || volume === 0 ? '🔇' : volume < 0.5 ? '🔉' : '🔊'}
+        <span class="btn-icon">{muted || volume === 0 ? '🔇' : volume < 0.5 ? '🔉' : '🔊'}</span>
+        <span class="classic-label">音量</span>
       </button>
       <input
         type="range"
@@ -256,6 +258,7 @@
         disabled={abLoop.in == null || abLoop.out == null}>↻</button
       >
       <button type="button" class="btn small" onclick={onClearAb} title="クリア">×</button>
+      <span class="ab-classic-label">A B S</span>
     </div>
 
     <div class="comments-controls">
@@ -290,6 +293,7 @@
         <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
           <path d="M3 5h18v14H3V5zm2 2v10h14V7H5zm7 4h6v4h-6v-4z" fill="currentColor" />
         </svg>
+        <span class="classic-label">ミニプレイヤー</span>
       </button>
     {/if}
     <button type="button" class="btn" onclick={() => onScreenshot?.()} title="スクリーンショット">
@@ -299,8 +303,12 @@
           fill="currentColor"
         />
       </svg>
+      <span class="classic-label">静止画</span>
     </button>
-    <button type="button" class="btn" onclick={onFullscreen} title="全画面 (F)">⛶</button>
+    <button type="button" class="btn" onclick={onFullscreen} title="全画面 (F)">
+      <span class="btn-icon">⛶</span>
+      <span class="classic-label">全画面</span>
+    </button>
     <button
       type="button"
       class="btn loop-btn"
@@ -324,12 +332,16 @@
     z-index: 10;
     flex-shrink: 0;
   }
+  .classic-label,
+  .ab-classic-label {
+    display: none;
+  }
   .seek {
     display: grid;
     grid-template-columns: max-content 1fr max-content;
     align-items: center;
     gap: 8px;
-    color: #f5f5f5;
+    color: var(--theme-text);
     font-size: 12px;
     font-variant-numeric: tabular-nums;
   }
@@ -349,27 +361,30 @@
     pointer-events: none;
   }
   .ab-marker.in {
-    background: #41d2c5;
+    background: var(--theme-success-strong);
   }
   .ab-marker.out {
-    background: #f59e0b;
+    background: var(--theme-warning-text);
   }
   .controls {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
     align-items: center;
-    color: #eaeaea;
+    color: var(--theme-text);
     font-size: 13px;
   }
   .btn {
     background: rgba(255, 255, 255, 0.08);
     border: 1px solid rgba(255, 255, 255, 0.12);
-    color: #eaeaea;
+    color: var(--theme-text);
     padding: 4px 10px;
     border-radius: 6px;
     cursor: pointer;
     font-size: 14px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
   }
   .btn.small {
     padding: 2px 8px;
@@ -383,12 +398,30 @@
     cursor: not-allowed;
   }
   .btn.primary {
-    background: #2563eb;
-    border-color: #2563eb;
+    background: var(--theme-accent);
+    border-color: var(--theme-accent);
   }
   .btn.active {
-    background: #2563eb;
-    border-color: #2563eb;
+    background: var(--theme-accent);
+    border-color: var(--theme-accent);
+  }
+  :global(html[data-theme='niconico-classic']) .btn {
+    background: linear-gradient(180deg, #fffdf8 0%, #ebe2d4 100%);
+    border: 1px solid #c4b39c;
+    color: #251d17;
+    border-radius: 3px;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.85) inset;
+    padding: 5px 10px;
+    min-height: 30px;
+  }
+  :global(html[data-theme='niconico-classic']) .btn:hover:not(:disabled) {
+    background: linear-gradient(180deg, #fff8ef 0%, #e6d6c2 100%);
+  }
+  :global(html[data-theme='niconico-classic']) .btn.primary,
+  :global(html[data-theme='niconico-classic']) .btn.active {
+    background: linear-gradient(180deg, #edf4ff 0%, #dbe7fb 100%);
+    border-color: #b3c6e2;
+    color: #2a4d78;
   }
   .loop-btn {
     font-size: 12px;
@@ -400,6 +433,10 @@
     align-items: center;
     gap: 6px;
   }
+  :global(html[data-theme='niconico-classic']) .volume {
+    padding-right: 8px;
+    border-right: 1px solid #d8ccba;
+  }
   .volume input[type='range'] {
     width: 80px;
   }
@@ -407,20 +444,26 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    color: #cfcfcf;
+    color: var(--theme-text-soft);
   }
   .select select {
-    background: #1a1a1a;
-    color: #eaeaea;
-    border: 1px solid #2f2f2f;
+    background: var(--theme-surface-3);
+    color: var(--theme-text);
+    border: 1px solid var(--theme-border-strong);
     border-radius: 4px;
     padding: 2px 6px;
     font-size: 12px;
   }
+  :global(html[data-theme='niconico-classic']) .select select {
+    background: linear-gradient(180deg, #fffdf8 0%, #ebe2d4 100%);
+    color: #251d17;
+    border-color: #c4b39c;
+    border-radius: 3px;
+  }
   .select select option {
     /* popup だけ光らせて選択肢が読めるように */
-    background: #ffffff;
-    color: #000000;
+    background: var(--theme-surface-2);
+    color: var(--theme-bg);
   }
   /* 速度ピッカー (上方向に開くカスタムドロップダウン) */
   .rate-picker {
@@ -428,15 +471,21 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    color: #cfcfcf;
+    color: var(--theme-text-soft);
+  }
+  :global(html[data-theme='niconico-classic']) .rate-picker,
+  :global(html[data-theme='niconico-classic']) .select,
+  :global(html[data-theme='niconico-classic']) .comments-controls {
+    padding-right: 8px;
+    border-right: 1px solid #d8ccba;
   }
   .rate-label {
     font-size: 12px;
   }
   .rate-btn {
-    background: #1a1a1a;
-    color: #eaeaea;
-    border: 1px solid #2f2f2f;
+    background: var(--theme-surface-3);
+    color: var(--theme-text);
+    border: 1px solid var(--theme-border-strong);
     border-radius: 4px;
     padding: 2px 8px;
     font-size: 12px;
@@ -446,14 +495,23 @@
     font-variant-numeric: tabular-nums;
   }
   .rate-btn:hover {
-    background: #2a2a2a;
+    background: var(--theme-border-strong);
+  }
+  :global(html[data-theme='niconico-classic']) .rate-btn {
+    background: linear-gradient(180deg, #fffdf8 0%, #ebe2d4 100%);
+    color: #251d17;
+    border-color: #c4b39c;
+    border-radius: 3px;
+  }
+  :global(html[data-theme='niconico-classic']) .rate-btn:hover {
+    background: linear-gradient(180deg, #fff8ef 0%, #e6d6c2 100%);
   }
   .rate-menu {
     position: absolute;
     bottom: calc(100% + 4px); /* 上に開く - 全画面の下端でも切れない */
     right: 0;
-    background: #1a1a1a;
-    border: 1px solid #2f2f2f;
+    background: var(--theme-surface-3);
+    border: 1px solid var(--theme-border-strong);
     border-radius: 6px;
     padding: 4px;
     display: flex;
@@ -462,10 +520,15 @@
     z-index: 30;
     min-width: 70px;
   }
+  :global(html[data-theme='niconico-classic']) .rate-menu {
+    background: #fffdf8;
+    border-color: #c4b39c;
+    box-shadow: 0 -4px 12px rgba(75, 55, 34, 0.2);
+  }
   .rate-menu button {
     background: transparent;
     border: none;
-    color: #eaeaea;
+    color: var(--theme-text);
     padding: 4px 10px;
     border-radius: 3px;
     font-size: 12px;
@@ -474,19 +537,31 @@
     font-variant-numeric: tabular-nums;
   }
   .rate-menu button:hover {
-    background: #2a2a2a;
+    background: var(--theme-border-strong);
   }
   .rate-menu button.current {
-    background: #2563eb;
+    background: var(--theme-accent);
     color: white;
+  }
+  :global(html[data-theme='niconico-classic']) .rate-menu button.current {
+    background: linear-gradient(180deg, #edf4ff 0%, #dbe7fb 100%);
+    color: #2a4d78;
   }
   .ab {
     display: inline-flex;
     gap: 2px;
     padding: 0 6px;
-    border-left: 1px solid #2a2a2a;
-    border-right: 1px solid #2a2a2a;
+    border-left: 1px solid var(--theme-border-strong);
+    border-right: 1px solid var(--theme-border-strong);
     margin: 0 4px;
+  }
+  :global(html[data-theme='niconico-classic']) .ab {
+    gap: 4px;
+    align-items: center;
+    padding: 0 8px 0 0;
+    border-left: none;
+    border-right: 1px solid #d8ccba;
+    margin: 0;
   }
   .comments-controls {
     display: inline-flex;
@@ -504,5 +579,52 @@
   }
   .pip-btn svg {
     display: block;
+  }
+  :global(html[data-theme='niconico-classic']) .bar {
+    gap: 10px;
+    background: linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.96) 0%,
+      rgba(234, 225, 211, 0.98) 100%
+    );
+    padding: 10px 12px 12px;
+    border-top: 1px solid #c4b39c;
+    color: #251d17;
+  }
+  :global(html[data-theme='niconico-classic']) .seek {
+    color: #4a4038;
+    gap: 10px;
+  }
+  :global(html[data-theme='niconico-classic']) .seek-track input[type='range'] {
+    accent-color: #3f73b3;
+  }
+  :global(html[data-theme='niconico-classic']) .controls {
+    gap: 8px 10px;
+    align-items: center;
+    color: #4a4038;
+    font-size: 12px;
+  }
+  :global(html[data-theme='niconico-classic']) .btn-icon {
+    font-size: 13px;
+    line-height: 1;
+  }
+  :global(html[data-theme='niconico-classic']) .classic-label {
+    display: inline;
+    font-size: 12px;
+    line-height: 1;
+  }
+  :global(html[data-theme='niconico-classic']) .ab-classic-label {
+    display: inline;
+    margin-left: 2px;
+    font-size: 12px;
+    color: #4a4038;
+    letter-spacing: 0.08em;
+  }
+  :global(html[data-theme='niconico-classic']) .btn.small {
+    min-width: 28px;
+    justify-content: center;
+  }
+  :global(html[data-theme='niconico-classic']) .loop-btn {
+    min-width: 60px;
   }
 </style>

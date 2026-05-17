@@ -207,8 +207,8 @@
     grid-template-columns: 160px 1fr;
     gap: 12px;
     padding: 8px;
-    background: #161616;
-    border: 1px solid #1f1f1f;
+    background: var(--theme-surface-2);
+    border: 1px solid var(--theme-border);
     border-radius: 8px;
     list-style: none;
   }
@@ -221,7 +221,7 @@
     width: 160px;
     height: 90px;
     object-fit: cover;
-    background: #0a0a0a;
+    background: var(--theme-bg);
     border-radius: 4px;
   }
   .compact .thumb {
@@ -229,10 +229,10 @@
     height: 68px;
   }
   .thumb.placeholder {
-    border: 1px dashed #2a2a2a;
+    border: 1px dashed var(--theme-border-strong);
   }
   .muted {
-    color: #9a9a9a;
+    color: var(--theme-text-muted);
   }
   .info {
     display: flex;
@@ -244,7 +244,7 @@
     padding-right: 28px;
   }
   .title a {
-    color: #eaeaea;
+    color: var(--theme-text);
     text-decoration: none;
     font-weight: 600;
   }
@@ -252,7 +252,7 @@
     text-decoration: underline;
   }
   .title .external {
-    color: #6ea8fe;
+    color: var(--theme-accent-soft);
     margin-left: 6px;
     font-weight: 400;
     text-decoration: none;
@@ -271,7 +271,7 @@
     font-size: 11px;
   }
   .dot {
-    color: #555;
+    color: var(--theme-text-faint);
   }
   .tags {
     display: flex;
@@ -280,8 +280,8 @@
     margin-top: 4px;
   }
   .tag {
-    background: #1f1f1f;
-    color: #c0c0c0;
+    background: var(--theme-border);
+    color: var(--theme-chip-text);
     padding: 2px 8px;
     border-radius: 999px;
     font-size: 11px;
@@ -296,8 +296,8 @@
   }
   .dl-icon-btn {
     background: rgba(26, 58, 38, 0.85);
-    color: #b3f5b3;
-    border: 1px solid #2a5a3a;
+    color: var(--theme-success-text);
+    border: 1px solid var(--theme-success-border);
     border-radius: 6px;
     padding: 0 8px;
     font-size: 14px;
@@ -305,8 +305,8 @@
     cursor: pointer;
   }
   .dl-icon-btn:hover:not(:disabled) {
-    background: #2a5a3a;
-    color: #fff;
+    background: var(--theme-success-border);
+    color: var(--theme-surface-2);
   }
   .dl-icon-btn:disabled {
     opacity: 0.6;
@@ -314,8 +314,8 @@
   }
   .menu-btn {
     background: rgba(0, 0, 0, 0.4);
-    color: #cfcfcf;
-    border: 1px solid #2a2a2a;
+    color: var(--theme-text-soft);
+    border: 1px solid var(--theme-border-strong);
     border-radius: 6px;
     padding: 0 8px;
     font-size: 16px;
@@ -323,8 +323,8 @@
     cursor: pointer;
   }
   .menu-btn:hover {
-    background: #2a2a2a;
-    color: #fff;
+    background: var(--theme-border-strong);
+    color: var(--theme-surface-2);
   }
   .menu {
     position: absolute;
@@ -332,8 +332,8 @@
     right: 0;
     z-index: 30;
     width: 240px;
-    background: #181818;
-    border: 1px solid #333;
+    background: var(--theme-surface-4);
+    border: 1px solid var(--theme-surface-hover);
     border-radius: 8px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
     padding: 6px;
@@ -343,9 +343,9 @@
   }
   .menu-head {
     font-size: 11px;
-    color: #9a9a9a;
+    color: var(--theme-text-muted);
     padding: 4px 8px 6px;
-    border-bottom: 1px solid #2a2a2a;
+    border-bottom: 1px solid var(--theme-border-strong);
     margin-bottom: 4px;
   }
   .menu button,
@@ -354,7 +354,7 @@
     text-align: left;
     background: transparent;
     border: none;
-    color: #eaeaea;
+    color: var(--theme-text);
     padding: 6px 8px;
     border-radius: 4px;
     font-size: 12px;
@@ -363,27 +363,27 @@
   }
   .menu button:hover,
   .menu .menu-link:hover {
-    background: #2a2a2a;
+    background: var(--theme-border-strong);
   }
   .menu-sep {
     font-size: 10px;
-    color: #888;
+    color: var(--theme-text-muted);
     padding: 6px 8px 2px;
     margin-top: 4px;
-    border-top: 1px solid #2a2a2a;
+    border-top: 1px solid var(--theme-border-strong);
     text-transform: uppercase;
   }
   .tag-row {
-    color: #c0c0c0 !important;
+    color: var(--theme-chip-text) !important;
     font-size: 11px !important;
   }
   .toast {
     position: absolute;
     top: 6px;
     right: 40px;
-    background: #1a2a1a;
-    color: #b3f5b3;
-    border: 1px solid #2a5a2a;
+    background: var(--theme-success-bg-2);
+    color: var(--theme-success-text);
+    border: 1px solid var(--theme-success-border-2);
     padding: 3px 10px;
     border-radius: 6px;
     font-size: 11px;

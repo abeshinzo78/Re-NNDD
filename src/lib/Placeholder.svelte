@@ -20,11 +20,11 @@
     gap: 10px;
   }
   .muted {
-    color: #9a9a9a;
+    color: var(--theme-text-muted);
   }
   .badge {
-    background: #2a2a2a;
-    color: #b0b0b0;
+    background: var(--theme-border-strong);
+    color: var(--theme-text-soft);
     font-size: 11px;
     font-weight: 400;
     padding: 2px 8px;

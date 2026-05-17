@@ -1117,7 +1117,7 @@
 <style>
   .player {
     position: relative;
-    background: #000;
+    background: var(--theme-bg);
     border-radius: 8px;
     overflow: hidden;
     outline: none;
@@ -1126,7 +1126,7 @@
   .seek-mask {
     position: absolute;
     inset: 0;
-    background: #000;
+    background: var(--theme-bg);
     z-index: 4;
     pointer-events: none;
   }
@@ -1140,7 +1140,7 @@
     width: 100%;
     aspect-ratio: 16 / 9;
     object-fit: contain;
-    background: #000;
+    background: var(--theme-bg);
   }
 
   .player.fullscreen :global(video) {
@@ -1154,7 +1154,7 @@
     left: 12px;
     right: 12px;
     background: rgba(20, 20, 20, 0.78);
-    color: #eaeaea;
+    color: var(--theme-text);
     padding: 8px 12px;
     border-radius: 6px;
     font-size: 13px;
@@ -1177,11 +1177,37 @@
     opacity: 1;
     pointer-events: auto;
   }
+  :global(html[data-theme='niconico-classic']) .player {
+    background: #ffffff;
+    border-radius: 0;
+  }
+  :global(html[data-theme='niconico-classic']) .player :global(video) {
+    aspect-ratio: auto;
+    height: auto;
+    max-height: calc(100vh - 300px);
+    background: #000000;
+  }
+  :global(html[data-theme='niconico-classic']) .controls-wrap {
+    position: static;
+    opacity: 1;
+    pointer-events: auto;
+  }
+  :global(html[data-theme='niconico-classic']) .player.fullscreen :global(video) {
+    width: 100%;
+    height: 100%;
+    max-height: none;
+  }
+  :global(html[data-theme='niconico-classic']) .player.fullscreen .controls-wrap {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+  }
 
   .fatal-error {
-    background: #2a1212;
-    border: 1px solid #5a2222;
-    color: #f5b3b3;
+    background: var(--theme-danger-bg);
+    border: 1px solid var(--theme-danger-border);
+    color: var(--theme-danger-text);
     padding: 10px 12px;
     border-radius: 6px;
     font-size: 13px;
@@ -1193,8 +1219,8 @@
   }
   .fatal-tip {
     background: rgba(37, 99, 235, 0.15);
-    border: 1px solid #2a3f5a;
-    color: #c5d8f5;
+    border: 1px solid var(--theme-accent-border);
+    color: var(--theme-accent-soft);
     padding: 8px 10px;
     border-radius: 4px;
     font-size: 12px;
@@ -1206,7 +1232,7 @@
     left: 50%;
     transform: translateX(-50%);
     background: rgba(0, 0, 0, 0.78);
-    color: #b3f5b3;
+    color: var(--theme-success-text);
     padding: 6px 14px;
     border-radius: 6px;
     font-size: 13px;

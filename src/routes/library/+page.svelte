@@ -233,9 +233,9 @@
     align-items: center;
   }
   .search-box {
-    background: #161616;
-    border: 1px solid #2a2a2a;
-    color: #eaeaea;
+    background: var(--theme-surface-2);
+    border: 1px solid var(--theme-border-strong);
+    color: var(--theme-text);
     padding: 6px 12px;
     border-radius: 6px;
     font-size: 13px;
@@ -244,15 +244,15 @@
     transition: border-color 0.15s;
   }
   .search-box::placeholder {
-    color: #666;
+    color: var(--theme-text-faint);
   }
   .search-box:focus {
-    border-color: #4a6a9a;
+    border-color: var(--theme-accent-border);
   }
   .info {
-    background: #1a2a44;
-    color: #93c5fd;
-    border: 1px solid #2a3f5a;
+    background: var(--theme-accent-bg);
+    color: var(--theme-accent-soft);
+    border: 1px solid var(--theme-accent-border);
     padding: 8px 12px;
     border-radius: 6px;
     font-size: 12px;
@@ -260,26 +260,26 @@
   }
   .ghost {
     background: transparent;
-    border: 1px solid #2a2a2a;
-    color: #cfcfcf;
+    border: 1px solid var(--theme-border-strong);
+    color: var(--theme-text-soft);
     padding: 6px 12px;
     border-radius: 6px;
     cursor: pointer;
     font-size: 13px;
   }
   .ghost:hover {
-    background: #1a1a1a;
+    background: var(--theme-surface-3);
   }
   .muted {
-    color: #9a9a9a;
+    color: var(--theme-text-muted);
   }
   .small {
     font-size: 11px;
   }
   .error {
-    background: #2a1212;
-    border: 1px solid #5a2222;
-    color: #f5b3b3;
+    background: var(--theme-danger-bg);
+    border: 1px solid var(--theme-danger-border);
+    color: var(--theme-danger-text);
     padding: 8px 12px;
     border-radius: 6px;
     font-size: 13px;
@@ -288,11 +288,11 @@
   .empty {
     padding: 32px;
     text-align: center;
-    border: 1px dashed #2a2a2a;
+    border: 1px dashed var(--theme-border-strong);
     border-radius: 8px;
   }
   .empty a {
-    color: #6ea8fe;
+    color: var(--theme-accent-soft);
   }
   .grid {
     display: grid;
@@ -308,8 +308,8 @@
     right: 6px;
     z-index: 2;
     background: rgba(20, 20, 20, 0.85);
-    color: #f5b3b3;
-    border: 1px solid #5a2222;
+    color: var(--theme-danger-text);
+    border: 1px solid var(--theme-danger-border);
     width: 26px;
     height: 26px;
     border-radius: 50%;
@@ -324,7 +324,7 @@
     opacity: 1;
   }
   .del-btn:hover {
-    background: #2a1212;
+    background: var(--theme-danger-bg);
   }
   .del-btn:disabled {
     opacity: 0.5;
@@ -332,8 +332,8 @@
   }
   .card {
     display: block;
-    background: #161616;
-    border: 1px solid #1f1f1f;
+    background: var(--theme-surface-2);
+    border: 1px solid var(--theme-border);
     border-radius: 8px;
     overflow: hidden;
     text-decoration: none;
@@ -344,14 +344,14 @@
       transform 0.1s;
   }
   .card:hover {
-    background: #1c1c1c;
-    border-color: #3a3a3a;
+    background: var(--theme-surface-4);
+    border-color: var(--theme-border-focus);
     transform: translateY(-1px);
   }
   .thumb-wrap {
     position: relative;
     aspect-ratio: 16 / 9;
-    background: #000;
+    background: var(--theme-bg);
   }
   .thumb {
     width: 100%;
@@ -365,7 +365,7 @@
     justify-content: center;
     width: 100%;
     height: 100%;
-    color: #555;
+    color: var(--theme-text-faint);
     font-size: 32px;
   }
   .duration {
@@ -373,7 +373,7 @@
     right: 6px;
     bottom: 6px;
     background: rgba(0, 0, 0, 0.78);
-    color: #eaeaea;
+    color: var(--theme-text);
     padding: 1px 6px;
     border-radius: 4px;
     font-size: 11px;
@@ -384,7 +384,7 @@
     left: 6px;
     bottom: 6px;
     background: rgba(37, 99, 235, 0.85);
-    color: #ffffff;
+    color: var(--theme-surface-2);
     padding: 1px 6px;
     border-radius: 4px;
     font-size: 10px;
@@ -411,7 +411,7 @@
     margin-top: 4px;
   }
   .dot {
-    color: #555;
+    color: var(--theme-text-faint);
   }
   .tags {
     display: flex;
@@ -420,8 +420,8 @@
     margin-top: 6px;
   }
   .tag {
-    background: #1f1f1f;
-    color: #c0c0c0;
+    background: var(--theme-border);
+    color: var(--theme-chip-text);
     padding: 1px 8px;
     border-radius: 999px;
     font-size: 11px;

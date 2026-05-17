@@ -206,8 +206,8 @@
   .comment-list {
     display: flex;
     flex-direction: column;
-    background: #121212;
-    border-left: 1px solid #1f1f1f;
+    background: var(--theme-surface);
+    border-left: 1px solid var(--theme-border);
     overflow: hidden;
     width: 320px;
     flex: 0 0 320px;
@@ -219,9 +219,9 @@
     justify-content: space-between;
     align-items: center;
     padding: 8px 12px;
-    border-bottom: 1px solid #1f1f1f;
+    border-bottom: 1px solid var(--theme-border);
     font-size: 12px;
-    color: #b0b0b0;
+    color: var(--theme-text-soft);
   }
   .follow {
     display: inline-flex;
@@ -242,20 +242,20 @@
     gap: 8px;
     padding: 4px 12px;
     font-size: 12px;
-    border-bottom: 1px solid #181818;
+    border-bottom: 1px solid var(--theme-surface-4);
     align-items: baseline;
     position: relative;
   }
   li.active {
-    background: #1f2a44;
+    background: var(--theme-accent-bg);
   }
   li.owner .content {
-    color: #ffcc66;
+    color: var(--theme-warning-text);
   }
   .time {
     background: transparent;
     border: none;
-    color: #6ea8fe;
+    color: var(--theme-accent-soft);
     cursor: pointer;
     font-variant-numeric: tabular-nums;
     font-size: 11px;
@@ -266,20 +266,20 @@
     text-decoration: underline;
   }
   .badge.owner {
-    background: #5a3f00;
-    color: #ffd58a;
+    background: var(--theme-warning-border);
+    color: var(--theme-warning-text);
     padding: 0 6px;
     border-radius: 999px;
     font-size: 10px;
   }
   .content {
     word-break: break-word;
-    color: #eaeaea;
+    color: var(--theme-text);
   }
   .ng-btn {
     background: transparent;
     border: none;
-    color: #555;
+    color: var(--theme-text-faint);
     cursor: pointer;
     font-size: 14px;
     line-height: 1;
@@ -292,14 +292,14 @@
     opacity: 1;
   }
   .ng-btn:hover {
-    color: #f5b3b3;
+    color: var(--theme-danger-text);
   }
   .menu {
     position: fixed;
     z-index: 1000;
     width: 280px;
-    background: #181818;
-    border: 1px solid #333;
+    background: var(--theme-surface-4);
+    border: 1px solid var(--theme-surface-hover);
     border-radius: 8px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
     padding: 6px;
@@ -310,14 +310,14 @@
   }
   .menu-head {
     font-size: 11px;
-    color: #9a9a9a;
+    color: var(--theme-text-muted);
     padding: 4px 8px 4px;
   }
   .menu-preview {
     font-size: 11px;
-    color: #cfcfcf;
+    color: var(--theme-text-soft);
     padding: 0 8px 6px;
-    border-bottom: 1px solid #2a2a2a;
+    border-bottom: 1px solid var(--theme-border-strong);
     margin-bottom: 4px;
     word-break: break-all;
   }
@@ -325,26 +325,26 @@
     text-align: left;
     background: transparent;
     border: none;
-    color: #eaeaea;
+    color: var(--theme-text);
     padding: 6px 8px;
     border-radius: 4px;
     font-size: 12px;
     cursor: pointer;
   }
   .menu button:hover:not(:disabled) {
-    background: #2a2a2a;
+    background: var(--theme-border-strong);
   }
   .menu button:disabled {
-    color: #555;
+    color: var(--theme-text-faint);
     cursor: not-allowed;
   }
   .toast {
     position: fixed;
     bottom: 24px;
     right: 24px;
-    background: #1a2a1a;
-    color: #b3f5b3;
-    border: 1px solid #2a5a2a;
+    background: var(--theme-success-bg-2);
+    color: var(--theme-success-text);
+    border: 1px solid var(--theme-success-border-2);
     padding: 6px 14px;
     border-radius: 6px;
     font-size: 12px;

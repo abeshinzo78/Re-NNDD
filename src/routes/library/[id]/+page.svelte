@@ -16,7 +16,7 @@
   import type { PlayerComment } from '$lib/player/types';
   import { filterComments, listNgRules, subscribeNgRules, type NgRule } from '$lib/stores/ngRules';
   import { addHistory } from '$lib/stores/history';
-  import { getBool, loadSettings } from '$lib/stores/settings.svelte';
+  import { getBool, getStr, loadSettings } from '$lib/stores/settings.svelte';
   import { sanitizeDescriptionHtml } from '$lib/sanitize';
   import { miniPlayer } from '$lib/player/miniPlayerStore.svelte';
 
@@ -40,6 +40,8 @@
   type PlayerRef = { seek: (t: number) => void; getVideo: () => HTMLVideoElement | null };
   let playerRef = $state<PlayerRef | undefined>();
   let videoId = $derived(page.params.id ?? '');
+  let theme = $derived(getStr('appearance.theme'));
+  let isClassicTheme = $derived(theme === 'niconico-classic');
   let loadingFor: string | null = null;
   let loop = $state(false);
 
@@ -303,7 +305,7 @@
 
 <svelte:window onmousemove={onMove} onmouseup={stopDrag} />
 
-<section class="page">
+<section class="page" class:classic={isClassicTheme}>
   <div class="head">
     <a class="back" href={backHref}>{backLabel}</a>
     <h2>{local?.title ?? videoId}</h2>
@@ -355,57 +357,82 @@
       </a>
     </div>
 
-    <div class="player-row" class:dragging>
-      <div class="player-col">
-        {#if pipActiveForThis}
-          <div class="pip-placeholder">
-            <div class="pip-thumb">
-              {#if lp.thumbnailUrl}
-                <img src={lp.thumbnailUrl} alt="" />
-              {/if}
-              <div class="pip-overlay">
-                <div class="pip-icon" aria-hidden="true">
-                  <svg viewBox="0 0 24 24" width="44" height="44">
-                    <path d="M3 5h18v14H3V5zm2 2v10h14V7H5zm7 4h6v4h-6v-4z" fill="currentColor" />
-                  </svg>
+    <div class="player-frame">
+      <div class="viewer-toolbar">
+        <div class="viewer-toolbar-meta">
+          <span class="toolbar-id">{lp.videoId}</span>
+          <span class="toolbar-sep">|</span>
+          <span>{formatDuration(lp.durationSec)}</span>
+          {#if lp.postedAt}
+            <span class="toolbar-sep">|</span>
+            <span>{formatDate(new Date(lp.postedAt * 1000).toISOString())}</span>
+          {/if}
+        </div>
+        <div class="viewer-toolbar-actions">
+          <a class="toolbar-link" href={`/video/${lp.videoId}`}>ニコニコで再生</a>
+        </div>
+      </div>
+      <div class="player-row" class:dragging>
+        <div class="player-col">
+          {#if pipActiveForThis}
+            <div class="pip-placeholder">
+              <div class="pip-thumb">
+                {#if lp.thumbnailUrl}
+                  <img src={lp.thumbnailUrl} alt="" />
+                {/if}
+                <div class="pip-overlay">
+                  <div class="pip-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="44" height="44">
+                      <path d="M3 5h18v14H3V5zm2 2v10h14V7H5zm7 4h6v4h-6v-4z" fill="currentColor" />
+                    </svg>
+                  </div>
+                  <div class="pip-text">ミニプレイヤーで再生中</div>
+                  <button type="button" class="pip-resume" onclick={() => miniPlayer.close()}>
+                    ここで再生に戻す
+                  </button>
                 </div>
-                <div class="pip-text">ミニプレイヤーで再生中</div>
-                <button type="button" class="pip-resume" onclick={() => miniPlayer.close()}>
-                  ここで再生に戻す
-                </button>
               </div>
             </div>
-          </div>
-        {:else}
-          <Player
-            bind:this={playerRef}
-            hlsUrl=""
-            localSrc={ls}
-            localAudioSrc={las ?? undefined}
-            comments={visibleComments}
-            videoTitle={lp.title}
-            videoId={lp.videoId}
-            onTime={handleTimeUpdate}
-            resumePosition={getResumePosition(lp.videoId)}
-            {loop}
-            onLoopChange={(v) => (loop = v)}
-            onTogglePip={togglePip}
-            pipActive={false}
-          />
-        {/if}
-        {#if ngFilteredCount > 0}
-          <div class="ng-banner">NG: {ngFilteredCount} 件のコメを除外中</div>
-        {/if}
-      </div>
-      <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-      <div
-        class="divider"
-        role="separator"
-        aria-label="コメントパネル幅調整"
-        onmousedown={startDrag}
-      ></div>
-      <div class="comment-panel" style:width="{panelWidth}px" style:min-width="{panelWidth}px">
-        <CommentList comments={visibleComments} {currentTime} onSeek={handleSeek} />
+          {:else}
+            <Player
+              bind:this={playerRef}
+              hlsUrl=""
+              localSrc={ls}
+              localAudioSrc={las ?? undefined}
+              comments={visibleComments}
+              videoTitle={lp.title}
+              videoId={lp.videoId}
+              onTime={handleTimeUpdate}
+              resumePosition={getResumePosition(lp.videoId)}
+              {loop}
+              onLoopChange={(v) => (loop = v)}
+              onTogglePip={togglePip}
+              pipActive={false}
+            />
+          {/if}
+          {#if ngFilteredCount > 0}
+            <div class="ng-banner">NG: {ngFilteredCount} 件のコメを除外中</div>
+          {/if}
+        </div>
+        <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+        <div
+          class="divider"
+          role="separator"
+          aria-label="コメントパネル幅調整"
+          onmousedown={startDrag}
+        ></div>
+        <div class="comment-panel" style:width="{panelWidth}px" style:min-width="{panelWidth}px">
+          {#if isClassicTheme}
+            <div class="side-header">
+              <span>{formatNumber(visibleComments.length)} 件</span>
+              <label class="side-toggle">
+                <input type="checkbox" checked={loop} onchange={() => (loop = !loop)} />
+                <span>連続再生</span>
+              </label>
+            </div>
+          {/if}
+          <CommentList comments={visibleComments} {currentTime} onSeek={handleSeek} />
+        </div>
       </div>
     </div>
 
@@ -473,12 +500,21 @@
   .page {
     max-width: 1600px;
   }
+  .page.classic {
+    max-width: 1760px;
+  }
   .head {
     display: flex;
     align-items: center;
     gap: 12px;
     margin-bottom: 12px;
     flex-wrap: wrap;
+  }
+  .page.classic .head {
+    background: var(--theme-surface-2);
+    border: 1px solid var(--theme-border);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.65) inset;
+    padding: 12px 14px;
   }
   .head h2 {
     margin: 0;
@@ -490,7 +526,7 @@
     white-space: nowrap;
   }
   .back {
-    color: #6ea8fe;
+    color: var(--theme-accent-soft);
     text-decoration: none;
     font-size: 13px;
     flex-shrink: 0;
@@ -499,9 +535,9 @@
     text-decoration: underline;
   }
   .local-badge {
-    background: #1a3a26;
-    color: #b3f5b3;
-    border: 1px solid #2a5a3a;
+    background: var(--theme-success-bg);
+    color: var(--theme-success-text);
+    border: 1px solid var(--theme-success-border);
     padding: 2px 10px;
     border-radius: 999px;
     font-size: 11px;
@@ -509,15 +545,15 @@
   }
   .ghost-btn {
     background: transparent;
-    border: 1px solid #3a5a6a;
-    color: #93c5fd;
+    border: 1px solid var(--theme-accent-border);
+    color: var(--theme-accent-soft);
     padding: 2px 10px;
     border-radius: 999px;
     font-size: 11px;
     cursor: pointer;
   }
   .ghost-btn:hover:not(:disabled) {
-    background: #1f2a44;
+    background: var(--theme-accent-bg);
   }
   .ghost-btn:disabled {
     opacity: 0.5;
@@ -525,32 +561,32 @@
   }
   .danger-btn {
     background: transparent;
-    border: 1px solid #5a2222;
-    color: #f5b3b3;
+    border: 1px solid var(--theme-danger-border);
+    color: var(--theme-danger-text);
     padding: 2px 10px;
     border-radius: 999px;
     font-size: 11px;
     cursor: pointer;
   }
   .danger-btn:hover {
-    background: #2a1212;
+    background: var(--theme-danger-bg);
   }
   .muted {
-    color: #9a9a9a;
+    color: var(--theme-text-muted);
   }
   .error {
-    background: #2a1212;
-    border: 1px solid #5a2222;
-    color: #f5b3b3;
+    background: var(--theme-danger-bg);
+    border: 1px solid var(--theme-danger-border);
+    color: var(--theme-danger-text);
     padding: 10px 12px;
     border-radius: 6px;
     font-size: 13px;
     white-space: pre-wrap;
   }
   .info {
-    background: #1a2a44;
-    color: #93c5fd;
-    border: 1px solid #2a3f5a;
+    background: var(--theme-accent-bg);
+    color: var(--theme-accent-soft);
+    border: 1px solid var(--theme-accent-border);
     padding: 8px 12px;
     border-radius: 6px;
     font-size: 12px;
@@ -560,17 +596,17 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    background: linear-gradient(90deg, #0f2a18 0%, #1a3a26 100%);
-    border: 1px solid #2a5a3a;
-    border-left: 4px solid #4ade80;
-    color: #b3f5b3;
+    background: linear-gradient(90deg, var(--theme-success-bg-2) 0%, var(--theme-success-bg) 100%);
+    border: 1px solid var(--theme-success-border);
+    border-left: 4px solid var(--theme-success-strong);
+    color: var(--theme-success-text);
     padding: 10px 16px;
     border-radius: 6px;
     margin-bottom: 10px;
   }
   .local-marker {
-    background: #4ade80;
-    color: #052010;
+    background: var(--theme-success-strong);
+    color: var(--theme-success-bg-2);
     font-weight: 700;
     font-size: 11px;
     letter-spacing: 0.05em;
@@ -587,23 +623,76 @@
   }
   .local-banner-text strong {
     font-size: 14px;
-    color: #d1fae5;
+    color: var(--theme-success-text);
   }
   .local-banner-sub {
     font-size: 11px;
-    color: #86efac;
+    color: var(--theme-success-text);
   }
   .local-banner-online {
-    color: #93c5fd;
+    color: var(--theme-accent-soft);
     text-decoration: none;
     font-size: 12px;
     padding: 4px 10px;
-    border: 1px solid #2a3f5a;
+    border: 1px solid var(--theme-accent-border);
     border-radius: 999px;
     flex-shrink: 0;
   }
   .local-banner-online:hover {
     background: rgba(45, 65, 100, 0.4);
+  }
+  .page.classic .local-banner {
+    border-radius: 3px;
+    background: linear-gradient(180deg, #fffdf7 0%, #e9f0e3 100%);
+  }
+  .player-frame {
+    display: flex;
+    flex-direction: column;
+  }
+  .page.classic .player-frame {
+    border: 1px solid var(--theme-border);
+    background: var(--theme-surface-2);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.75) inset;
+  }
+  .viewer-toolbar {
+    display: none;
+  }
+  .page.classic .viewer-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 10px 12px;
+    background: linear-gradient(180deg, #fffdf9 0%, #efe6d9 100%);
+    border-bottom: 1px solid var(--theme-border);
+    color: var(--theme-text-soft);
+    font-size: 13px;
+  }
+  .viewer-toolbar-meta,
+  .viewer-toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .toolbar-id {
+    font-weight: 700;
+  }
+  .toolbar-sep {
+    color: var(--theme-text-faint);
+  }
+  .toolbar-link {
+    display: inline-flex;
+    align-items: center;
+    padding: 7px 12px;
+    border: 1px solid var(--theme-border-strong);
+    border-radius: 3px;
+    text-decoration: none;
+    color: var(--theme-text);
+    background: linear-gradient(180deg, #ffffff 0%, #ebe2d4 100%);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.85) inset;
+  }
+  .toolbar-link:hover {
+    background: linear-gradient(180deg, #fff8ef 0%, #e6d6c2 100%);
   }
   .player-row {
     display: flex;
@@ -621,22 +710,55 @@
   .divider {
     width: 5px;
     cursor: col-resize;
-    background: #1a1a1a;
-    border-left: 1px solid #2a2a2a;
-    border-right: 1px solid #2a2a2a;
+    background: var(--theme-surface-3);
+    border-left: 1px solid var(--theme-border-strong);
+    border-right: 1px solid var(--theme-border-strong);
     flex-shrink: 0;
     transition: background 0.1s;
   }
   .divider:hover {
-    background: #333;
+    background: var(--theme-surface-hover);
   }
   .dragging .divider {
-    background: #2563eb;
+    background: var(--theme-accent);
+  }
+  .page.classic .divider {
+    width: 7px;
+    background: linear-gradient(180deg, #f4efe6 0%, #e3d9ca 100%);
+    border-left: 1px solid var(--theme-border);
+    border-right: 1px solid var(--theme-border);
   }
   .comment-panel {
     flex-shrink: 0;
     overflow: hidden;
     position: relative;
+  }
+  .page.classic .comment-panel {
+    background: var(--theme-surface-2);
+    border-left: 1px solid var(--theme-border);
+  }
+  .side-header {
+    display: none;
+  }
+  .page.classic .side-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--theme-border);
+    background: linear-gradient(180deg, #fffdf9 0%, #f2e8db 100%);
+    color: var(--theme-text);
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .side-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 400;
+    font-size: 12px;
+    color: var(--theme-text-soft);
   }
   .below {
     display: grid;
@@ -645,10 +767,21 @@
     margin-top: 12px;
   }
   .meta {
-    color: #cfcfcf;
+    color: var(--theme-text-soft);
     font-size: 13px;
     min-width: 0;
     overflow: hidden;
+  }
+  .page.classic .meta {
+    background: var(--theme-surface-2);
+    border: 1px solid var(--theme-border);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.75) inset;
+    padding: 12px 14px;
+  }
+  .page.classic .row:first-child {
+    margin-top: 0;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--theme-border);
   }
   .row {
     display: flex;
@@ -658,18 +791,18 @@
     margin-top: 6px;
   }
   .dot {
-    color: #555;
+    color: var(--theme-text-faint);
   }
   .external {
     margin-left: auto;
-    color: #6ea8fe;
+    color: var(--theme-accent-soft);
     text-decoration: none;
   }
   .external:hover {
     text-decoration: underline;
   }
   .owner-link {
-    color: #eaeaea;
+    color: var(--theme-text);
     text-decoration: none;
   }
   .owner-link:hover {
@@ -677,28 +810,32 @@
   }
   details {
     margin-top: 12px;
-    color: #cfcfcf;
+    color: var(--theme-text-soft);
   }
   details > summary {
     cursor: pointer;
-    color: #b0b0b0;
+    color: var(--theme-text-soft);
     margin-bottom: 6px;
   }
   .desc {
     white-space: pre-wrap;
     line-height: 1.6;
-    background: #161616;
-    border: 1px solid #1f1f1f;
+    background: var(--theme-surface-2);
+    border: 1px solid var(--theme-border);
     padding: 10px 12px;
     border-radius: 6px;
     overflow: hidden;
     min-width: 0;
     word-break: break-word;
   }
+  .page.classic .desc {
+    border-radius: 3px;
+    background: #fffcf7;
+  }
   .ng-banner {
-    background: #2a1f1a;
-    color: #f5b3b3;
-    border: 1px solid #5a2222;
+    background: var(--theme-danger-bg-2);
+    color: var(--theme-danger-text);
+    border: 1px solid var(--theme-danger-border);
     padding: 4px 10px;
     border-radius: 6px;
     font-size: 12px;
@@ -706,7 +843,7 @@
     display: inline-block;
   }
   .pip-placeholder {
-    background: #000;
+    background: var(--theme-bg);
     border-radius: 8px;
     overflow: hidden;
     aspect-ratio: 16 / 9;
@@ -732,10 +869,10 @@
     align-items: center;
     justify-content: center;
     gap: 10px;
-    color: #fff;
+    color: var(--theme-surface-2);
   }
   .pip-icon {
-    color: #fff;
+    color: var(--theme-surface-2);
     opacity: 0.85;
   }
   .pip-text {
@@ -745,8 +882,8 @@
   }
   .pip-resume {
     margin-top: 4px;
-    background: #2563eb;
-    color: #fff;
+    background: var(--theme-accent);
+    color: var(--theme-surface-2);
     border: none;
     padding: 8px 16px;
     border-radius: 8px;
@@ -755,7 +892,7 @@
     font-weight: 600;
   }
   .pip-resume:hover {
-    background: #3b78f0;
+    background: var(--theme-accent-hover);
   }
   .tags {
     display: flex;
@@ -767,20 +904,26 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    background: #1f1f1f;
-    color: #c0c0c0;
+    background: var(--theme-border);
+    color: var(--theme-chip-text);
     padding: 3px 10px;
     border-radius: 999px;
     font-size: 12px;
     text-decoration: none;
   }
+  .page.classic .tag {
+    border-radius: 3px;
+    background: linear-gradient(180deg, #f6efe4 0%, #e7dccb 100%);
+    border: 1px solid var(--theme-border);
+    color: var(--theme-text-soft);
+  }
   .tag:hover {
-    background: #2a2a2a;
-    color: #fff;
+    background: var(--theme-border-strong);
+    color: var(--theme-surface-2);
   }
   .tag.locked {
-    background: #1e2a3a;
-    color: #b3c5ff;
+    background: var(--theme-accent-bg);
+    color: var(--theme-accent-soft);
   }
   .lock {
     font-size: 9px;

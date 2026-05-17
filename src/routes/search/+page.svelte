@@ -258,7 +258,7 @@
     margin-top: 0;
   }
   .muted {
-    color: #9a9a9a;
+    color: var(--theme-text-muted);
   }
   .search-form {
     display: flex;
@@ -267,16 +267,16 @@
     margin-bottom: 16px;
   }
   .q {
-    background: #0f0f0f;
-    border: 1px solid #2f2f2f;
-    color: #f5f5f5;
+    background: var(--theme-input-bg);
+    border: 1px solid var(--theme-border-strong);
+    color: var(--theme-text);
     border-radius: 6px;
     padding: 10px 12px;
     font-size: 15px;
   }
   .q:focus {
     outline: none;
-    border-color: #5a5a5a;
+    border-color: var(--theme-border-focus);
   }
   .targets {
     display: flex;
@@ -288,17 +288,17 @@
     align-items: center;
     gap: 6px;
     padding: 4px 10px;
-    border: 1px solid #2f2f2f;
+    border: 1px solid var(--theme-border-strong);
     border-radius: 999px;
-    background: #161616;
+    background: var(--theme-surface-2);
     font-size: 13px;
     cursor: pointer;
     user-select: none;
   }
   .chip.active {
-    background: #2a2a2a;
-    border-color: #4a4a4a;
-    color: #fff;
+    background: var(--theme-border-strong);
+    border-color: var(--theme-border-focus);
+    color: var(--theme-surface-2);
   }
   .chip input {
     display: none;
@@ -313,31 +313,31 @@
     display: flex;
     flex-direction: column;
     font-size: 12px;
-    color: #b0b0b0;
+    color: var(--theme-text-soft);
     gap: 4px;
   }
   .row label.disabled {
     opacity: 0.5;
   }
   select {
-    background: #eaeaea;
-    border: 1px solid #2f2f2f;
-    color: #111;
+    background: var(--theme-text);
+    border: 1px solid var(--theme-border-strong);
+    color: var(--theme-text);
     border-radius: 6px;
     padding: 6px 8px;
     font-size: 13px;
   }
   select:disabled {
-    background: #2a2a2a;
-    color: #777;
+    background: var(--theme-border-strong);
+    color: var(--theme-text-muted);
     cursor: not-allowed;
   }
   select option {
-    background: #eaeaea;
-    color: #111;
+    background: var(--theme-text);
+    color: var(--theme-text);
   }
   button[type='submit'] {
-    background: #2563eb;
+    background: var(--theme-accent);
     color: white;
     border: none;
     border-radius: 6px;
@@ -350,9 +350,9 @@
     cursor: not-allowed;
   }
   .error {
-    background: #2a1212;
-    border: 1px solid #5a2222;
-    color: #f5b3b3;
+    background: var(--theme-danger-bg);
+    border: 1px solid var(--theme-danger-border);
+    color: var(--theme-danger-text);
     padding: 10px 12px;
     border-radius: 6px;
     margin-bottom: 12px;
@@ -368,11 +368,11 @@
     font-size: 13px;
   }
   .dot {
-    color: #555;
+    color: var(--theme-text-faint);
   }
   .ng-note {
-    background: #2a1f1a;
-    color: #f5b3b3;
+    background: var(--theme-danger-bg-2);
+    color: var(--theme-danger-text);
     padding: 1px 8px;
     border-radius: 999px;
     font-size: 11px;

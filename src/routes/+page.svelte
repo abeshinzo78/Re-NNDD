@@ -48,7 +48,7 @@
     margin-top: 0;
   }
   .muted {
-    color: #9a9a9a;
+    color: var(--theme-text-muted);
   }
   .cards {
     display: grid;
@@ -59,8 +59,8 @@
   .card {
     display: block;
     padding: 14px 16px;
-    background: #161616;
-    border: 1px solid #1f1f1f;
+    background: var(--theme-surface-2);
+    border: 1px solid var(--theme-border);
     border-radius: 8px;
     color: inherit;
     text-decoration: none;
@@ -69,8 +69,8 @@
       border-color 0.1s;
   }
   .card:hover {
-    background: #1f1f1f;
-    border-color: #3a3a3a;
+    background: var(--theme-border);
+    border-color: var(--theme-border-focus);
   }
   .card h3 {
     margin: 0 0 6px;
@@ -88,6 +88,6 @@
     margin-top: 16px;
   }
   .env dt {
-    color: #9a9a9a;
+    color: var(--theme-text-muted);
   }
 </style>

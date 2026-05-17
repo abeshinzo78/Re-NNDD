@@ -14,7 +14,7 @@
   import MylistAddButton from '$lib/MylistAddButton.svelte';
   import { filterComments, listNgRules, subscribeNgRules, type NgRule } from '$lib/stores/ngRules';
   import { addHistory } from '$lib/stores/history';
-  import { getBool, loadSettings } from '$lib/stores/settings.svelte';
+  import { getBool, getStr, loadSettings } from '$lib/stores/settings.svelte';
   import { sanitizeDescriptionHtml } from '$lib/sanitize';
   import { miniPlayer } from '$lib/player/miniPlayerStore.svelte';
 
@@ -51,6 +51,8 @@
   let playerRef = $state<PlayerRef | undefined>();
 
   let videoId = $derived(page.params.id ?? '');
+  let theme = $derived(getStr('appearance.theme'));
+  let isClassicTheme = $derived(theme === 'niconico-classic');
   let loadingFor: string | null = null;
   let loop = $state(false);
 
@@ -192,6 +194,8 @@
   function handleSeek(t: number) {
     playerRef?.seek(t);
   }
+
+  let classicQueueCount = $derived(1 + related.length);
 
   function getResumePosition(id: string): number {
     const pipPos = miniPlayer.consumeReturnPosition(id);
@@ -365,7 +369,7 @@
 
 <svelte:window onmousemove={onMove} onmouseup={stopDrag} />
 
-<section class="page">
+<section class="page" class:classic={isClassicTheme}>
   <div class="head">
     <a class="back" href={backHref}>{backLabel}</a>
     <h2>{payload?.video.title ?? videoId}</h2>
@@ -424,59 +428,124 @@
     </p>
   {:else if payload}
     {@const p = payload}
-    <div class="player-row" class:dragging>
-      <div class="player-col">
-        {#if pipActiveForThis}
-          <div class="pip-placeholder">
-            <div class="pip-thumb">
-              {#if p.video.thumbnailUrl}
-                <img src={p.video.thumbnailUrl} alt="" />
-              {/if}
-              <div class="pip-overlay">
-                <div class="pip-icon" aria-hidden="true">
-                  <svg viewBox="0 0 24 24" width="44" height="44">
-                    <path d="M3 5h18v14H3V5zm2 2v10h14V7H5zm7 4h6v4h-6v-4z" fill="currentColor" />
-                  </svg>
+    <div class="player-frame">
+      <div class="viewer-toolbar">
+        <div class="viewer-toolbar-meta">
+          <span class="toolbar-id">{payload.video.id}</span>
+          <span class="toolbar-sep">|</span>
+          <span>{formatDuration(payload.video.duration)}</span>
+          {#if payload.video.registeredAt}
+            <span class="toolbar-sep">|</span>
+            <span>{formatDate(payload.video.registeredAt)}</span>
+          {/if}
+        </div>
+        <div class="viewer-toolbar-actions">
+          <button
+            type="button"
+            class="toolbar-btn"
+            disabled={dlPending}
+            onclick={() => onDownload(payload!.video.id)}
+          >
+            {dlPending ? 'DL 中…' : 'ライブラリに DL'}
+          </button>
+        </div>
+      </div>
+      <div class="player-row" class:dragging>
+        <div class="player-col">
+          {#if pipActiveForThis}
+            <div class="pip-placeholder">
+              <div class="pip-thumb">
+                {#if p.video.thumbnailUrl}
+                  <img src={p.video.thumbnailUrl} alt="" />
+                {/if}
+                <div class="pip-overlay">
+                  <div class="pip-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="44" height="44">
+                      <path d="M3 5h18v14H3V5zm2 2v10h14V7H5zm7 4h6v4h-6v-4z" fill="currentColor" />
+                    </svg>
+                  </div>
+                  <div class="pip-text">ミニプレイヤーで再生中</div>
+                  <button type="button" class="pip-resume" onclick={() => miniPlayer.close()}>
+                    ここで再生に戻す
+                  </button>
                 </div>
-                <div class="pip-text">ミニプレイヤーで再生中</div>
-                <button type="button" class="pip-resume" onclick={() => miniPlayer.close()}>
-                  ここで再生に戻す
-                </button>
               </div>
             </div>
-          </div>
+          {:else}
+            <Player
+              bind:this={playerRef}
+              hlsUrl={p.hlsUrl}
+              comments={visibleComments}
+              videoTitle={p.video.title}
+              videoId={p.video.id}
+              refreshHlsUrl={() => issueHlsUrl(p.videoId)}
+              onTime={handleTimeUpdate}
+              resumePosition={getResumePosition(p.videoId)}
+              {loop}
+              onLoopChange={(v) => (loop = v)}
+              onTogglePip={togglePip}
+              pipActive={false}
+            />
+          {/if}
+          {#if ngFilteredCount > 0}
+            <div class="ng-banner">NG: {ngFilteredCount} 件のコメを除外中</div>
+          {/if}
+        </div>
+        {#if isClassicTheme}
+          <aside class="classic-side-panel">
+            <div class="side-header">
+              <span>{classicQueueCount} 件</span>
+              <label class="side-toggle">
+                <input type="checkbox" checked={loop} onchange={() => (loop = !loop)} />
+                <span>連続再生</span>
+              </label>
+            </div>
+            <div class="classic-queue">
+              <div class="classic-queue-item current">
+                <div class="classic-queue-time">
+                  {formatDuration(payload.video.duration)}
+                </div>
+                <div class="classic-queue-body">
+                  <div class="classic-queue-title">{payload.video.title}</div>
+                  <div class="classic-queue-meta">再生中</div>
+                </div>
+              </div>
+              {#if relatedLoading}
+                <div class="classic-queue-empty">関連動画を取得中…</div>
+              {:else if related.length === 0}
+                <div class="classic-queue-empty">関連候補はまだありません。</div>
+              {:else}
+                {#each related.slice(0, 8) as hit (hit.contentId)}
+                  <a class="classic-queue-item" href={`/video/${hit.contentId}`}>
+                    <div class="classic-queue-time">
+                      {hit.lengthSeconds != null ? formatDuration(hit.lengthSeconds) : '0:00'}
+                    </div>
+                    <div class="classic-queue-body">
+                      <div class="classic-queue-title">
+                        {hit.title || hit.contentId || '関連動画'}
+                      </div>
+                      <div class="classic-queue-meta">関連動画</div>
+                    </div>
+                  </a>
+                {/each}
+              {/if}
+            </div>
+          </aside>
         {:else}
-          <Player
-            bind:this={playerRef}
-            hlsUrl={p.hlsUrl}
-            comments={visibleComments}
-            videoTitle={p.video.title}
-            videoId={p.video.id}
-            refreshHlsUrl={() => issueHlsUrl(p.videoId)}
-            onTime={handleTimeUpdate}
-            resumePosition={getResumePosition(p.videoId)}
-            {loop}
-            onLoopChange={(v) => (loop = v)}
-            onTogglePip={togglePip}
-            pipActive={false}
-          />
+          <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+          <div
+            class="divider"
+            role="separator"
+            aria-label="コメントパネル幅調整"
+            onmousedown={startDrag}
+          ></div>
+          <div class="comment-panel" style:width="{panelWidth}px" style:min-width="{panelWidth}px">
+            {#if commentsLoading}
+              <div class="comment-loading">コメント取得中…</div>
+            {/if}
+            <CommentList comments={visibleComments} {currentTime} onSeek={handleSeek} />
+          </div>
         {/if}
-        {#if ngFilteredCount > 0}
-          <div class="ng-banner">NG: {ngFilteredCount} 件のコメを除外中</div>
-        {/if}
-      </div>
-      <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-      <div
-        class="divider"
-        role="separator"
-        aria-label="コメントパネル幅調整"
-        onmousedown={startDrag}
-      ></div>
-      <div class="comment-panel" style:width="{panelWidth}px" style:min-width="{panelWidth}px">
-        {#if commentsLoading}
-          <div class="comment-loading">コメント取得中…</div>
-        {/if}
-        <CommentList comments={visibleComments} {currentTime} onSeek={handleSeek} />
       </div>
     </div>
 
@@ -625,12 +694,21 @@
   .page {
     max-width: 1600px;
   }
+  .page.classic {
+    max-width: 1760px;
+  }
   .head {
     display: flex;
     align-items: center;
     gap: 12px;
     margin-bottom: 12px;
     flex-wrap: wrap;
+  }
+  .page.classic .head {
+    background: var(--theme-surface-2);
+    border: 1px solid var(--theme-border);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.65) inset;
+    padding: 12px 14px;
   }
   .head h2 {
     margin: 0;
@@ -648,21 +726,36 @@
     align-items: center;
   }
   .dl-btn {
-    background: #1a3a26;
-    color: #b3f5b3;
-    border: 1px solid #2a5a3a;
+    background: var(--theme-success-bg);
+    color: var(--theme-success-text);
+    border: 1px solid var(--theme-success-border);
     padding: 6px 14px;
     border-radius: 6px;
     cursor: pointer;
     font-size: 13px;
   }
   .dl-btn:hover:not(:disabled) {
-    background: #2a5a3a;
-    color: #fff;
+    background: var(--theme-success-border);
+    color: var(--theme-surface-2);
   }
   .dl-btn:disabled {
     opacity: 0.6;
     cursor: wait;
+  }
+  .page.classic .dl-btn,
+  .page.classic .toolbar-btn,
+  .page.classic :global(.head-actions .mylist-add-btn),
+  .page.classic :global(.head-actions .mylist-create-btn) {
+    background: linear-gradient(180deg, #ffffff 0%, #ebe2d4 100%);
+    border: 1px solid var(--theme-border-strong);
+    color: var(--theme-text);
+    border-radius: 3px;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.85) inset;
+  }
+  .page.classic .dl-btn:hover:not(:disabled),
+  .page.classic .toolbar-btn:hover:not(:disabled) {
+    background: linear-gradient(180deg, #fff8ef 0%, #e6d6c2 100%);
+    color: var(--theme-text);
   }
   .dl-msg {
     padding: 8px 12px;
@@ -671,17 +764,17 @@
     margin-bottom: 8px;
   }
   .dl-msg.ok {
-    background: #102d20;
-    border: 1px solid #1e6b48;
-    color: #bbf7d0;
+    background: var(--theme-success-bg-2);
+    border: 1px solid var(--theme-success-border);
+    color: var(--theme-success-text);
   }
   .dl-msg.error {
-    background: #2a1212;
-    border: 1px solid #5a2222;
-    color: #f5b3b3;
+    background: var(--theme-danger-bg);
+    border: 1px solid var(--theme-danger-border);
+    color: var(--theme-danger-text);
   }
   .back {
-    color: #6ea8fe;
+    color: var(--theme-accent-soft);
     text-decoration: none;
     font-size: 13px;
     flex-shrink: 0;
@@ -690,15 +783,15 @@
     text-decoration: underline;
   }
   .muted {
-    color: #9a9a9a;
+    color: var(--theme-text-muted);
   }
   .small {
     font-size: 12px;
   }
   .error {
-    background: #2a1212;
-    border: 1px solid #5a2222;
-    color: #f5b3b3;
+    background: var(--theme-danger-bg);
+    border: 1px solid var(--theme-danger-border);
+    color: var(--theme-danger-text);
     padding: 10px 12px;
     border-radius: 6px;
     font-size: 13px;
@@ -707,6 +800,51 @@
   .player-row {
     display: flex;
     align-items: stretch;
+  }
+  .page.classic .player-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 320px;
+  }
+  .player-frame {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+  .page.classic .player-frame {
+    border: 1px solid var(--theme-border);
+    background: var(--theme-surface-2);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.75) inset;
+  }
+  .viewer-toolbar {
+    display: none;
+  }
+  .page.classic .viewer-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 10px 12px;
+    background: linear-gradient(180deg, #fffdf9 0%, #efe6d9 100%);
+    border-bottom: 1px solid var(--theme-border);
+    color: var(--theme-text-soft);
+    font-size: 13px;
+  }
+  .viewer-toolbar-meta,
+  .viewer-toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .toolbar-id {
+    font-weight: 700;
+  }
+  .toolbar-sep {
+    color: var(--theme-text-faint);
+  }
+  .toolbar-btn {
+    padding: 7px 12px;
+    cursor: pointer;
+    font-size: 12px;
   }
   .player-row.dragging {
     user-select: none;
@@ -720,29 +858,120 @@
   .divider {
     width: 5px;
     cursor: col-resize;
-    background: #1a1a1a;
-    border-left: 1px solid #2a2a2a;
-    border-right: 1px solid #2a2a2a;
+    background: var(--theme-surface-3);
+    border-left: 1px solid var(--theme-border-strong);
+    border-right: 1px solid var(--theme-border-strong);
     flex-shrink: 0;
     transition: background 0.1s;
   }
   .divider:hover {
-    background: #333;
+    background: var(--theme-surface-hover);
   }
   .dragging .divider {
-    background: #2563eb;
+    background: var(--theme-accent);
+  }
+  .page.classic .divider {
+    width: 7px;
+    background: linear-gradient(180deg, #f4efe6 0%, #e3d9ca 100%);
+    border-left: 1px solid var(--theme-border);
+    border-right: 1px solid var(--theme-border);
   }
   .comment-panel {
     flex-shrink: 0;
     overflow: hidden;
     position: relative;
   }
+  .page.classic .comment-panel {
+    background: var(--theme-surface-2);
+    border-left: 1px solid var(--theme-border);
+  }
+  .classic-side-panel {
+    display: none;
+  }
+  .side-header {
+    display: none;
+  }
+  .page.classic .side-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--theme-border);
+    background: linear-gradient(180deg, #fffdf9 0%, #f2e8db 100%);
+    color: var(--theme-text);
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .page.classic .classic-side-panel {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    background: var(--theme-surface-2);
+    border-left: 1px solid var(--theme-border);
+  }
+  .classic-queue {
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
+  }
+  .classic-queue-item {
+    display: grid;
+    grid-template-columns: 56px 1fr;
+    gap: 10px;
+    align-items: start;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--theme-border);
+    color: var(--theme-text);
+    text-decoration: none;
+    background: transparent;
+  }
+  .classic-queue-item.current {
+    background: linear-gradient(180deg, #eef4ff 0%, #dfe9fb 100%);
+  }
+  .classic-queue-item:not(.current):hover {
+    background: #f7f0e6;
+  }
+  .classic-queue-time {
+    color: var(--theme-accent-soft);
+    font-size: 13px;
+    line-height: 1.3;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .classic-queue-body {
+    min-width: 0;
+  }
+  .classic-queue-title {
+    color: var(--theme-text);
+    font-size: 13px;
+    line-height: 1.45;
+    word-break: break-word;
+  }
+  .classic-queue-meta {
+    margin-top: 4px;
+    color: var(--theme-text-muted);
+    font-size: 11px;
+  }
+  .classic-queue-empty {
+    padding: 14px;
+    color: var(--theme-text-muted);
+    font-size: 12px;
+  }
+  .side-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 400;
+    font-size: 12px;
+    color: var(--theme-text-soft);
+  }
   .comment-loading {
     position: absolute;
     top: 42px;
     left: 12px;
     z-index: 1;
-    color: #9a9a9a;
+    color: var(--theme-text-muted);
     font-size: 12px;
   }
   .below {
@@ -752,16 +981,34 @@
     margin-top: 12px;
     contain: layout style;
   }
+  .page.classic .below {
+    grid-template-columns: minmax(0, 1fr) 360px;
+    gap: 12px;
+  }
   @media (max-width: 1100px) {
     .below {
       grid-template-columns: 1fr;
     }
+    .page.classic .player-row {
+      grid-template-columns: 1fr;
+    }
+    .page.classic .classic-side-panel {
+      border-left: none;
+      border-top: 1px solid var(--theme-border);
+    }
   }
   .meta {
-    color: #cfcfcf;
+    color: var(--theme-text-soft);
     font-size: 13px;
     min-width: 0;
     overflow: hidden;
+  }
+  .page.classic .meta,
+  .page.classic .related {
+    background: var(--theme-surface-2);
+    border: 1px solid var(--theme-border);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.75) inset;
+    padding: 12px 14px;
   }
   .row {
     display: flex;
@@ -771,18 +1018,29 @@
     margin-top: 6px;
   }
   .dot {
-    color: #555;
+    color: var(--theme-text-faint);
+  }
+  .page.classic .row:first-child {
+    margin-top: 0;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--theme-border);
   }
   .quality {
-    background: #1f2a44;
-    color: #93c5fd;
+    background: var(--theme-accent-bg);
+    color: var(--theme-accent-soft);
     border-radius: 999px;
     padding: 0 8px;
     font-size: 11px;
   }
+  .page.classic .quality {
+    border-radius: 3px;
+    border: 1px solid var(--theme-accent-border);
+    background: linear-gradient(180deg, #fff8ef 0%, #f1e1d2 100%);
+    color: var(--theme-accent);
+  }
   .external {
     margin-left: auto;
-    color: #6ea8fe;
+    color: var(--theme-accent-soft);
     text-decoration: none;
   }
   .external:hover {
@@ -794,26 +1052,30 @@
     gap: 12px;
     margin-top: 10px;
     padding: 10px 12px;
-    background: #161616;
-    border: 1px solid #1f1f1f;
+    background: var(--theme-surface-2);
+    border: 1px solid var(--theme-border);
     border-radius: 8px;
+  }
+  .page.classic .owner-card {
+    border-radius: 3px;
+    background: linear-gradient(180deg, #fffdf9 0%, #f7f1e8 100%);
   }
   .owner-icon {
     width: 40px;
     height: 40px;
     border-radius: 999px;
     object-fit: cover;
-    background: #1a1a1a;
+    background: var(--theme-surface-3);
     flex-shrink: 0;
   }
   .owner-icon.placeholder {
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #666;
+    color: var(--theme-text-faint);
     font-weight: 600;
     font-size: 14px;
-    border: 1px solid #2a2a2a;
+    border: 1px solid var(--theme-border-strong);
   }
   .owner-icon-link {
     flex-shrink: 0;
@@ -833,25 +1095,29 @@
   .owner-name {
     font-weight: 600;
     font-size: 14px;
-    color: #eaeaea;
+    color: var(--theme-text);
   }
   .owner-link {
-    color: #eaeaea;
+    color: var(--theme-text);
     text-decoration: none;
   }
   .owner-link:hover {
     text-decoration: underline;
   }
   .owner-kind-badge {
-    background: #1f2a44;
-    color: #93c5fd;
+    background: var(--theme-accent-bg);
+    color: var(--theme-accent-soft);
     padding: 1px 8px;
     border-radius: 999px;
     font-size: 10px;
     flex-shrink: 0;
   }
+  .page.classic .owner-kind-badge {
+    border-radius: 3px;
+    border: 1px solid var(--theme-accent-border);
+  }
   .owner-videos-link {
-    color: #6ea8fe;
+    color: var(--theme-accent-soft);
     text-decoration: none;
     font-size: 12px;
   }
@@ -864,8 +1130,8 @@
     gap: 12px;
     margin-top: 10px;
     padding: 10px 12px;
-    background: #161616;
-    border: 1px solid #1f2a3a;
+    background: var(--theme-surface-2);
+    border: 1px solid var(--theme-accent-border);
     border-radius: 8px;
     text-decoration: none;
     color: inherit;
@@ -873,9 +1139,13 @@
       background 0.15s,
       border-color 0.15s;
   }
+  .page.classic .series-card {
+    border-radius: 3px;
+    background: linear-gradient(180deg, #fffdfa 0%, #f5ede2 100%);
+  }
   .series-card:hover {
-    background: #1a2235;
-    border-color: #2a4a6a;
+    background: var(--theme-accent-bg);
+    border-color: var(--theme-accent-border);
   }
   .series-thumb-wrap {
     flex-shrink: 0;
@@ -886,7 +1156,7 @@
     height: 36px;
     object-fit: cover;
     border-radius: 4px;
-    background: #0a0a0a;
+    background: var(--theme-bg);
   }
   .series-thumb.placeholder {
     width: 64px;
@@ -894,10 +1164,10 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: #1a2235;
-    border: 1px dashed #2a4a6a;
+    background: var(--theme-accent-bg);
+    border: 1px dashed var(--theme-accent-border);
     border-radius: 4px;
-    color: #4a7ab5;
+    color: var(--theme-accent-soft);
   }
   .series-info {
     flex: 1;
@@ -908,7 +1178,7 @@
   }
   .series-label {
     font-size: 10px;
-    color: #6ea8fe;
+    color: var(--theme-accent-soft);
     text-transform: uppercase;
     letter-spacing: 0.5px;
     font-weight: 600;
@@ -916,55 +1186,59 @@
   .series-title {
     font-size: 14px;
     font-weight: 600;
-    color: #eaeaea;
+    color: var(--theme-text);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .series-desc {
     font-size: 11px;
-    color: #9a9a9a;
+    color: var(--theme-text-muted);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .series-count {
     font-size: 11px;
-    color: #7a8a9a;
+    color: var(--theme-text-muted);
   }
   .series-arrow {
     flex-shrink: 0;
     font-size: 20px;
-    color: #555;
+    color: var(--theme-text-faint);
     margin-left: 4px;
   }
   .series-card:hover .series-arrow {
-    color: #6ea8fe;
+    color: var(--theme-accent-soft);
   }
   details {
     margin-top: 12px;
-    color: #cfcfcf;
+    color: var(--theme-text-soft);
   }
   details > summary {
     cursor: pointer;
-    color: #b0b0b0;
+    color: var(--theme-text-soft);
     margin-bottom: 6px;
   }
   .desc {
     white-space: pre-wrap;
     line-height: 1.6;
-    background: #161616;
-    border: 1px solid #1f1f1f;
+    background: var(--theme-surface-2);
+    border: 1px solid var(--theme-border);
     padding: 10px 12px;
     border-radius: 6px;
     overflow: hidden;
     min-width: 0;
     word-break: break-word;
   }
+  .page.classic .desc {
+    border-radius: 3px;
+    background: #fffcf7;
+  }
   .ng-banner {
-    background: #2a1f1a;
-    color: #f5b3b3;
-    border: 1px solid #5a2222;
+    background: var(--theme-danger-bg-2);
+    color: var(--theme-danger-text);
+    border: 1px solid var(--theme-danger-border);
     padding: 4px 10px;
     border-radius: 6px;
     font-size: 12px;
@@ -982,26 +1256,32 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    background: #1f1f1f;
-    color: #c0c0c0;
+    background: var(--theme-border);
+    color: var(--theme-chip-text);
     padding: 3px 10px;
     border-radius: 999px;
     font-size: 12px;
     text-decoration: none;
     border: 1px solid transparent;
   }
+  .page.classic .tag {
+    border-radius: 3px;
+    background: linear-gradient(180deg, #f6efe4 0%, #e7dccb 100%);
+    border-color: var(--theme-border);
+    color: var(--theme-text-soft);
+  }
   .tag:hover {
-    background: #2a2a2a;
-    color: #fff;
-    border-color: #3a3a3a;
+    background: var(--theme-border-strong);
+    color: var(--theme-surface-2);
+    border-color: var(--theme-border-focus);
   }
   .tag.locked {
-    background: #1e2a3a;
-    color: #b3c5ff;
+    background: var(--theme-accent-bg);
+    color: var(--theme-accent-soft);
   }
   .tag.locked:hover {
-    background: #243246;
-    color: #fff;
+    background: var(--theme-accent-border);
+    color: var(--theme-surface-2);
   }
   .lock {
     font-size: 9px;
@@ -1010,7 +1290,13 @@
   .related h3 {
     margin: 0 0 8px;
     font-size: 14px;
-    color: #cfcfcf;
+    color: var(--theme-text-soft);
+  }
+  .page.classic .related h3 {
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--theme-border);
+    color: var(--theme-text);
   }
   .related-list {
     list-style: none;
@@ -1026,7 +1312,7 @@
    * が走って動画がガクつくのを防ぐため、プレーヤー以外を非表示にする
    */
   .pip-placeholder {
-    background: #000;
+    background: var(--theme-bg);
     border-radius: 8px;
     overflow: hidden;
     aspect-ratio: 16 / 9;
@@ -1052,10 +1338,10 @@
     align-items: center;
     justify-content: center;
     gap: 10px;
-    color: #fff;
+    color: var(--theme-surface-2);
   }
   .pip-icon {
-    color: #fff;
+    color: var(--theme-surface-2);
     opacity: 0.85;
   }
   .pip-text {
@@ -1065,8 +1351,8 @@
   }
   .pip-resume {
     margin-top: 4px;
-    background: #2563eb;
-    color: #fff;
+    background: var(--theme-accent);
+    color: var(--theme-surface-2);
     border: none;
     padding: 8px 16px;
     border-radius: 8px;
@@ -1075,11 +1361,11 @@
     font-weight: 600;
   }
   .pip-resume:hover {
-    background: #3b78f0;
+    background: var(--theme-accent-hover);
   }
 
   .loading-skeleton {
-    background: #000;
+    background: var(--theme-bg);
     border-radius: 8px;
     overflow: hidden;
     aspect-ratio: 16 / 9;
@@ -1105,7 +1391,7 @@
     width: 36px;
     height: 36px;
     border: 3px solid rgba(255, 255, 255, 0.2);
-    border-top-color: #fff;
+    border-top-color: var(--theme-surface-2);
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
   }
@@ -1115,7 +1401,7 @@
     }
   }
   .skeleton-text {
-    color: #ddd;
+    color: var(--theme-text);
     font-size: 13px;
     text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
   }

@@ -84,7 +84,7 @@
 <div class="wrap">
   <button
     type="button"
-    class="save"
+    class="save mylist-add-btn"
     class:active={savedActive}
     onclick={quickSave}
     title={savedActive ? 'マイリストから外す' : 'マイリストに追加'}
@@ -93,7 +93,7 @@
   </button>
   <button
     type="button"
-    class="more"
+    class="more mylist-create-btn"
     bind:this={buttonEl}
     onclick={() => (open = !open)}
     aria-haspopup="true"
@@ -139,21 +139,21 @@
     gap: 6px;
   }
   button {
-    background: #1f1f1f;
-    border: 1px solid #333;
-    color: #eaeaea;
+    background: var(--theme-border);
+    border: 1px solid var(--theme-surface-hover);
+    color: var(--theme-text);
     border-radius: 6px;
     padding: 4px 10px;
     font-size: 12px;
     cursor: pointer;
   }
   button:hover {
-    background: #2a2a2a;
+    background: var(--theme-border-strong);
   }
   .save.active {
-    background: #b45309;
-    border-color: #d97706;
-    color: #fff;
+    background: var(--theme-warning-border);
+    border-color: var(--theme-warning-text);
+    color: var(--theme-surface-2);
   }
   .popover {
     position: absolute;
@@ -161,17 +161,17 @@
     right: 0;
     z-index: 50;
     width: 280px;
-    background: #181818;
-    border: 1px solid #333;
+    background: var(--theme-surface-4);
+    border: 1px solid var(--theme-surface-hover);
     border-radius: 8px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
     padding: 8px;
   }
   .header {
     font-size: 12px;
-    color: #9a9a9a;
+    color: var(--theme-text-muted);
     padding: 4px 6px 8px;
-    border-bottom: 1px solid #2a2a2a;
+    border-bottom: 1px solid var(--theme-border-strong);
     margin-bottom: 6px;
   }
   .list {
@@ -191,7 +191,7 @@
     font-size: 13px;
   }
   .list li label:hover {
-    background: #222;
+    background: var(--theme-surface-hover);
   }
   .name {
     flex: 1;
@@ -200,14 +200,14 @@
     white-space: nowrap;
   }
   .badge {
-    background: #2563eb;
+    background: var(--theme-accent);
     color: white;
     font-size: 10px;
     padding: 1px 6px;
     border-radius: 999px;
   }
   .count {
-    color: #888;
+    color: var(--theme-text-muted);
     font-size: 11px;
   }
   .create {
@@ -215,13 +215,13 @@
     gap: 6px;
     margin-top: 8px;
     padding-top: 8px;
-    border-top: 1px solid #2a2a2a;
+    border-top: 1px solid var(--theme-border-strong);
   }
   .create input {
     flex: 1;
-    background: #0f0f0f;
-    border: 1px solid #2f2f2f;
-    color: #f5f5f5;
+    background: var(--theme-input-bg);
+    border: 1px solid var(--theme-border-strong);
+    color: var(--theme-text);
     border-radius: 4px;
     padding: 4px 8px;
     font-size: 12px;

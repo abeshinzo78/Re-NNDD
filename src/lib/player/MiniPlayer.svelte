@@ -544,7 +544,7 @@
   .mini {
     position: fixed;
     z-index: 9999;
-    background: #000;
+    background: var(--theme-bg);
     border-radius: 12px;
     overflow: hidden;
     box-shadow:
@@ -644,7 +644,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    color: #fff;
+    color: var(--theme-surface-2);
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
   }
   .title {
@@ -665,7 +665,7 @@
   }
   .icon-btn {
     background: rgba(0, 0, 0, 0.5);
-    color: #fff;
+    color: var(--theme-surface-2);
     border: none;
     border-radius: 6px;
     padding: 4px;
@@ -686,7 +686,7 @@
   }
   .play-btn {
     background: rgba(0, 0, 0, 0.55);
-    color: #fff;
+    color: var(--theme-surface-2);
     border: none;
     width: 52px;
     height: 52px;
@@ -715,7 +715,7 @@
   }
   .progress-fill {
     height: 100%;
-    background: #ff3355;
+    background: var(--theme-accent);
     transition: width 0.18s linear;
   }
   .resize-handle {

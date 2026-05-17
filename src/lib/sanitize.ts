@@ -37,7 +37,7 @@ function isSafeHref(href: string): boolean {
   }
 }
 
-// `red` `#fff` `#ffffff` `rgb(0,0,0)` のみ許可（CSS 式注入を避けるため
+// `red` `var(--theme-surface-2)` `var(--theme-surface-2)` `rgb(0,0,0)` のみ許可（CSS 式注入を避けるため
 // `expression(`、`url(`、改行などは弾く）。
 function isSafeColor(value: string): boolean {
   const v = value.trim();

@@ -190,7 +190,7 @@
     margin-top: 0;
   }
   .muted {
-    color: #9a9a9a;
+    color: var(--theme-text-muted);
   }
   .small {
     font-size: 12px;
@@ -207,8 +207,8 @@
     }
   }
   .sidebar {
-    background: #161616;
-    border: 1px solid #1f1f1f;
+    background: var(--theme-surface-2);
+    border: 1px solid var(--theme-border);
     border-radius: 8px;
     padding: 8px;
     align-self: start;
@@ -226,7 +226,7 @@
     text-align: left;
     background: transparent;
     border: 1px solid transparent;
-    color: #cfcfcf;
+    color: var(--theme-text-soft);
     border-radius: 6px;
     padding: 8px 10px;
     cursor: pointer;
@@ -236,12 +236,12 @@
     font-size: 13px;
   }
   .ml:hover {
-    background: #1f1f1f;
+    background: var(--theme-border);
   }
   .ml.active {
-    background: #2a2a2a;
-    border-color: #3a3a3a;
-    color: #fff;
+    background: var(--theme-border-strong);
+    border-color: var(--theme-border-focus);
+    color: var(--theme-surface-2);
   }
   .ml-name {
     flex: 1;
@@ -250,11 +250,11 @@
     white-space: nowrap;
   }
   .ml-count {
-    color: #888;
+    color: var(--theme-text-muted);
     font-size: 11px;
   }
   .badge {
-    background: #2563eb;
+    background: var(--theme-accent);
     color: white;
     font-size: 10px;
     padding: 1px 6px;
@@ -262,9 +262,9 @@
   }
   .rename {
     flex: 1;
-    background: #0f0f0f;
-    border: 1px solid #2f2f2f;
-    color: #f5f5f5;
+    background: var(--theme-input-bg);
+    border: 1px solid var(--theme-border-strong);
+    color: var(--theme-text);
     border-radius: 4px;
     padding: 2px 6px;
     font-size: 13px;
@@ -275,13 +275,13 @@
     gap: 6px;
     margin-top: 8px;
     padding-top: 8px;
-    border-top: 1px solid #2a2a2a;
+    border-top: 1px solid var(--theme-border-strong);
   }
   .create input {
     flex: 1;
-    background: #0f0f0f;
-    border: 1px solid #2f2f2f;
-    color: #f5f5f5;
+    background: var(--theme-input-bg);
+    border: 1px solid var(--theme-border-strong);
+    color: var(--theme-text);
     border-radius: 4px;
     padding: 4px 8px;
     font-size: 12px;
@@ -289,9 +289,9 @@
   }
   .create button,
   .actions button {
-    background: #1f1f1f;
-    border: 1px solid #333;
-    color: #eaeaea;
+    background: var(--theme-border);
+    border: 1px solid var(--theme-surface-hover);
+    color: var(--theme-text);
     border-radius: 6px;
     padding: 4px 10px;
     font-size: 12px;
@@ -299,18 +299,18 @@
   }
   .create button:hover,
   .actions button:hover {
-    background: #2a2a2a;
+    background: var(--theme-border-strong);
   }
   .create button:disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }
   .danger {
-    border-color: #5a2222 !important;
-    color: #f5b3b3 !important;
+    border-color: var(--theme-danger-border) !important;
+    color: var(--theme-danger-text) !important;
   }
   .danger:hover {
-    background: #2a1212 !important;
+    background: var(--theme-danger-bg) !important;
   }
   .detail {
     min-width: 0;
@@ -342,8 +342,8 @@
     grid-template-columns: 140px 1fr auto;
     gap: 12px;
     align-items: center;
-    background: #161616;
-    border: 1px solid #1f1f1f;
+    background: var(--theme-surface-2);
+    border: 1px solid var(--theme-border);
     border-radius: 8px;
     padding: 8px;
   }
@@ -352,12 +352,12 @@
     width: 140px;
     height: 78px;
     object-fit: cover;
-    background: #0a0a0a;
+    background: var(--theme-bg);
     border-radius: 4px;
     display: block;
   }
   .thumb-placeholder {
-    border: 1px dashed #2a2a2a;
+    border: 1px dashed var(--theme-border-strong);
   }
   .info {
     min-width: 0;
@@ -366,7 +366,7 @@
     gap: 4px;
   }
   .title {
-    color: #eaeaea;
+    color: var(--theme-text);
     text-decoration: none;
     font-weight: 600;
     overflow: hidden;
@@ -384,20 +384,20 @@
     align-items: center;
   }
   .dot {
-    color: #555;
+    color: var(--theme-text-faint);
   }
   .remove {
     background: transparent;
-    border: 1px solid #333;
-    color: #b0b0b0;
+    border: 1px solid var(--theme-surface-hover);
+    color: var(--theme-text-soft);
     border-radius: 6px;
     padding: 4px 8px;
     font-size: 12px;
     cursor: pointer;
   }
   .remove:hover {
-    background: #1f1f1f;
-    color: #f5b3b3;
-    border-color: #5a2222;
+    background: var(--theme-border);
+    color: var(--theme-danger-text);
+    border-color: var(--theme-danger-border);
   }
 </style>
