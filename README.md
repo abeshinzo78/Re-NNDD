@@ -48,6 +48,7 @@
 
 ニコニコ動画専用クライアント NNDD の精神的後継を目指したい。  
 Tauri 2 + Rust + Svelte 5 で実装するデスクトップアーカイブクライアントです。
+Discord鯖はこちらです　https://discord.gg/cDhnfZ6HMa
 現在開發途中です。
 
 ## 現在できること
