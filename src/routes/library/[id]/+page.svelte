@@ -27,6 +27,10 @@
   let error = $state<string | null>(null);
   let currentTime = $state(0);
   let comments = $state<PlayerComment[]>([]);
+  // コメ取得が「決着」したか (成功/失敗/取得不要のいずれかで確定)。
+  // load() リセット直後の一過性 comments=[] で PiP のコメ層を潰さないよう、
+  // mini への updateComments はこのフラグが true になってからのみ走らせる。
+  let commentsSettled = $state(false);
 
   let ngRules = $state<NgRule[]>(listNgRules());
   const ngUnsub = subscribeNgRules(() => (ngRules = listNgRules()));
@@ -77,6 +81,7 @@
     localSrc = null;
     localAudioSrc = null;
     comments = [];
+    commentsSettled = false;
 
     try {
       // 設定と再生情報を並列取得
@@ -115,6 +120,7 @@
         nicoruCount: c.nicoruCount ?? undefined,
         score: c.score ?? undefined,
       }));
+      commentsSettled = true;
       addHistory({
         videoId: result.videoId,
         title: result.title,
@@ -279,8 +285,14 @@
   );
   let pipExpandHref = $derived(miniPlayer.expandHref || '/');
   let pipOtherTitle = $derived(miniPlayer.title || 'ミニプレイヤー');
+  // PiP 中はミニ側で取得済みコメの方が新しい可能性があるので、ミニ側にも反映。
+  // ただし load() 直後の comments=[] (ローディング中の一過性空配列) で
+  // mini を上書きすると PiP のコメ層が destroy されてしまうので、コメ取得が
+  // 決着 (commentsSettled=true) してからのみ更新する。NG ルールで全件除外
+  // された結果の [] のような「正当な空」は commentsSettled 後に発生するので
+  // このガードを通って mini へ伝播する。
   $effect(() => {
-    if (pipActiveForThis && local) {
+    if (pipActiveForThis && local && commentsSettled) {
       miniPlayer.updateComments(local.videoId, visibleComments);
     }
   });

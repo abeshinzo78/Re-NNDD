@@ -174,16 +174,12 @@ class MiniPlayerStore {
     this.active = true;
   }
 
-  /** comments のみ後追いで差し込む (取得が非同期な動画ページから) */
+  /** comments のみ後追いで差し込む (取得が非同期な動画ページから).
+   *  ローディング中の一過性 [] で mini を潰さないよう、呼び出し側 ($effect)
+   *  が commentsSettled を true にした後でのみここを呼ぶ前提。NG ルールで
+   *  全件除外された結果の [] のような「正当な空」は普通に反映する。 */
   updateComments(videoId: string, comments: PlayerComment[]) {
     if (this.source?.videoId !== videoId) return;
-    // 空の更新で取得済みのミニ側コメを潰さない。ページが /video/[id] を
-    // 開き直した直後は visibleComments=[] のローディング中状態で $effect
-    // が走るため、ここで上書きすると PiP のコメ層 (CommentLayer) が nc を
-    // destroy してしまう。ユーザがその直後に別ページへ離れると再ロードが
-    // 走らず、PiP に二度とコメが流れなくなる。
-    // 「コメが付いた」(空 → 非空) は普通に反映するので、初回ロードは問題ない。
-    if (comments.length === 0) return;
     this.comments = comments;
   }
 
