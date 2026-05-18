@@ -42,14 +42,19 @@
   let isDragging = $state(false);
   let isResizing = $state(false);
 
-  // 元動画ページに居る間は、ページ側のプレースホルダが視覚を引き受け、
-  // ミニ側は visibility:hidden で見えなくする (再生は継続)。
-  // ユーザが「ここで再生に戻す」ボタンや mini の閉じる/展開を押した時のみ
-  // miniPlayer.close() を呼ぶ。
+  // 元動画ページに居る間の挙動:
+  //  - 音声引き継ぎ中 (audioOwned=false): ページ側 Player がまだ実体として残り音を
+  //    出している。ここで mini を見せると同じ動画が 2 個並んで気持ち悪いので隠す。
+  //  - 引き継ぎ完了後 (audioOwned=true): ページ側は pip-placeholder に切り替わり、
+  //    Player は破棄されている。mini を隠したままだと、ユーザは元ページに居る間
+  //    流れコメを一切見られず (placeholder には canvas が無い)、別ページへ遷移
+  //    して初めて mini にコメが現れる、という分かりにくい状態になる。
+  //    なので引き継ぎ完了後は元ページでも mini を可視化し、placeholder と並べる。
   let pathname = $derived(page.url.pathname);
   let onSourcePage = $derived(
     miniPlayer.source != null && pathname === miniPlayer.expandHref.split('?')[0],
   );
+  let hideForHandoff = $derived(onSourcePage && !miniPlayer.audioOwned);
 
   function saveResume() {
     const t = playerRef?.getCurrentTime() ?? currentTime;
@@ -333,7 +338,12 @@
 
   // ============ キーボード ============
   function onKeyDown(e: KeyboardEvent) {
-    if (!miniPlayer.active || onSourcePage) return;
+    // mini が非表示の時はキー入力を奪わない。
+    //  - 音声引き継ぎ中 (元ページ上で hideForHandoff=true): ページ側 Player と
+    //    ControlBar が現役なのでそちらにショートカットを譲る。
+    //  - 引き継ぎ完了後で mini が可視 (元ページ含む): ページ側 Player は破棄され
+    //    ControlBar も無いので、ユーザの操作対象は mini 一本。mini が拾う。
+    if (!miniPlayer.active || hideForHandoff) return;
     // テキスト入力中は無視
     const tgt = e.target as HTMLElement | null;
     if (tgt) {
@@ -391,7 +401,7 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="mini"
-    class:hidden={onSourcePage}
+    class:hidden={hideForHandoff}
     class:dragging={isDragging}
     class:resizing={isResizing}
     bind:this={container}
