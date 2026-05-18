@@ -15,8 +15,8 @@ use crate::api::comment::{Comment, CommentApi, ThreadsClient};
 use crate::api::search::{SearchApi, SnapshotSearchClient};
 use crate::api::types::{SearchQuery, SearchResponse};
 use crate::api::video::{
-    quality_candidates, NiconicoWatchClient, NvCommentSetup, SeriesInfo, WatchApi, WatchOwner,
-    WatchVideoMeta,
+    json_value_as_id_string, quality_candidates, NiconicoWatchClient, NvCommentSetup, SeriesInfo,
+    WatchApi, WatchOwner, WatchVideoMeta,
 };
 use crate::downloader::tools;
 use crate::downloader::ytdlp as ytdlp_mod;
@@ -146,6 +146,27 @@ fn build_user_video_item(
         user_id,
         channel_id,
     }
+}
+
+/// `nvapi /v1/users/{id}/{kind}?page=...&pageSize=...` 系の「ページング付き一覧」
+/// レスポンスから `(items_array, total_count)` を取り出す。
+/// items は `data.{primary_array}` を優先し、無ければ `data.items` を見る
+/// (niconico の API バージョン差を吸収するための fallback)。
+async fn nv_fetch_paged_list(
+    client: &reqwest::Client,
+    url: &str,
+    cookie: Option<String>,
+    err_label: &str,
+    primary_array: &str,
+) -> Result<(Vec<serde_json::Value>, i64)> {
+    let (json, _body) = nv_get_json(client, url, cookie, err_label).await?;
+    let total_count = json["data"]["totalCount"].as_i64().unwrap_or(0);
+    let items_val = json["data"][primary_array]
+        .as_array()
+        .or_else(|| json["data"]["items"].as_array())
+        .cloned()
+        .unwrap_or_default();
+    Ok((items_val, total_count))
 }
 
 /// nvapi.nicovideo.jp 系エンドポイントへ GET し、`(parsed_json, body_text)` を返す。
@@ -882,10 +903,7 @@ fn extract_series_videos_from_html(html: &str) -> Vec<UserVideoItem> {
             &raw_item
         };
 
-        let id = v["id"]
-            .as_i64()
-            .map(|n| n.to_string())
-            .or_else(|| v["id"].as_str().map(String::from))
+        let id = json_value_as_id_string(&v["id"])
             .or_else(|| v["contentId"].as_str().map(String::from))
             .unwrap_or_default();
         if id.is_empty() {
@@ -1035,29 +1053,18 @@ pub async fn fetch_user_mylists(
 
     let client = build_nv_client()?;
     let url = format!("https://nvapi.nicovideo.jp/v1/users/{owner_id}/mylists?page=1&pageSize=50");
-    let (json, _body) = nv_get_json(
+    let (items_val, total_count) = nv_fetch_paged_list(
         &client,
         &url,
         store.cookie_header(),
         "マイリスト一覧 API エラー",
+        "mylists",
     )
     .await?;
 
-    let total_count = json["data"]["totalCount"].as_i64().unwrap_or(0);
-
-    let items_val = json["data"]["mylists"]
-        .as_array()
-        .or_else(|| json["data"]["items"].as_array())
-        .cloned()
-        .unwrap_or_default();
-
     let mut items = Vec::with_capacity(items_val.len());
     for node in &items_val {
-        let id = node["id"]
-            .as_i64()
-            .map(|n| n.to_string())
-            .or_else(|| node["id"].as_str().map(String::from))
-            .unwrap_or_default();
+        let id = json_value_as_id_string(&node["id"]).unwrap_or_default();
         if id.is_empty() {
             continue;
         }
@@ -1111,29 +1118,18 @@ pub async fn fetch_user_series_list(
 
     let client = build_nv_client()?;
     let url = format!("https://nvapi.nicovideo.jp/v1/users/{owner_id}/series?page=1&pageSize=50");
-    let (json, _body) = nv_get_json(
+    let (items_val, total_count) = nv_fetch_paged_list(
         &client,
         &url,
         store.cookie_header(),
         "シリーズ一覧 API エラー",
+        "series",
     )
     .await?;
 
-    let total_count = json["data"]["totalCount"].as_i64().unwrap_or(0);
-
-    let items_val = json["data"]["series"]
-        .as_array()
-        .or_else(|| json["data"]["items"].as_array())
-        .cloned()
-        .unwrap_or_default();
-
     let mut items = Vec::with_capacity(items_val.len());
     for node in &items_val {
-        let id = node["id"]
-            .as_i64()
-            .map(|n| n.to_string())
-            .or_else(|| node["id"].as_str().map(String::from))
-            .unwrap_or_default();
+        let id = json_value_as_id_string(&node["id"]).unwrap_or_default();
         if id.is_empty() {
             continue;
         }
@@ -1195,10 +1191,7 @@ pub async fn fetch_mylist_videos(
     let mut items = Vec::with_capacity(items_val.len());
     for raw_item in &items_val {
         let v = &raw_item["video"];
-        let id = v["id"]
-            .as_i64()
-            .map(|n| n.to_string())
-            .or_else(|| v["id"].as_str().map(String::from))
+        let id = json_value_as_id_string(&v["id"])
             .or_else(|| v["contentId"].as_str().map(String::from))
             .unwrap_or_default();
         if id.is_empty() {
