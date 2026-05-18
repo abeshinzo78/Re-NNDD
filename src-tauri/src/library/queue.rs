@@ -75,30 +75,31 @@ pub fn get_by_id(conn: &Connection, id: i64) -> Result<Option<DownloadQueueItem>
     Ok(row)
 }
 
-/// 全件、新しい順（id desc）。UI 側はキャンセル済み以外の履歴も含めて表示する。
-pub fn list_all(conn: &Connection) -> Result<Vec<DownloadQueueItem>, LibraryError> {
-    let mut stmt = conn.prepare(&format!(
-        "SELECT {SELECT_COLS} FROM download_queue ORDER BY id DESC"
-    ))?;
+/// `SELECT_COLS FROM download_queue {tail}` を実行してパースする。
+fn select_queue_rows(
+    conn: &Connection,
+    tail: &str,
+) -> Result<Vec<DownloadQueueItem>, LibraryError> {
+    let mut stmt = conn.prepare(&format!("SELECT {SELECT_COLS} FROM download_queue {tail}"))?;
     let rows = stmt
         .query_map([], DownloadQueueItem::from_row)?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(rows)
 }
 
+/// 全件、新しい順（id desc）。UI 側はキャンセル済み以外の履歴も含めて表示する。
+pub fn list_all(conn: &Connection) -> Result<Vec<DownloadQueueItem>, LibraryError> {
+    select_queue_rows(conn, "ORDER BY id DESC")
+}
+
 /// ワーカが拾うべき次の候補を、scheduled_at の早い順 → id 順で返す。
 /// `paused` はワーカが拾うべき対象ではないので含めない（手動再開で `pending`
 /// に戻ったタイミングで再びここに乗る）。
 pub fn list_pending(conn: &Connection) -> Result<Vec<DownloadQueueItem>, LibraryError> {
-    let mut stmt = conn.prepare(&format!(
-        "SELECT {SELECT_COLS} FROM download_queue \
-         WHERE status = 'pending' \
-         ORDER BY COALESCE(scheduled_at, 0) ASC, id ASC"
-    ))?;
-    let rows = stmt
-        .query_map([], DownloadQueueItem::from_row)?
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(rows)
+    select_queue_rows(
+        conn,
+        "WHERE status = 'pending' ORDER BY COALESCE(scheduled_at, 0) ASC, id ASC",
+    )
 }
 
 /// status を遷移させる。`"downloading"` 遷移時は started_at を、`"done"` 遷移

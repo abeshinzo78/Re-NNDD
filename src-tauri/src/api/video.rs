@@ -586,6 +586,14 @@ fn parse_json_array<T>(
     arr.iter().filter_map(parse_item).collect()
 }
 
+/// niconico の `id` 系フィールドは API バージョンによって i64 / 数字文字列 /
+/// 文字列の 3 種で返ってくる。どれでも文字列として受け取れるように正規化する。
+pub fn json_value_as_id_string(v: &Value) -> Option<String> {
+    v.as_i64()
+        .map(|n| n.to_string())
+        .or_else(|| v.as_str().map(String::from))
+}
+
 fn parse_tags(value: Option<&Value>) -> Vec<VideoTag> {
     parse_json_array(value, |node| {
         Some(VideoTag {
@@ -612,11 +620,7 @@ fn parse_owner(node: &Value) -> Option<WatchOwner> {
             .and_then(Value::as_str)
             .unwrap_or("user")
             .to_string(),
-        id: node.get("id").and_then(|v| {
-            v.as_i64()
-                .map(|n| n.to_string())
-                .or_else(|| v.as_str().map(String::from))
-        }),
+        id: node.get("id").and_then(json_value_as_id_string),
         nickname: node
             .get("nickname")
             .and_then(Value::as_str)
