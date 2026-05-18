@@ -174,11 +174,13 @@ class MiniPlayerStore {
     this.active = true;
   }
 
-  /** comments のみ後追いで差し込む (取得が非同期な動画ページから) */
+  /** comments のみ後追いで差し込む (取得が非同期な動画ページから).
+   *  ローディング中の一過性 [] で mini を潰さないよう、呼び出し側 ($effect)
+   *  が commentsSettled を true にした後でのみここを呼ぶ前提。NG ルールで
+   *  全件除外された結果の [] のような「正当な空」は普通に反映する。 */
   updateComments(videoId: string, comments: PlayerComment[]) {
-    if (this.source?.videoId === videoId) {
-      this.comments = comments;
-    }
+    if (this.source?.videoId !== videoId) return;
+    this.comments = comments;
   }
 
   setGeometry(g: MiniGeometry) {

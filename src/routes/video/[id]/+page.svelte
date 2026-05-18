@@ -27,6 +27,10 @@
   let currentTime = $state(0);
   let comments = $state<PlayerComment[]>([]);
   let commentsLoading = $state(false);
+  // コメ取得が「決着」したか (成功/失敗/取得不要のいずれかで確定)。
+  // load() リセット直後の一過性 comments=[] で PiP のコメ層を潰さないよう、
+  // mini への updateComments はこのフラグが true になってからのみ走らせる。
+  let commentsSettled = $state(false);
 
   let related = $state<SearchHit[]>([]);
   let relatedLoading = $state(false);
@@ -112,6 +116,7 @@
     payload = null;
     comments = [];
     commentsLoading = false;
+    commentsSettled = false;
     related = [];
     relatedError = null;
     try {
@@ -144,8 +149,13 @@
             console.warn('comment fetch failed', e);
           })
           .finally(() => {
-            if (loadingFor === id) commentsLoading = false;
+            if (loadingFor === id) {
+              commentsLoading = false;
+              commentsSettled = true;
+            }
           });
+      } else {
+        commentsSettled = true;
       }
 
       // Defer related-video fetch so it doesn't compete with the
@@ -344,9 +354,14 @@
   let pipExpandHref = $derived(miniPlayer.expandHref || '/');
   let pipOtherTitle = $derived(miniPlayer.title || 'ミニプレイヤー');
 
-  // PiP 中はミニ側で取得済みコメの方が新しい可能性があるので、ミニ側にも反映
+  // PiP 中はミニ側で取得済みコメの方が新しい可能性があるので、ミニ側にも反映。
+  // ただし load() 直後の comments=[] (ローディング中の一過性空配列) で
+  // mini を上書きすると PiP のコメ層が destroy されてしまうので、コメ取得が
+  // 決着 (commentsSettled=true) してからのみ更新する。NG ルールで全件除外
+  // された結果の [] のような「正当な空」は commentsSettled 後に発生するので
+  // このガードを通って mini へ伝播する。
   $effect(() => {
-    if (pipActiveForThis && payload) {
+    if (pipActiveForThis && payload && commentsSettled) {
       miniPlayer.updateComments(payload.videoId, visibleComments);
     }
   });
