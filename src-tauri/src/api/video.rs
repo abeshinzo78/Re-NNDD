@@ -574,27 +574,32 @@ fn project_watch_data(root: &Value) -> Result<WatchPageData, ApiError> {
     })
 }
 
+/// `value` を JSON 配列として読み、各要素に `parse_item` を適用して `None` を
+/// 捨てた `Vec<T>` を返す。配列でない/`None` の場合は空 Vec。
+fn parse_json_array<T>(
+    value: Option<&Value>,
+    parse_item: impl FnMut(&Value) -> Option<T>,
+) -> Vec<T> {
+    let Some(arr) = value.and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    arr.iter().filter_map(parse_item).collect()
+}
+
 fn parse_tags(value: Option<&Value>) -> Vec<VideoTag> {
-    value
-        .and_then(Value::as_array)
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|node| {
-                    Some(VideoTag {
-                        name: node.get("name")?.as_str()?.to_string(),
-                        is_locked: node
-                            .get("isLocked")
-                            .and_then(Value::as_bool)
-                            .unwrap_or(false),
-                        is_category: node
-                            .get("isCategory")
-                            .and_then(Value::as_bool)
-                            .unwrap_or(false),
-                    })
-                })
-                .collect()
+    parse_json_array(value, |node| {
+        Some(VideoTag {
+            name: node.get("name")?.as_str()?.to_string(),
+            is_locked: node
+                .get("isLocked")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+            is_category: node
+                .get("isCategory")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
         })
-        .unwrap_or_default()
+    })
 }
 
 fn parse_owner(node: &Value) -> Option<WatchOwner> {
@@ -635,27 +640,20 @@ fn parse_domand(node: &Value) -> Option<DomandSetup> {
 }
 
 fn parse_tracks(value: Option<&Value>) -> Vec<MediaTrack> {
-    value
-        .and_then(Value::as_array)
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|node| {
-                    Some(MediaTrack {
-                        id: node.get("id")?.as_str()?.to_string(),
-                        is_available: node
-                            .get("isAvailable")
-                            .and_then(Value::as_bool)
-                            .unwrap_or(false),
-                        label: node.get("label").and_then(Value::as_str).map(String::from),
-                        bit_rate: node.get("bitRate").and_then(Value::as_i64),
-                        width: node.get("width").and_then(Value::as_i64),
-                        height: node.get("height").and_then(Value::as_i64),
-                        quality_level: node.get("qualityLevel").and_then(Value::as_i64),
-                    })
-                })
-                .collect()
+    parse_json_array(value, |node| {
+        Some(MediaTrack {
+            id: node.get("id")?.as_str()?.to_string(),
+            is_available: node
+                .get("isAvailable")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+            label: node.get("label").and_then(Value::as_str).map(String::from),
+            bit_rate: node.get("bitRate").and_then(Value::as_i64),
+            width: node.get("width").and_then(Value::as_i64),
+            height: node.get("height").and_then(Value::as_i64),
+            quality_level: node.get("qualityLevel").and_then(Value::as_i64),
         })
-        .unwrap_or_default()
+    })
 }
 
 fn parse_nv_comment(node: &Value) -> Option<NvCommentSetup> {

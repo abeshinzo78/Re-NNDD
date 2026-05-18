@@ -6,6 +6,7 @@
   import CommentList from '$lib/player/CommentList.svelte';
   import {
     deleteLibraryVideo,
+    dtoToPlayerComment,
     localAudioUrl,
     localVideoUrl,
     prepareLocalPlayback,
@@ -106,20 +107,7 @@
         return;
       }
       if (loadingFor !== id) return;
-      comments = result.comments.map((c) => ({
-        id: c.id,
-        no: c.no,
-        vposMs: c.vposMs,
-        content: c.content,
-        mail: c.mail,
-        commands: c.commands,
-        userId: c.userId ?? undefined,
-        postedAt: c.postedAt ?? undefined,
-        fork: c.fork,
-        isOwner: c.isOwner,
-        nicoruCount: c.nicoruCount ?? undefined,
-        score: c.score ?? undefined,
-      }));
+      comments = result.comments.map(dtoToPlayerComment);
       commentsSettled = true;
       addHistory({
         videoId: result.videoId,

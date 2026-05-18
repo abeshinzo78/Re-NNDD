@@ -19,6 +19,18 @@ use crate::library::settings;
 
 const SETTINGS_KEY: &str = "auth.user_session";
 
+/// `value` を trim して、空なら `None`, それ以外は `Some(trimmed)` を `slot` に
+/// 書き込む。Cookie 系のフィールドが空白/空文字渡しでクリアされる挙動を一箇所
+/// にまとめるためのヘルパ。
+fn write_trimmed(slot: &RwLock<Option<String>>, value: String) {
+    let trimmed = value.trim().to_owned();
+    *slot.write() = if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed)
+    };
+}
+
 const LOGIN_URL: &str = "https://account.nicovideo.jp/api/v1/login?site=niconico";
 const BROWSER_UA: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 \
     (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
@@ -74,12 +86,7 @@ impl SessionStore {
     }
 
     pub fn set(&self, value: String) {
-        let trimmed = value.trim().to_owned();
-        if trimmed.is_empty() {
-            *self.user_session.write() = None;
-        } else {
-            *self.user_session.write() = Some(trimmed);
-        }
+        write_trimmed(&self.user_session, value);
     }
 
     pub fn clear(&self) {
@@ -96,12 +103,7 @@ impl SessionStore {
     }
 
     pub fn set_domand_bid(&self, value: String) {
-        let trimmed = value.trim().to_owned();
-        if trimmed.is_empty() {
-            *self.domand_bid.write() = None;
-        } else {
-            *self.domand_bid.write() = Some(trimmed);
-        }
+        write_trimmed(&self.domand_bid, value);
     }
 
     pub fn domand_bid(&self) -> Option<String> {

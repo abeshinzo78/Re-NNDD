@@ -153,12 +153,19 @@ fn build_combined_moov(video_moov: &[u8], audio_moov: &[u8]) -> Result<Vec<u8>, 
     Ok(write_container_payload(&moov_children))
 }
 
-/// trak payload 内の tkhd を見つけて `track_ID` を書き換える。
-fn rewrite_track_id_in_trak(trak_payload: &[u8], new_id: u32) -> Result<Vec<u8>, ApiError> {
+/// container box `payload` の子 box 群のうち、`target` 型のものだけを
+/// `transform` で書き換え、他はそのままコピーして新しい container payload を
+/// 返す共通ヘルパ。`trak → tkhd`, `moof → traf`, `traf → tfhd` の 3 か所で
+/// 同じパターンを使う。
+fn rewrite_child(
+    payload: &[u8],
+    target: &[u8; 4],
+    mut transform: impl FnMut(&[u8]) -> Result<Vec<u8>, ApiError>,
+) -> Result<Vec<u8>, ApiError> {
     let mut new_children: Vec<([u8; 4], Vec<u8>)> = Vec::new();
-    for child in iter_children(trak_payload)? {
-        if &child.box_type == b"tkhd" {
-            new_children.push((*b"tkhd", rewrite_tkhd_track_id(child.payload, new_id)?));
+    for child in iter_children(payload)? {
+        if &child.box_type == target {
+            new_children.push((*target, transform(child.payload)?));
         } else {
             new_children.push((child.box_type, child.payload.to_vec()));
         }
@@ -168,6 +175,11 @@ fn rewrite_track_id_in_trak(trak_payload: &[u8], new_id: u32) -> Result<Vec<u8>,
         .map(|(t, p)| (t, p.as_slice()))
         .collect();
     Ok(write_container_payload(&refs))
+}
+
+/// trak payload 内の tkhd を見つけて `track_ID` を書き換える。
+fn rewrite_track_id_in_trak(trak_payload: &[u8], new_id: u32) -> Result<Vec<u8>, ApiError> {
+    rewrite_child(trak_payload, b"tkhd", |p| rewrite_tkhd_track_id(p, new_id))
 }
 
 fn rewrite_tkhd_track_id(tkhd_payload: &[u8], new_id: u32) -> Result<Vec<u8>, ApiError> {
@@ -201,14 +213,25 @@ fn rewrite_tkhd_track_id(tkhd_payload: &[u8], new_id: u32) -> Result<Vec<u8>, Ap
     Ok(out)
 }
 
-fn rewrite_track_id_in_trex(trex_payload: &[u8], new_id: u32) -> Result<Vec<u8>, ApiError> {
-    if trex_payload.len() < 8 {
-        return Err(ApiError::ResponseShape("trex payload too short".into()));
+/// `[version:1][flags:3][track_ID:4]...` 形式の box payload (trex / tfhd) で
+/// track_ID 部分 (オフセット 4..8) を `new_id` に書き換えたコピーを返す。
+fn replace_track_id_after_full_box_header(
+    box_label: &str,
+    payload: &[u8],
+    new_id: u32,
+) -> Result<Vec<u8>, ApiError> {
+    if payload.len() < 8 {
+        return Err(ApiError::ResponseShape(format!(
+            "{box_label} payload too short"
+        )));
     }
-    // [version: 1][flags: 3][track_ID: 4]...
-    let mut out = trex_payload.to_vec();
+    let mut out = payload.to_vec();
     out[4..8].copy_from_slice(&new_id.to_be_bytes());
     Ok(out)
+}
+
+fn rewrite_track_id_in_trex(trex_payload: &[u8], new_id: u32) -> Result<Vec<u8>, ApiError> {
+    replace_track_id_after_full_box_header("trex", trex_payload, new_id)
 }
 
 fn update_mvhd_next_track_id(mvhd_payload: &[u8], next_id: u32) -> Result<Vec<u8>, ApiError> {
@@ -224,41 +247,15 @@ fn update_mvhd_next_track_id(mvhd_payload: &[u8], next_id: u32) -> Result<Vec<u8
 
 /// moof payload 内の各 traf -> tfhd の `track_ID` を書き換える。
 fn rewrite_track_id_in_moof(moof_payload: &[u8], new_id: u32) -> Result<Vec<u8>, ApiError> {
-    let mut new_children: Vec<([u8; 4], Vec<u8>)> = Vec::new();
-    for child in iter_children(moof_payload)? {
-        if &child.box_type == b"traf" {
-            new_children.push((*b"traf", rewrite_track_id_in_traf(child.payload, new_id)?));
-        } else {
-            new_children.push((child.box_type, child.payload.to_vec()));
-        }
-    }
-    let refs: Vec<(&[u8; 4], &[u8])> = new_children
-        .iter()
-        .map(|(t, p)| (t, p.as_slice()))
-        .collect();
-    Ok(write_container_payload(&refs))
+    rewrite_child(moof_payload, b"traf", |p| rewrite_track_id_in_traf(p, new_id))
 }
 
 fn rewrite_track_id_in_traf(traf_payload: &[u8], new_id: u32) -> Result<Vec<u8>, ApiError> {
-    let mut new_children: Vec<([u8; 4], Vec<u8>)> = Vec::new();
-    for child in iter_children(traf_payload)? {
-        if &child.box_type == b"tfhd" {
-            if child.payload.len() < 8 {
-                return Err(ApiError::ResponseShape("tfhd payload too short".into()));
-            }
-            // [version: 1][flags: 3][track_ID: 4]...
-            let mut tfhd = child.payload.to_vec();
-            tfhd[4..8].copy_from_slice(&new_id.to_be_bytes());
-            new_children.push((*b"tfhd", tfhd));
-        } else {
-            new_children.push((child.box_type, child.payload.to_vec()));
-        }
-    }
-    let refs: Vec<(&[u8; 4], &[u8])> = new_children
-        .iter()
-        .map(|(t, p)| (t, p.as_slice()))
-        .collect();
-    Ok(write_container_payload(&refs))
+    rewrite_child(traf_payload, b"tfhd", |p| rewrite_tfhd_track_id(p, new_id))
+}
+
+fn rewrite_tfhd_track_id(tfhd_payload: &[u8], new_id: u32) -> Result<Vec<u8>, ApiError> {
+    replace_track_id_after_full_box_header("tfhd", tfhd_payload, new_id)
 }
 
 #[cfg(test)]

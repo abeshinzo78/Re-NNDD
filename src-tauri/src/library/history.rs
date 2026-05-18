@@ -2,6 +2,7 @@ use rusqlite::{params, Connection};
 use serde::Serialize;
 
 use crate::error::LibraryError;
+use crate::library::now_unix_secs;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -22,10 +23,7 @@ pub fn record_playback(
     duration_played_sec: f64,
     position_at_close_sec: Option<f64>,
 ) -> Result<PlayHistoryItem, LibraryError> {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|e| LibraryError::Integrity(e.to_string()))?
-        .as_secs() as i64;
+    let now = now_unix_secs();
 
     conn.execute(
         "INSERT INTO play_history (video_id, played_at, duration_played_sec, position_at_close_sec) \

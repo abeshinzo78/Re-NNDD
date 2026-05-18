@@ -45,13 +45,7 @@ impl DownloadQueueItem {
 const SELECT_COLS: &str =
     "id, video_id, status, progress, error_message, scheduled_at, started_at, finished_at, retry_count";
 
-fn now_unix() -> i64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0)
-}
+use super::now_unix_secs as now_unix;
 
 /// 新規ジョブを enqueue。`scheduled_at` が `Some` なら予約 DL。
 /// 同じ `video_id` の再 enqueue は許可する（ユーザが意図的に再取得する場合）。
