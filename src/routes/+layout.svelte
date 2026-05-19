@@ -15,6 +15,7 @@
   const sections = [
     { href: '/', label: 'ホーム' },
     { href: '/library', label: 'ローカル' },
+    { href: '/ranking', label: 'ランキング' },
     { href: '/search', label: '検索' },
     { href: '/playlists', label: 'プレイリスト' },
     { href: '/downloads', label: 'ダウンロード' },
