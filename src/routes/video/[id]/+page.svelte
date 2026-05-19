@@ -451,7 +451,7 @@
           </button>
         </div>
       </div>
-      <div class="player-row" class:dragging>
+      <div class="player-row" class:dragging class:short={payload.isShort}>
         <div class="player-col">
           {#if pipActiveForThis}
             <div class="pip-placeholder">
@@ -479,6 +479,7 @@
               comments={visibleComments}
               videoTitle={p.video.title}
               videoId={p.video.id}
+              short={p.isShort}
               refreshHlsUrl={() => issueHlsUrl(p.videoId)}
               onTime={handleTimeUpdate}
               resumePosition={getResumePosition(p.videoId)}
@@ -822,6 +823,14 @@
     flex: 1 1 auto;
     min-width: 0;
     contain: layout style paint;
+  }
+  .player-row.short {
+    justify-content: center;
+  }
+  .player-row.short .player-col {
+    flex: 0 1 auto;
+    max-width: 480px;
+    width: 100%;
   }
   .divider {
     width: 5px;

@@ -308,6 +308,7 @@ pub struct PlaybackPayload {
     /// Echo back the video id so the frontend can call `issue_hls_url`
     /// without re-deriving it from the route.
     pub video_id: String,
+    pub is_short: bool,
 }
 
 /// Fast path: fetch watch page → HLS URL. Returns as soon as the video
@@ -365,6 +366,8 @@ pub async fn prepare_playback(
         .await
         .map_err(AppError::from)?;
 
+    let is_short = page.video.content_type.as_deref() == Some("short");
+
     Ok(PlaybackPayload {
         video: page.video,
         owner: page.owner,
@@ -379,6 +382,7 @@ pub async fn prepare_playback(
         nv_comment: page.nv_comment,
         access_right_key: domand.access_right_key,
         video_id,
+        is_short,
     })
 }
 

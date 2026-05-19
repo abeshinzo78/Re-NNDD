@@ -16,6 +16,7 @@ export type WatchVideoMeta = {
   commentCount?: number;
   mylistCount?: number;
   tags: VideoTag[];
+  contentType?: string;
 };
 
 export type WatchOwner = {
@@ -71,4 +72,5 @@ export type PlaybackPayload = {
   nvComment: NvCommentSetup | null;
   accessRightKey: string;
   videoId: string;
+  isShort: boolean;
 };

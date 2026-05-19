@@ -161,6 +161,8 @@ pub struct WatchVideoMeta {
     pub mylist_count: Option<i64>,
     #[serde(default)]
     pub tags: Vec<VideoTag>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -530,6 +532,10 @@ fn project_watch_data(root: &Value) -> Result<WatchPageData, ApiError> {
         comment_count: video_node.pointer("/count/comment").and_then(Value::as_i64),
         mylist_count: video_node.pointer("/count/mylist").and_then(Value::as_i64),
         tags: parse_tags(response.pointer("/tag/items")),
+        content_type: video_node
+            .get("contentType")
+            .and_then(Value::as_str)
+            .map(|s| s.to_string()),
     };
 
     let owner = response.get("owner").and_then(parse_owner);
@@ -807,6 +813,7 @@ mod tests {
                         "description": "説明",
                         "duration": 320,
                         "isDeleted": false,
+                        "contentType": "video",
                         "registeredAt": "2007-03-06T00:33:00+09:00",
                         "count": {"view": 100, "comment": 50, "mylist": 5},
                         "thumbnail": {"url": "https://example.test/thumb.jpg"}

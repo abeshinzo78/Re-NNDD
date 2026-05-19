@@ -27,6 +27,8 @@
     loop?: boolean;
     /** ミニプレイヤー (PiP) 用の compact モード。ControlBar を抑制する。 */
     compact?: boolean;
+    /** ショート動画 (縦長) 用モード。9:16 レイアウト。 */
+    short?: boolean;
     /** PiP ボタンが押された時のフック (compact=false 時のみ表示) */
     onTogglePip?: () => void;
     /** PiP ボタンの aria-pressed 表示用 */
@@ -59,6 +61,7 @@
     resumePosition = 0,
     loop = false,
     compact = false,
+    short = false,
     onTogglePip,
     pipActive = false,
     onLoopChange,
@@ -983,6 +986,7 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="player"
+  class:short
   class:fullscreen={isFullscreen}
   bind:this={stage}
   tabindex="-1"
@@ -1141,6 +1145,13 @@
     aspect-ratio: 16 / 9;
     object-fit: contain;
     background: var(--theme-bg);
+  }
+
+  .player.short :global(video) {
+    aspect-ratio: 9 / 16;
+    max-height: 80vh;
+    max-width: min(100%, calc(80vh * 9 / 16));
+    margin: 0 auto;
   }
 
   .player.fullscreen :global(video) {
