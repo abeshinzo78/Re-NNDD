@@ -2697,6 +2697,57 @@ fn sync_dir_size(path: &std::path::Path) -> u64 {
     total
 }
 
+// =================== ランキング ===================
+
+/// niconico ランキングページの HTML を取得する。
+/// ブラウザ (WebView) から直接 fetch すると CORS で弾かれるため、
+/// Rust 側の reqwest で取得して HTML 文字列を返す。
+/// フロントエンド側で `@kongyo2/nicoran-api` の `extractAndParse` に渡す。
+#[tauri::command]
+pub async fn fetch_ranking_html(url: String) -> Result<String> {
+    let parsed = url::Url::parse(&url).map_err(|e| AppError::Other(format!("invalid url: {e}")))?;
+    let host = parsed.host_str().unwrap_or("");
+    if host != "www.nicovideo.jp" {
+        return Err(AppError::Other(format!(
+            "ランキング取得は nicovideo.jp のみ許可: {host}"
+        )));
+    }
+    let path = parsed.path();
+    if !path.starts_with("/ranking/") {
+        return Err(AppError::Other(format!(
+            "ランキング以外のパスは許可されません: {path}"
+        )));
+    }
+
+    let client = reqwest::Client::builder()
+        .user_agent(NV_USER_AGENT)
+        .build()
+        .map_err(crate::error::ApiError::from)?;
+
+    let resp = client
+        .get(&url)
+        .header(header::ACCEPT, "text/html,application/xhtml+xml")
+        .header(header::ACCEPT_LANGUAGE, "ja,en-US;q=0.9,en;q=0.8")
+        .send()
+        .await
+        .map_err(crate::error::ApiError::from)?;
+
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(AppError::Other(format!(
+            "ランキングページ取得エラー ({status}): {url}"
+        )));
+    }
+
+    let html = resp
+        .text()
+        .await
+        .map_err(crate::error::ApiError::from)?;
+
+    tracing::debug!(%url, size = html.len(), "ranking HTML fetched");
+    Ok(html)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -23,6 +23,10 @@
       <h3>ローカル</h3>
       <p class="muted">DL 済みの動画を一覧 / 再生する。</p>
     </a>
+    <a class="card" href="/ranking">
+      <h3>ランキング</h3>
+      <p class="muted">ジャンル別ランキングを閲覧する。</p>
+    </a>
     <a class="card" href="/search">
       <h3>検索</h3>
       <p class="muted">スナップショット検索 API で動画を探す。</p>
