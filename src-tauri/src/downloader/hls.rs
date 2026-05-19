@@ -76,14 +76,20 @@ pub struct ByteRange {
     pub offset: u64,
 }
 
-/// Master playlist をパース。
-pub fn parse_master(text: &str, base: &Url) -> Result<MasterPlaylist, ApiError> {
+/// `#EXTM3U` ヘッダを検証して、改行で正規化済みの行列を返す。
+fn read_playlist_lines(text: &str) -> Result<Vec<String>, ApiError> {
     let lines = normalize_lines(text);
     if lines.first().map(|s| s.as_str()) != Some("#EXTM3U") {
         return Err(ApiError::ResponseShape(
             "playlist does not start with #EXTM3U".into(),
         ));
     }
+    Ok(lines)
+}
+
+/// Master playlist をパース。
+pub fn parse_master(text: &str, base: &Url) -> Result<MasterPlaylist, ApiError> {
+    let lines = read_playlist_lines(text)?;
 
     struct PendingStreamInf {
         bandwidth: Option<u64>,
@@ -164,12 +170,7 @@ pub fn parse_master(text: &str, base: &Url) -> Result<MasterPlaylist, ApiError> 
 
 /// Media playlist をパース。`base` は media playlist 自身の URL。
 pub fn parse_media(text: &str, base: &Url) -> Result<MediaPlaylist, ApiError> {
-    let lines = normalize_lines(text);
-    if lines.first().map(|s| s.as_str()) != Some("#EXTM3U") {
-        return Err(ApiError::ResponseShape(
-            "playlist does not start with #EXTM3U".into(),
-        ));
-    }
+    let lines = read_playlist_lines(text)?;
 
     let mut init_uri: Option<String> = None;
     let mut init_byte_range: Option<ByteRange> = None;

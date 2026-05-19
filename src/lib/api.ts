@@ -203,10 +203,13 @@ export type UserMylistSummary = {
   isPublic: boolean;
 };
 
-export type UserMylistsResponse = {
-  items: UserMylistSummary[];
+/** `{ items, totalCount }` 形式のページネーション付きレスポンス。 */
+export type Paged<T> = {
+  items: T[];
   totalCount: number;
 };
+
+export type UserMylistsResponse = Paged<UserMylistSummary>;
 
 export async function fetchUserMylists(ownerId: string): Promise<UserMylistsResponse> {
   return invoke<UserMylistsResponse>('fetch_user_mylists', { ownerId });
@@ -220,10 +223,7 @@ export type UserSeriesSummary = {
   itemsCount?: number;
 };
 
-export type UserSeriesListResponse = {
-  items: UserSeriesSummary[];
-  totalCount: number;
-};
+export type UserSeriesListResponse = Paged<UserSeriesSummary>;
 
 export async function fetchUserSeriesList(ownerId: string): Promise<UserSeriesListResponse> {
   return invoke<UserSeriesListResponse>('fetch_user_series_list', { ownerId });
@@ -321,6 +321,25 @@ export type LocalPlayerCommentDto = {
   nicoruCount: number | null;
   score: number | null;
 };
+
+/** `LocalPlayerCommentDto` (Rust 由来、null 明示) を player 内部用の
+ *  `PlayerComment` (`?:` 省略) に変換する。`null → undefined` の差を吸収するだけ。 */
+export function dtoToPlayerComment(c: LocalPlayerCommentDto): PlayerComment {
+  return {
+    id: c.id,
+    no: c.no,
+    vposMs: c.vposMs,
+    content: c.content,
+    mail: c.mail,
+    commands: c.commands,
+    userId: c.userId ?? undefined,
+    postedAt: c.postedAt ?? undefined,
+    fork: c.fork,
+    isOwner: c.isOwner,
+    nicoruCount: c.nicoruCount ?? undefined,
+    score: c.score ?? undefined,
+  };
+}
 
 export type LibraryTagDto = {
   name: string;

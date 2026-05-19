@@ -15,8 +15,8 @@ use crate::api::comment::{Comment, CommentApi, ThreadsClient};
 use crate::api::search::{SearchApi, SnapshotSearchClient};
 use crate::api::types::{SearchQuery, SearchResponse};
 use crate::api::video::{
-    quality_candidates, NiconicoWatchClient, NvCommentSetup, SeriesInfo, WatchApi, WatchOwner,
-    WatchVideoMeta,
+    json_value_as_id_string, quality_candidates, NiconicoWatchClient, NvCommentSetup, SeriesInfo,
+    WatchApi, WatchOwner, WatchVideoMeta,
 };
 use crate::downloader::tools;
 use crate::downloader::ytdlp as ytdlp_mod;
@@ -81,6 +81,129 @@ fn validate_video_id(video_id: &str) -> std::result::Result<(), AppError> {
         return Err(AppError::Other(format!("invalid video_id: {video_id:?}")));
     }
     Ok(())
+}
+
+/// niconico の nvapi 系エンドポイントは全部このブラウザ UA を期待する。
+/// UA が `reqwest/...` のままだと一部レスポンスが空配列で返ってくる。
+const NV_USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 \
+    (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
+
+/// owner_id / user_id の入力検証。空・長すぎ・英数字以外は弾く。
+fn validate_owner_id(owner_id: &str) -> std::result::Result<(), AppError> {
+    if owner_id.is_empty()
+        || owner_id.len() > 64
+        || !owner_id.chars().all(|c| c.is_ascii_alphanumeric())
+    {
+        return Err(AppError::Other(format!("invalid owner_id: {owner_id:?}")));
+    }
+    Ok(())
+}
+
+/// niconico nvapi/HTML 取得用の `reqwest::Client` を作る。
+fn build_nv_client() -> std::result::Result<reqwest::Client, AppError> {
+    reqwest::Client::builder()
+        .user_agent(NV_USER_AGENT)
+        .build()
+        .map_err(crate::error::ApiError::from)
+        .map_err(AppError::from)
+}
+
+/// 既に解決済みの `content_id` / `user_id` / `channel_id` と JSON ノードから
+/// `UserVideoItem` を組み立てる。タイトル/サムネ/カウンタ系は呼び出し側 3 箇所
+/// (ユーザー動画 API / マイリスト動画 API / シリーズ HTML スクレイプ) で全く
+/// 同じパスを舐めているのでここに集約する。`id` 自体は API ごとに型/フィールド
+/// 名/フォールバック先が違うので呼び出し側で抽出する責務にしている。
+fn build_user_video_item(
+    v: &serde_json::Value,
+    content_id: String,
+    user_id: Option<i64>,
+    channel_id: Option<i64>,
+) -> UserVideoItem {
+    UserVideoItem {
+        content_id,
+        title: v["title"].as_str().unwrap_or("(無題)").to_string(),
+        thumbnail_url: v["thumbnail"]["url"]
+            .as_str()
+            .or_else(|| v["thumbnail"]["listingUrl"].as_str())
+            .or_else(|| v["thumbnailUrl"].as_str())
+            .map(String::from),
+        length_seconds: v["duration"]
+            .as_i64()
+            .or_else(|| v["lengthSeconds"].as_i64()),
+        view_counter: v["count"]["view"]
+            .as_i64()
+            .or_else(|| v["viewCounter"].as_i64()),
+        comment_counter: v["count"]["comment"]
+            .as_i64()
+            .or_else(|| v["commentCounter"].as_i64()),
+        mylist_counter: v["count"]["mylist"]
+            .as_i64()
+            .or_else(|| v["mylistCounter"].as_i64()),
+        start_time: v["registeredAt"]
+            .as_str()
+            .or_else(|| v["startTime"].as_str())
+            .map(String::from),
+        user_id,
+        channel_id,
+    }
+}
+
+/// `nvapi /v1/users/{id}/{kind}?page=...&pageSize=...` 系の「ページング付き一覧」
+/// レスポンスから `(items_array, total_count)` を取り出す。
+/// items は `data.{primary_array}` を優先し、無ければ `data.items` を見る
+/// (niconico の API バージョン差を吸収するための fallback)。
+async fn nv_fetch_paged_list(
+    client: &reqwest::Client,
+    url: &str,
+    cookie: Option<String>,
+    err_label: &str,
+    primary_array: &str,
+) -> Result<(Vec<serde_json::Value>, i64)> {
+    let (json, _body) = nv_get_json(client, url, cookie, err_label).await?;
+    let total_count = json["data"]["totalCount"].as_i64().unwrap_or(0);
+    let items_val = json["data"][primary_array]
+        .as_array()
+        .or_else(|| json["data"]["items"].as_array())
+        .cloned()
+        .unwrap_or_default();
+    Ok((items_val, total_count))
+}
+
+/// nvapi.nicovideo.jp 系エンドポイントへ GET し、`(parsed_json, body_text)` を返す。
+/// 失敗時は `err_label` を含む `AppError::Other` を返す。`body_text` はデバッグ用に
+/// プレビューしたい呼び出し側のために生で渡す。
+async fn nv_get_json(
+    client: &reqwest::Client,
+    url: &str,
+    cookie: Option<String>,
+    err_label: &str,
+) -> Result<(serde_json::Value, String)> {
+    let mut req = client
+        .get(url)
+        .header("X-Frontend-Id", "6")
+        .header("X-Frontend-Version", "0")
+        .header(header::REFERER, "https://www.nicovideo.jp/")
+        .header(header::ACCEPT, "application/json");
+
+    if let Some(c) = cookie {
+        req = req.header(header::COOKIE, c);
+    }
+
+    let resp = req.send().await.map_err(crate::error::ApiError::from)?;
+    let status = resp.status();
+    let body = resp.text().await.map_err(crate::error::ApiError::from)?;
+
+    if !status.is_success() {
+        let preview: String = body.chars().take(200).collect();
+        tracing::warn!(%url, %status, body = %preview, "{err_label}");
+        return Err(AppError::Other(format!(
+            "{err_label} ({status}): {preview}"
+        )));
+    }
+
+    let json: serde_json::Value =
+        serde_json::from_str(&body).map_err(crate::error::ApiError::from)?;
+    Ok((json, body))
 }
 
 /// Forward a WebView console message to the Rust tracing pipeline.
@@ -551,19 +674,8 @@ pub async fn fetch_user_videos(
     sort_order: String,
     store: State<'_, Arc<SessionStore>>,
 ) -> Result<UserVideosResponse> {
-    if owner_id.is_empty()
-        || owner_id.len() > 64
-        || !owner_id.chars().all(|c| c.is_ascii_alphanumeric())
-    {
-        return Err(AppError::Other(format!("invalid owner_id: {owner_id:?}")));
-    }
-    let client = reqwest::Client::builder()
-        .user_agent(
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 \
-             (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-        )
-        .build()
-        .map_err(crate::error::ApiError::from)?;
+    validate_owner_id(&owner_id)?;
+    let client = build_nv_client()?;
 
     let url = if owner_kind == "channel" {
         format!(
@@ -578,34 +690,16 @@ pub async fn fetch_user_videos(
         )
     };
 
-    let mut req = client
-        .get(&url)
-        .header("X-Frontend-Id", "6")
-        .header("X-Frontend-Version", "0")
-        .header(header::REFERER, "https://www.nicovideo.jp/")
-        .header(header::ACCEPT, "application/json");
-
-    if let Some(cookie) = store.cookie_header() {
-        req = req.header(header::COOKIE, cookie);
-    }
-
-    let resp = req.send().await.map_err(crate::error::ApiError::from)?;
-    let status = resp.status();
-    let body = resp.text().await.map_err(crate::error::ApiError::from)?;
-
-    if !status.is_success() {
-        let preview: String = body.chars().take(200).collect();
-        tracing::warn!(%url, %status, body = %preview, "user videos API error");
-        return Err(AppError::Other(format!(
-            "ユーザー動画 API エラー ({status}): {preview}"
-        )));
-    }
-
-    let json: serde_json::Value =
-        serde_json::from_str(&body).map_err(crate::error::ApiError::from)?;
+    let (json, body) = nv_get_json(
+        &client,
+        &url,
+        store.cookie_header(),
+        "ユーザー動画 API エラー",
+    )
+    .await?;
 
     let preview: String = body.chars().take(500).collect();
-    tracing::info!(%url, %status, body = %preview, "user videos API response");
+    tracing::info!(%url, body = %preview, "user videos API response");
 
     let total_count = json["data"]["totalCount"]
         .as_i64()
@@ -636,27 +730,8 @@ pub async fn fetch_user_videos(
         if id.is_empty() {
             continue;
         }
-        let thumb = v["thumbnail"]["url"]
-            .as_str()
-            .or_else(|| v["thumbnail"]["listingUrl"].as_str())
-            .or_else(|| v["thumbnailUrl"].as_str())
-            .map(String::from);
-        let dur = v["duration"]
-            .as_i64()
-            .or_else(|| v["lengthSeconds"].as_i64());
-        let views = v["count"]["view"]
-            .as_i64()
-            .or_else(|| v["viewCounter"].as_i64());
-        let coms = v["count"]["comment"]
-            .as_i64()
-            .or_else(|| v["commentCounter"].as_i64());
-        let mys = v["count"]["mylist"]
-            .as_i64()
-            .or_else(|| v["mylistCounter"].as_i64());
-        let start = v["registeredAt"]
-            .as_str()
-            .or_else(|| v["startTime"].as_str())
-            .map(String::from);
+        // ユーザー動画 API は user/channel id が string で返るケースがあるので
+        // i64 / 数字文字列の双方を受ける lax 抽出を使う。
         let parse_id = |value: &serde_json::Value| {
             value
                 .as_i64()
@@ -670,19 +745,7 @@ pub async fn fetch_user_videos(
         } else {
             None
         };
-        let title = v["title"].as_str().unwrap_or("(無題)").to_string();
-        items.push(UserVideoItem {
-            content_id: id,
-            title,
-            thumbnail_url: thumb,
-            length_seconds: dur,
-            view_counter: views,
-            comment_counter: coms,
-            mylist_counter: mys,
-            start_time: start,
-            user_id: uid,
-            channel_id: cid,
-        });
+        items.push(build_user_video_item(v, id, uid, cid));
     }
 
     Ok(UserVideosResponse {
@@ -702,42 +765,21 @@ pub async fn fetch_series_videos(
     _page_size: u32,
     store: State<'_, Arc<SessionStore>>,
 ) -> Result<UserVideosResponse> {
-    let client = reqwest::Client::builder()
-        .user_agent(
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 \
-             (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-        )
-        .build()
-        .map_err(crate::error::ApiError::from)?;
+    let client = build_nv_client()?;
 
-    // Step 1: get series metadata from NV API
-    let meta_url = format!("https://nvapi.nicovideo.jp/v1/series/{series_id}",);
-
-    let mut meta_req = client
-        .get(&meta_url)
-        .header("X-Frontend-Id", "6")
-        .header("X-Frontend-Version", "0")
-        .header(header::REFERER, "https://www.nicovideo.jp/")
-        .header(header::ACCEPT, "application/json");
-
-    if let Some(cookie) = store.cookie_header() {
-        meta_req = meta_req.header(header::COOKIE, cookie);
-    }
-
-    let meta_resp = meta_req
-        .send()
-        .await
-        .map_err(crate::error::ApiError::from)?;
-    let meta_status = meta_resp.status();
-    let meta_body = meta_resp
-        .text()
-        .await
-        .map_err(crate::error::ApiError::from)?;
-
-    let meta_json: serde_json::Value = if meta_status.is_success() {
-        serde_json::from_str(&meta_body).unwrap_or_default()
-    } else {
-        serde_json::Value::Null
+    // Step 1: get series metadata from NV API. メタ取得は失敗しても致命的じゃ
+    // ないので 4xx でも Null で先へ進む (Step2/3 が動画一覧を別経路で取りに行く)。
+    let meta_url = format!("https://nvapi.nicovideo.jp/v1/series/{series_id}");
+    let meta_json = match nv_get_json(
+        &client,
+        &meta_url,
+        store.cookie_header(),
+        "シリーズメタ API エラー",
+    )
+    .await
+    {
+        Ok((j, _)) => j,
+        Err(_) => serde_json::Value::Null,
     };
 
     let series_title = meta_json["data"]["detail"]["title"]
@@ -861,51 +903,14 @@ fn extract_series_videos_from_html(html: &str) -> Vec<UserVideoItem> {
             &raw_item
         };
 
-        let id = v["id"]
-            .as_i64()
-            .map(|n| n.to_string())
-            .or_else(|| v["id"].as_str().map(String::from))
+        let id = json_value_as_id_string(&v["id"])
             .or_else(|| v["contentId"].as_str().map(String::from))
             .unwrap_or_default();
         if id.is_empty() {
             continue;
         }
-
-        let thumb = v["thumbnail"]["url"]
-            .as_str()
-            .or_else(|| v["thumbnailUrl"].as_str())
-            .map(String::from);
-        let dur = v["duration"]
-            .as_i64()
-            .or_else(|| v["lengthSeconds"].as_i64());
-        let views = v["count"]["view"]
-            .as_i64()
-            .or_else(|| v["viewCounter"].as_i64());
-        let coms = v["count"]["comment"]
-            .as_i64()
-            .or_else(|| v["commentCounter"].as_i64());
-        let mys = v["count"]["mylist"]
-            .as_i64()
-            .or_else(|| v["mylistCounter"].as_i64());
-        let start = v["registeredAt"]
-            .as_str()
-            .or_else(|| v["startTime"].as_str())
-            .map(String::from);
         let uid = v["owner"]["id"].as_i64().or_else(|| v["userId"].as_i64());
-        let title = v["title"].as_str().unwrap_or("(無題)").to_string();
-
-        items.push(UserVideoItem {
-            content_id: id,
-            title,
-            thumbnail_url: thumb,
-            length_seconds: dur,
-            view_counter: views,
-            comment_counter: coms,
-            mylist_counter: mys,
-            start_time: start,
-            user_id: uid,
-            channel_id: None,
-        });
+        items.push(build_user_video_item(v, id, uid, None));
     }
 
     items
@@ -1044,63 +1049,22 @@ pub async fn fetch_user_mylists(
     owner_id: String,
     store: State<'_, Arc<SessionStore>>,
 ) -> Result<UserMylistsResponse> {
-    if owner_id.is_empty()
-        || owner_id.len() > 64
-        || !owner_id.chars().all(|c| c.is_ascii_alphanumeric())
-    {
-        return Err(AppError::Other(format!("invalid owner_id: {owner_id:?}")));
-    }
+    validate_owner_id(&owner_id)?;
 
-    let client = reqwest::Client::builder()
-        .user_agent(
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 \
-             (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-        )
-        .build()
-        .map_err(crate::error::ApiError::from)?;
-
+    let client = build_nv_client()?;
     let url = format!("https://nvapi.nicovideo.jp/v1/users/{owner_id}/mylists?page=1&pageSize=50");
-
-    let mut req = client
-        .get(&url)
-        .header("X-Frontend-Id", "6")
-        .header("X-Frontend-Version", "0")
-        .header(header::REFERER, "https://www.nicovideo.jp/")
-        .header(header::ACCEPT, "application/json");
-
-    if let Some(cookie) = store.cookie_header() {
-        req = req.header(header::COOKIE, cookie);
-    }
-
-    let resp = req.send().await.map_err(crate::error::ApiError::from)?;
-    let status = resp.status();
-    let body = resp.text().await.map_err(crate::error::ApiError::from)?;
-
-    if !status.is_success() {
-        let preview: String = body.chars().take(200).collect();
-        return Err(AppError::Other(format!(
-            "マイリスト一覧 API エラー ({status}): {preview}"
-        )));
-    }
-
-    let json: serde_json::Value =
-        serde_json::from_str(&body).map_err(crate::error::ApiError::from)?;
-
-    let total_count = json["data"]["totalCount"].as_i64().unwrap_or(0);
-
-    let items_val = json["data"]["mylists"]
-        .as_array()
-        .or_else(|| json["data"]["items"].as_array())
-        .cloned()
-        .unwrap_or_default();
+    let (items_val, total_count) = nv_fetch_paged_list(
+        &client,
+        &url,
+        store.cookie_header(),
+        "マイリスト一覧 API エラー",
+        "mylists",
+    )
+    .await?;
 
     let mut items = Vec::with_capacity(items_val.len());
     for node in &items_val {
-        let id = node["id"]
-            .as_i64()
-            .map(|n| n.to_string())
-            .or_else(|| node["id"].as_str().map(String::from))
-            .unwrap_or_default();
+        let id = json_value_as_id_string(&node["id"]).unwrap_or_default();
         if id.is_empty() {
             continue;
         }
@@ -1150,63 +1114,22 @@ pub async fn fetch_user_series_list(
     owner_id: String,
     store: State<'_, Arc<SessionStore>>,
 ) -> Result<UserSeriesListResponse> {
-    if owner_id.is_empty()
-        || owner_id.len() > 64
-        || !owner_id.chars().all(|c| c.is_ascii_alphanumeric())
-    {
-        return Err(AppError::Other(format!("invalid owner_id: {owner_id:?}")));
-    }
+    validate_owner_id(&owner_id)?;
 
-    let client = reqwest::Client::builder()
-        .user_agent(
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 \
-             (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-        )
-        .build()
-        .map_err(crate::error::ApiError::from)?;
-
+    let client = build_nv_client()?;
     let url = format!("https://nvapi.nicovideo.jp/v1/users/{owner_id}/series?page=1&pageSize=50");
-
-    let mut req = client
-        .get(&url)
-        .header("X-Frontend-Id", "6")
-        .header("X-Frontend-Version", "0")
-        .header(header::REFERER, "https://www.nicovideo.jp/")
-        .header(header::ACCEPT, "application/json");
-
-    if let Some(cookie) = store.cookie_header() {
-        req = req.header(header::COOKIE, cookie);
-    }
-
-    let resp = req.send().await.map_err(crate::error::ApiError::from)?;
-    let status = resp.status();
-    let body = resp.text().await.map_err(crate::error::ApiError::from)?;
-
-    if !status.is_success() {
-        let preview: String = body.chars().take(200).collect();
-        return Err(AppError::Other(format!(
-            "シリーズ一覧 API エラー ({status}): {preview}"
-        )));
-    }
-
-    let json: serde_json::Value =
-        serde_json::from_str(&body).map_err(crate::error::ApiError::from)?;
-
-    let total_count = json["data"]["totalCount"].as_i64().unwrap_or(0);
-
-    let items_val = json["data"]["series"]
-        .as_array()
-        .or_else(|| json["data"]["items"].as_array())
-        .cloned()
-        .unwrap_or_default();
+    let (items_val, total_count) = nv_fetch_paged_list(
+        &client,
+        &url,
+        store.cookie_header(),
+        "シリーズ一覧 API エラー",
+        "series",
+    )
+    .await?;
 
     let mut items = Vec::with_capacity(items_val.len());
     for node in &items_val {
-        let id = node["id"]
-            .as_i64()
-            .map(|n| n.to_string())
-            .or_else(|| node["id"].as_str().map(String::from))
-            .unwrap_or_default();
+        let id = json_value_as_id_string(&node["id"]).unwrap_or_default();
         if id.is_empty() {
             continue;
         }
@@ -1242,45 +1165,20 @@ pub async fn fetch_mylist_videos(
     page_size: u32,
     store: State<'_, Arc<SessionStore>>,
 ) -> Result<UserVideosResponse> {
-    let client = reqwest::Client::builder()
-        .user_agent(
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 \
-             (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-        )
-        .build()
-        .map_err(crate::error::ApiError::from)?;
-
+    let client = build_nv_client()?;
     let url = format!(
         "https://nvapi.nicovideo.jp/v2/mylists/{mylist_id}?pageSize={page_size}&page={page}"
     );
-
-    let mut req = client
-        .get(&url)
-        .header("X-Frontend-Id", "6")
-        .header("X-Frontend-Version", "0")
-        .header(header::REFERER, "https://www.nicovideo.jp/")
-        .header(header::ACCEPT, "application/json");
-
-    if let Some(cookie) = store.cookie_header() {
-        req = req.header(header::COOKIE, cookie);
-    }
-
-    let resp = req.send().await.map_err(crate::error::ApiError::from)?;
-    let status = resp.status();
-    let body = resp.text().await.map_err(crate::error::ApiError::from)?;
-
-    if !status.is_success() {
-        let preview: String = body.chars().take(200).collect();
-        return Err(AppError::Other(format!(
-            "マイリスト動画 API エラー ({status}): {preview}"
-        )));
-    }
-
-    let json: serde_json::Value =
-        serde_json::from_str(&body).map_err(crate::error::ApiError::from)?;
+    let (json, body) = nv_get_json(
+        &client,
+        &url,
+        store.cookie_header(),
+        "マイリスト動画 API エラー",
+    )
+    .await?;
 
     let preview: String = body.chars().take(500).collect();
-    tracing::info!(%url, %status, body = %preview, "mylist videos API response");
+    tracing::info!(%url, body = %preview, "mylist videos API response");
 
     let mylist = &json["data"]["mylist"];
     let total_count = mylist["totalItemCount"]
@@ -1293,50 +1191,14 @@ pub async fn fetch_mylist_videos(
     let mut items = Vec::with_capacity(items_val.len());
     for raw_item in &items_val {
         let v = &raw_item["video"];
-        let id = v["id"]
-            .as_i64()
-            .map(|n| n.to_string())
-            .or_else(|| v["id"].as_str().map(String::from))
+        let id = json_value_as_id_string(&v["id"])
             .or_else(|| v["contentId"].as_str().map(String::from))
             .unwrap_or_default();
         if id.is_empty() {
             continue;
         }
-        let thumb = v["thumbnail"]["url"]
-            .as_str()
-            .or_else(|| v["thumbnail"]["listingUrl"].as_str())
-            .or_else(|| v["thumbnailUrl"].as_str())
-            .map(String::from);
-        let dur = v["duration"]
-            .as_i64()
-            .or_else(|| v["lengthSeconds"].as_i64());
-        let views = v["count"]["view"]
-            .as_i64()
-            .or_else(|| v["viewCounter"].as_i64());
-        let coms = v["count"]["comment"]
-            .as_i64()
-            .or_else(|| v["commentCounter"].as_i64());
-        let mys = v["count"]["mylist"]
-            .as_i64()
-            .or_else(|| v["mylistCounter"].as_i64());
-        let start = v["registeredAt"]
-            .as_str()
-            .or_else(|| v["startTime"].as_str())
-            .map(String::from);
         let uid = v["owner"]["id"].as_i64().or_else(|| v["userId"].as_i64());
-        let title = v["title"].as_str().unwrap_or("(無題)").to_string();
-        items.push(UserVideoItem {
-            content_id: id,
-            title,
-            thumbnail_url: thumb,
-            length_seconds: dur,
-            view_counter: views,
-            comment_counter: coms,
-            mylist_counter: mys,
-            start_time: start,
-            user_id: uid,
-            channel_id: None,
-        });
+        items.push(build_user_video_item(v, id, uid, None));
     }
 
     Ok(UserVideosResponse {
@@ -1841,22 +1703,22 @@ pub async fn delete_library_video(
 /// 内蔵 HTTP サーバ経由のローカル動画 URL を返す。
 /// `<video src=...>` にこれを渡すと Range/206 が効いて WebKitGTK でも
 /// 後方シークが正しく動く（Blob URL では NG）。
-#[tauri::command]
-pub fn local_video_url(video_id: String, server: State<'_, LocalServer>) -> Result<String> {
-    validate_video_id(&video_id)?;
+fn build_local_media_url(video_id: &str, file: &str, server: &LocalServer) -> Result<String> {
+    validate_video_id(video_id)?;
     Ok(format!(
-        "http://127.0.0.1:{}/v/{}/video.mp4",
-        server.port, video_id
+        "http://127.0.0.1:{}/v/{}/{}",
+        server.port, video_id, file
     ))
 }
 
 #[tauri::command]
+pub fn local_video_url(video_id: String, server: State<'_, LocalServer>) -> Result<String> {
+    build_local_media_url(&video_id, "video.mp4", &server)
+}
+
+#[tauri::command]
 pub fn local_audio_url(video_id: String, server: State<'_, LocalServer>) -> Result<String> {
-    validate_video_id(&video_id)?;
-    Ok(format!(
-        "http://127.0.0.1:{}/v/{}/audio.mp4",
-        server.port, video_id
-    ))
+    build_local_media_url(&video_id, "audio.mp4", &server)
 }
 
 /// ローカルファイルの中身をバイナリとして JS 側へ返す。
@@ -2379,6 +2241,20 @@ pub struct CommentSearchHitDto {
     pub posted_at: Option<i64>,
 }
 
+impl From<query::CommentSearchHit> for CommentSearchHitDto {
+    fn from(h: query::CommentSearchHit) -> Self {
+        Self {
+            video_id: h.video_id,
+            video_title: h.video_title,
+            comment_no: h.comment_no,
+            vpos_ms: h.vpos_ms,
+            content: h.content,
+            user_hash: h.user_hash,
+            posted_at: h.posted_at,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CommentSearchResultDto {
@@ -2386,6 +2262,17 @@ pub struct CommentSearchResultDto {
     pub total_count: i64,
     pub offset: u32,
     pub limit: u32,
+}
+
+impl From<query::CommentSearchResult> for CommentSearchResultDto {
+    fn from(r: query::CommentSearchResult) -> Self {
+        Self {
+            items: r.items.into_iter().map(Into::into).collect(),
+            total_count: r.total_count,
+            offset: r.offset,
+            limit: r.limit,
+        }
+    }
 }
 
 #[tauri::command]
@@ -2403,24 +2290,7 @@ pub async fn search_library_comments(
     let conn = library.lock().await;
     let result = query::search_comments(&conn, &query, offset.unwrap_or(0), limit.unwrap_or(50))
         .map_err(AppError::from)?;
-    Ok(CommentSearchResultDto {
-        items: result
-            .items
-            .into_iter()
-            .map(|h| CommentSearchHitDto {
-                video_id: h.video_id,
-                video_title: h.video_title,
-                comment_no: h.comment_no,
-                vpos_ms: h.vpos_ms,
-                content: h.content,
-                user_hash: h.user_hash,
-                posted_at: h.posted_at,
-            })
-            .collect(),
-        total_count: result.total_count,
-        offset: result.offset,
-        limit: result.limit,
-    })
+    Ok(result.into())
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -2430,6 +2300,17 @@ pub struct UploaderInfoDto {
     pub uploader_name: Option<String>,
     pub video_count: i64,
     pub total_duration_sec: i64,
+}
+
+impl From<query::UploaderInfo> for UploaderInfoDto {
+    fn from(u: query::UploaderInfo) -> Self {
+        Self {
+            uploader_id: u.uploader_id,
+            uploader_name: u.uploader_name,
+            video_count: u.video_count,
+            total_duration_sec: u.total_duration_sec,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -2446,6 +2327,22 @@ pub struct PlaylistDto {
     pub item_count: i64,
 }
 
+impl From<crate::library::playlists::Playlist> for PlaylistDto {
+    fn from(p: crate::library::playlists::Playlist) -> Self {
+        Self {
+            id: p.id,
+            name: p.name,
+            parent_id: p.parent_id,
+            source: p.source,
+            source_official_id: p.source_official_id,
+            imported_at: p.imported_at,
+            created_at: p.created_at,
+            updated_at: p.updated_at,
+            item_count: p.item_count,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlaylistItemDto {
@@ -2459,6 +2356,21 @@ pub struct PlaylistItemDto {
     pub duration_sec: Option<i64>,
 }
 
+impl From<crate::library::playlists::PlaylistItem> for PlaylistItemDto {
+    fn from(i: crate::library::playlists::PlaylistItem) -> Self {
+        Self {
+            playlist_id: i.playlist_id,
+            video_id: i.video_id,
+            position: i.position,
+            added_at: i.added_at,
+            note: i.note,
+            title: i.title,
+            thumbnail_url: i.thumbnail_url,
+            duration_sec: i.duration_sec,
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn list_library_uploaders(
     limit: Option<u32>,
@@ -2466,15 +2378,7 @@ pub async fn list_library_uploaders(
 ) -> Result<Vec<UploaderInfoDto>> {
     let conn = library.lock().await;
     let uploaders = query::list_uploaders(&conn, limit.unwrap_or(50)).map_err(AppError::from)?;
-    Ok(uploaders
-        .into_iter()
-        .map(|u| UploaderInfoDto {
-            uploader_id: u.uploader_id,
-            uploader_name: u.uploader_name,
-            video_count: u.video_count,
-            total_duration_sec: u.total_duration_sec,
-        })
-        .collect())
+    Ok(uploaders.into_iter().map(Into::into).collect())
 }
 
 // =================== プレイリスト CRUD ===================
@@ -2483,20 +2387,7 @@ pub async fn list_library_uploaders(
 pub async fn list_playlists(library: State<'_, Arc<LibraryHandle>>) -> Result<Vec<PlaylistDto>> {
     let conn = library.lock().await;
     let playlists = crate::library::playlists::list_playlists(&conn).map_err(AppError::from)?;
-    Ok(playlists
-        .into_iter()
-        .map(|p| PlaylistDto {
-            id: p.id,
-            name: p.name,
-            parent_id: p.parent_id,
-            source: p.source,
-            source_official_id: p.source_official_id,
-            imported_at: p.imported_at,
-            created_at: p.created_at,
-            updated_at: p.updated_at,
-            item_count: p.item_count,
-        })
-        .collect())
+    Ok(playlists.into_iter().map(Into::into).collect())
 }
 
 #[tauri::command]
@@ -2508,17 +2399,7 @@ pub async fn create_playlist(
     let conn = library.lock().await;
     let playlist = crate::library::playlists::create_playlist(&conn, &name, parent_id)
         .map_err(AppError::from)?;
-    Ok(PlaylistDto {
-        id: playlist.id,
-        name: playlist.name,
-        parent_id: playlist.parent_id,
-        source: playlist.source,
-        source_official_id: playlist.source_official_id,
-        imported_at: playlist.imported_at,
-        created_at: playlist.created_at,
-        updated_at: playlist.updated_at,
-        item_count: playlist.item_count,
-    })
+    Ok(playlist.into())
 }
 
 #[tauri::command]
@@ -2531,17 +2412,7 @@ pub async fn update_playlist(
     let conn = library.lock().await;
     let playlist = crate::library::playlists::update_playlist(&conn, id, &name, parent_id)
         .map_err(AppError::from)?;
-    Ok(PlaylistDto {
-        id: playlist.id,
-        name: playlist.name,
-        parent_id: playlist.parent_id,
-        source: playlist.source,
-        source_official_id: playlist.source_official_id,
-        imported_at: playlist.imported_at,
-        created_at: playlist.created_at,
-        updated_at: playlist.updated_at,
-        item_count: playlist.item_count,
-    })
+    Ok(playlist.into())
 }
 
 #[tauri::command]
@@ -2558,19 +2429,7 @@ pub async fn list_playlist_items(
     let conn = library.lock().await;
     let items = crate::library::playlists::list_playlist_items(&conn, playlist_id)
         .map_err(AppError::from)?;
-    Ok(items
-        .into_iter()
-        .map(|i| PlaylistItemDto {
-            playlist_id: i.playlist_id,
-            video_id: i.video_id,
-            position: i.position,
-            added_at: i.added_at,
-            note: i.note,
-            title: i.title,
-            thumbnail_url: i.thumbnail_url,
-            duration_sec: i.duration_sec,
-        })
-        .collect())
+    Ok(items.into_iter().map(Into::into).collect())
 }
 
 #[tauri::command]
@@ -2590,16 +2449,7 @@ pub async fn add_playlist_item(
         note.as_deref(),
     )
     .map_err(AppError::from)?;
-    Ok(PlaylistItemDto {
-        playlist_id: item.playlist_id,
-        video_id: item.video_id,
-        position: item.position,
-        added_at: item.added_at,
-        note: item.note,
-        title: item.title,
-        thumbnail_url: item.thumbnail_url,
-        duration_sec: item.duration_sec,
-    })
+    Ok(item.into())
 }
 
 #[tauri::command]
@@ -2628,6 +2478,21 @@ pub struct PlayHistoryItemDto {
     pub duration_sec: Option<i64>,
 }
 
+impl From<crate::library::history::PlayHistoryItem> for PlayHistoryItemDto {
+    fn from(i: crate::library::history::PlayHistoryItem) -> Self {
+        Self {
+            id: i.id,
+            video_id: i.video_id,
+            played_at: i.played_at,
+            duration_played_sec: i.duration_played_sec,
+            position_at_close_sec: i.position_at_close_sec,
+            title: i.title,
+            thumbnail_url: i.thumbnail_url,
+            duration_sec: i.duration_sec,
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn record_playback(
     video_id: String,
@@ -2643,16 +2508,7 @@ pub async fn record_playback(
         position_at_close_sec,
     )
     .map_err(AppError::from)?;
-    Ok(PlayHistoryItemDto {
-        id: item.id,
-        video_id: item.video_id,
-        played_at: item.played_at,
-        duration_played_sec: item.duration_played_sec,
-        position_at_close_sec: item.position_at_close_sec,
-        title: item.title,
-        thumbnail_url: item.thumbnail_url,
-        duration_sec: item.duration_sec,
-    })
+    Ok(item.into())
 }
 
 #[tauri::command]
@@ -2665,19 +2521,7 @@ pub async fn list_play_history(
     let items =
         crate::library::history::list_play_history(&conn, offset.unwrap_or(0), limit.unwrap_or(50))
             .map_err(AppError::from)?;
-    Ok(items
-        .into_iter()
-        .map(|i| PlayHistoryItemDto {
-            id: i.id,
-            video_id: i.video_id,
-            played_at: i.played_at,
-            duration_played_sec: i.duration_played_sec,
-            position_at_close_sec: i.position_at_close_sec,
-            title: i.title,
-            thumbnail_url: i.thumbnail_url,
-            duration_sec: i.duration_sec,
-        })
-        .collect())
+    Ok(items.into_iter().map(Into::into).collect())
 }
 
 #[tauri::command]
