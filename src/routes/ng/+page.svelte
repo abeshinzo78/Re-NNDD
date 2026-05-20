@@ -72,6 +72,12 @@
       nScopeComment = true;
       nScopeSearch = false;
       nScopeRanking = false;
+    } else if (nTarget === 'uploader_name') {
+      // 投稿者名はランキング限定 (検索 API のレスポンスに名前フィールドが
+      // 無く isHitBlocked 側で評価できないため、search scope だと no-op)
+      nScopeComment = false;
+      nScopeSearch = false;
+      nScopeRanking = true;
     } else {
       nScopeComment = false;
       nScopeSearch = true;
@@ -241,11 +247,23 @@
     </div>
     <div class="row scopes">
       <span class="muted">適用範囲:</span>
-      <label class="chip"><input type="checkbox" bind:checked={nScopeSearch} />検索</label>
+      <label class="chip" class:disabled={nTarget === 'uploader_name'}>
+        <input
+          type="checkbox"
+          bind:checked={nScopeSearch}
+          disabled={nTarget === 'uploader_name'}
+        />検索
+      </label>
       <label class="chip"><input type="checkbox" bind:checked={nScopeRanking} />ランキング</label>
       <label class="chip"><input type="checkbox" bind:checked={nScopeComment} />コメ</label>
       <button type="submit" class="primary">追加</button>
     </div>
+    {#if nTarget === 'uploader_name'}
+      <div class="muted small">
+        投稿者名は検索 API のレスポンスに名前が含まれないため、検索 scope
+        では機能しません。ランキングのみ有効です。
+      </div>
+    {/if}
     {#if nError}<div class="error">{nError}</div>{/if}
   </form>
 
@@ -410,6 +428,10 @@
     color: var(--theme-text-soft);
     cursor: pointer;
     user-select: none;
+  }
+  .chip.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
   button {
     background: var(--theme-border);

@@ -2753,20 +2753,29 @@ pub async fn fetch_ranking_html(url: String) -> Result<String> {
 /// `@kongyo2/nicotag-api` の `extractAndParse` でタグ情報を抜くために、
 /// ランキング NG のタグフィルタから呼ばれる。
 /// (フロントエンドからは CORS と認証 Cookie の都合で直 fetch できない。)
+///
+/// 一部の動画 (年齢制限・会員限定・ログイン必須など) は認証 Cookie が
+/// 無いと watch ページが返らずタグが取れない。ログイン中であれば
+/// 保存済みセッション Cookie を付けて取得を試みる。
 #[tauri::command]
-pub async fn fetch_video_html(video_id: String) -> Result<String> {
+pub async fn fetch_video_html(
+    video_id: String,
+    store: State<'_, Arc<SessionStore>>,
+) -> Result<String> {
     validate_video_id(&video_id)?;
 
     let url = format!("https://www.nicovideo.jp/watch/{video_id}");
     let client = build_nv_client()?;
 
-    let resp = client
+    let mut req = client
         .get(&url)
         .header(header::ACCEPT, "text/html,application/xhtml+xml")
-        .header(header::ACCEPT_LANGUAGE, "ja,en-US;q=0.9,en;q=0.8")
-        .send()
-        .await
-        .map_err(crate::error::ApiError::from)?;
+        .header(header::ACCEPT_LANGUAGE, "ja,en-US;q=0.9,en;q=0.8");
+    if let Some(cookie) = store.cookie_header() {
+        req = req.header(header::COOKIE, cookie);
+    }
+
+    let resp = req.send().await.map_err(crate::error::ApiError::from)?;
 
     let status = resp.status();
     if !status.is_success() {
