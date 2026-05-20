@@ -2749,6 +2749,37 @@ pub async fn fetch_ranking_html(url: String) -> Result<String> {
     Ok(html)
 }
 
+/// niconico 動画ページ (watch/{id}) の HTML を取得する。
+/// `@kongyo2/nicotag-api` の `extractAndParse` でタグ情報を抜くために、
+/// ランキング NG のタグフィルタから呼ばれる。
+/// (フロントエンドからは CORS と認証 Cookie の都合で直 fetch できない。)
+#[tauri::command]
+pub async fn fetch_video_html(video_id: String) -> Result<String> {
+    validate_video_id(&video_id)?;
+
+    let url = format!("https://www.nicovideo.jp/watch/{video_id}");
+    let client = build_nv_client()?;
+
+    let resp = client
+        .get(&url)
+        .header(header::ACCEPT, "text/html,application/xhtml+xml")
+        .header(header::ACCEPT_LANGUAGE, "ja,en-US;q=0.9,en;q=0.8")
+        .send()
+        .await
+        .map_err(crate::error::ApiError::from)?;
+
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(AppError::Other(format!(
+            "動画ページ取得エラー ({status}): {url}"
+        )));
+    }
+
+    let html = resp.text().await.map_err(crate::error::ApiError::from)?;
+    tracing::debug!(%video_id, size = html.len(), "watch HTML fetched");
+    Ok(html)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

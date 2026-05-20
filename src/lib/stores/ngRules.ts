@@ -10,6 +10,7 @@
 export type NgTargetType =
   | 'video_title'
   | 'uploader'
+  | 'uploader_name'
   | 'video_id'
   | 'tag'
   | 'category'
@@ -20,6 +21,9 @@ export type NgMatchMode = 'exact' | 'partial' | 'regex';
 
 export type NgScope = 'ranking' | 'search' | 'comment';
 
+/** `tag` ルール専用: ロックタグ / ユーザータグ / 両方 のどれにマッチさせるか。 */
+export type NgTagKind = 'lock' | 'user' | 'both';
+
 export type NgRule = {
   id: string;
   targetType: NgTargetType;
@@ -29,6 +33,8 @@ export type NgRule = {
   scopeSearch: boolean;
   scopeComment: boolean;
   enabled: boolean;
+  /** `targetType === 'tag'` のときのみ意味を持つ。未指定なら `both`。 */
+  tagKind?: NgTagKind;
   note?: string;
   createdAt: number;
   hitCount: number;
@@ -113,6 +119,7 @@ export function importNgRules(rules: Partial<NgRule>[]): number {
       scopeSearch: r.scopeSearch ?? true,
       scopeComment: r.scopeComment ?? true,
       enabled: r.enabled ?? true,
+      tagKind: r.tagKind,
       note: r.note,
       createdAt: Date.now(),
       hitCount: 0,
@@ -278,4 +285,75 @@ export function filterComments<T extends CommentLike>(rules: NgRule[], comments:
     out.push(c);
   }
   return out;
+}
+
+/* ------------------------------------------------------------------------ */
+/*  Ranking-specific apply helpers.                                         */
+/* ------------------------------------------------------------------------ */
+
+export type RankingItemLike = {
+  id: string;
+  title: string;
+  owner?: {
+    id?: string | null;
+    name?: string | null;
+    ownerType?: string | null;
+  } | null;
+};
+
+export type RankingTagInfo = {
+  name: string;
+  isLocked: boolean;
+};
+
+/**
+ * ランキング項目を NG ルールでフィルタする際のマッチ判定。
+ * `tags` が `undefined` の場合は「タグ未取得」として扱い、タグ系ルールはスキップする。
+ */
+export function isRankingItemBlocked(
+  rules: NgRule[],
+  item: RankingItemLike,
+  tags?: ReadonlyArray<RankingTagInfo>,
+): { blocked: boolean; ruleId?: string } {
+  for (const r of rules) {
+    if (!r.enabled || !r.scopeRanking) continue;
+    const match = compileRule(r);
+    if (!match) continue;
+
+    switch (r.targetType) {
+      case 'video_id':
+        if (match(item.id)) return { blocked: true, ruleId: r.id };
+        break;
+      case 'video_title':
+        if (match(item.title)) return { blocked: true, ruleId: r.id };
+        break;
+      case 'uploader': {
+        // user/12345, channel/ch12345, 数字のみ なども許容。
+        const ownerId = item.owner?.id;
+        if (!ownerId) break;
+        const ownerType = item.owner?.ownerType ?? 'user';
+        const candidates = [ownerId, `${ownerType}/${ownerId}`, `user/${ownerId}`];
+        if (candidates.some((c) => match(c))) return { blocked: true, ruleId: r.id };
+        break;
+      }
+      case 'uploader_name': {
+        const name = item.owner?.name;
+        if (name && match(name)) return { blocked: true, ruleId: r.id };
+        break;
+      }
+      case 'tag': {
+        if (!tags) break;
+        const kind: NgTagKind = r.tagKind ?? 'both';
+        for (const t of tags) {
+          if (kind === 'lock' && !t.isLocked) continue;
+          if (kind === 'user' && t.isLocked) continue;
+          if (match(t.name)) return { blocked: true, ruleId: r.id };
+        }
+        break;
+      }
+      default:
+        break;
+    }
+  }
+  return { blocked: false };
 }

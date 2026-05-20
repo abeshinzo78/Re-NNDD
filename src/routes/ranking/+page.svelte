@@ -1,16 +1,22 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { SvelteMap } from 'svelte/reactivity';
   import { invoke } from '@tauri-apps/api/core';
   import { extractAndParse, GENRE_KEY_BY_NAME, type RankingItem } from '@kongyo2/nicoran-api';
   import { formatNumber, formatDate, formatDuration, videoUrl } from '$lib/format';
   import { quickDownload } from '$lib/quickDownload';
   import {
     addNgRule,
+    isRankingItemBlocked,
     listNgRules,
     subscribeNgRules,
     type NgRule,
+    type NgTagKind,
     type NgTargetType,
+    type RankingTagInfo,
   } from '$lib/stores/ngRules';
+  import { fetchTagsBulk, getCachedTags } from '$lib/rankingTags';
+  import RankingNgPanel from '$lib/RankingNgPanel.svelte';
 
   type GenreName = keyof typeof GENRE_KEY_BY_NAME;
   type Term = 'hour' | '24h' | 'week' | 'month' | 'total';
@@ -62,24 +68,40 @@
 
   let ngRules = $state<NgRule[]>([]);
   let ngUnsub: (() => void) | null = null;
+  let showNgPanel = $state(false);
+  let rankingRuleCount = $state(0);
 
-  let displayed = $derived(applyNgFilter(items, ngRules));
+  // 動画 ID -> タグ配列。未取得は undefined。
+  const tagMap: SvelteMap<string, RankingTagInfo[] | undefined> = new SvelteMap();
+  let tagFetching = $state(false);
+  let tagFetchDone = $state(0);
+  let tagFetchTotal = $state(0);
+  let tagAbort: AbortController | null = null;
+
+  // タグ系のランキング NG ルールが 1 件でもあればタグ取得が必要。
+  let needsTags = $derived(
+    ngRules.some((r) => r.enabled && r.scopeRanking && r.targetType === 'tag'),
+  );
+
+  let displayed = $derived(applyNgFilter(items, ngRules, tagMap));
   let blockedCount = $derived(items.length - displayed.length);
 
-  function applyNgFilter(rankingItems: RankingItem[], rules: NgRule[]): RankingItem[] {
-    const videoIdRules = rules.filter((r) => r.targetType === 'video_id' && r.enabled);
-    const titleRules = rules.filter((r) => r.targetType === 'video_title' && r.enabled);
-
+  function applyNgFilter(
+    rankingItems: RankingItem[],
+    rules: NgRule[],
+    tags: SvelteMap<string, RankingTagInfo[] | undefined>,
+  ): RankingItem[] {
     return rankingItems.filter((item) => {
-      for (const r of videoIdRules) {
-        if (r.matchMode === 'exact' && item.id === r.pattern) return false;
-        if (r.matchMode === 'partial' && item.id.includes(r.pattern)) return false;
-      }
-      for (const r of titleRules) {
-        if (r.matchMode === 'exact' && item.title === r.pattern) return false;
-        if (r.matchMode === 'partial' && item.title.includes(r.pattern)) return false;
-      }
-      return true;
+      const r = isRankingItemBlocked(
+        rules,
+        {
+          id: item.id,
+          title: item.title,
+          owner: item.owner ?? null,
+        },
+        tags.get(item.id),
+      );
+      return !r.blocked;
     });
   }
 
@@ -90,8 +112,61 @@
 
     return () => {
       ngUnsub?.();
+      tagAbort?.abort();
     };
   });
+
+  // ルール変更 or items 変更時にタグを取り直す (必要な場合)
+  $effect(() => {
+    // 依存を明示
+    const _ = needsTags;
+    const ids = items.map((i) => i.id);
+    if (_ && ids.length > 0) {
+      void loadTagsFor(ids);
+    } else if (!_ && tagFetching) {
+      // タグ系ルールが消えたら進行中の取得を中断
+      tagAbort?.abort();
+      tagAbort = null;
+      tagFetching = false;
+    }
+  });
+
+  async function loadTagsFor(ids: string[]) {
+    // すでにキャッシュ済みのものを Map に流し込む
+    let allCached = true;
+    for (const id of ids) {
+      const cached = getCachedTags(id);
+      if (cached) {
+        tagMap.set(id, cached);
+      } else if (!tagMap.has(id)) {
+        tagMap.set(id, undefined);
+        allCached = false;
+      }
+    }
+    if (allCached) return;
+
+    tagAbort?.abort();
+    const ctrl = new AbortController();
+    tagAbort = ctrl;
+    tagFetching = true;
+    tagFetchDone = 0;
+    tagFetchTotal = ids.length;
+    try {
+      const result = await fetchTagsBulk(ids, {
+        concurrency: 8,
+        signal: ctrl.signal,
+        onProgress: (done, total) => {
+          tagFetchDone = done;
+          tagFetchTotal = total;
+        },
+      });
+      if (ctrl.signal.aborted) return;
+      for (const [id, tags] of result) tagMap.set(id, tags);
+    } finally {
+      if (tagAbort === ctrl) tagAbort = null;
+      tagFetching = false;
+    }
+  }
 
   async function runFetch() {
     pending = true;
@@ -143,15 +218,16 @@
 
   let ngMenuFor = $state<string | null>(null);
 
-  function doNg(targetType: NgTargetType, pattern: string) {
+  function doNg(targetType: NgTargetType, pattern: string, opts: { tagKind?: NgTagKind } = {}) {
     addNgRule({
       targetType,
-      matchMode: targetType === 'video_title' ? 'partial' : 'exact',
+      matchMode: targetType === 'video_title' || targetType === 'tag' ? 'partial' : 'exact',
       pattern,
       scopeRanking: true,
       scopeSearch: false,
       scopeComment: false,
       enabled: true,
+      tagKind: opts.tagKind,
     });
     ngMenuFor = null;
   }
@@ -199,11 +275,31 @@
           </button>
         {/each}
       </div>
+      <button
+        type="button"
+        class="ng-panel-toggle"
+        class:active={showNgPanel}
+        onclick={() => (showNgPanel = !showNgPanel)}
+        aria-expanded={showNgPanel}
+      >
+        <span class="caret">{showNgPanel ? '▼' : '▶'}</span>
+        ランキングNG設定 ({rankingRuleCount})
+      </button>
     </div>
   </div>
 
+  {#if showNgPanel}
+    <RankingNgPanel onChange={(n) => (rankingRuleCount = n)} />
+  {/if}
+
   {#if error}
     <div class="error" role="alert">エラー: {error}</div>
+  {/if}
+
+  {#if tagFetching}
+    <div class="info">
+      タグ取得中… {tagFetchDone} / {tagFetchTotal}
+    </div>
   {/if}
 
   {#if displayed.length > 0}
@@ -322,6 +418,15 @@
                     この投稿者 ({item.owner!.name ?? item.owner!.id}) を NG
                   </button>
                 {/if}
+                {#if item.owner?.name}
+                  <button
+                    type="button"
+                    class="ng-menu-item"
+                    onclick={() => doNg('uploader_name', item.owner!.name!)}
+                  >
+                    投稿者名「{item.owner!.name}」を NG（完全一致）
+                  </button>
+                {/if}
               </div>
             {/if}
             <button
@@ -416,6 +521,39 @@
     background: var(--theme-accent);
     color: white;
     border-color: var(--theme-accent);
+  }
+  .ng-panel-toggle {
+    margin-left: auto;
+    padding: 5px 12px;
+    border: 1px solid var(--theme-accent-soft, rgba(99, 102, 241, 0.4));
+    border-radius: 6px;
+    background: var(--theme-accent-bg, rgba(99, 102, 241, 0.18));
+    color: var(--theme-accent-soft, #a5b4fc);
+    font-size: 13px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .ng-panel-toggle:hover {
+    background: var(--theme-accent-bg, rgba(99, 102, 241, 0.28));
+  }
+  .ng-panel-toggle.active {
+    background: var(--theme-accent);
+    border-color: var(--theme-accent);
+    color: #fff;
+  }
+  .ng-panel-toggle .caret {
+    font-size: 10px;
+  }
+  .info {
+    background: var(--theme-accent-bg, rgba(99, 102, 241, 0.18));
+    border: 1px solid var(--theme-accent-soft, rgba(99, 102, 241, 0.4));
+    color: var(--theme-accent-soft, #a5b4fc);
+    padding: 6px 10px;
+    border-radius: 6px;
+    margin: 8px 0;
+    font-size: 12px;
   }
   .error {
     background: var(--theme-danger-bg);

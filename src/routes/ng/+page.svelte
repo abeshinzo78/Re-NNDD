@@ -18,6 +18,7 @@
   const TARGET_LABELS: Record<NgTargetType, string> = {
     video_title: '動画タイトル',
     uploader: '投稿者',
+    uploader_name: '投稿者名',
     video_id: '動画 ID',
     tag: 'タグ',
     category: 'カテゴリ',
