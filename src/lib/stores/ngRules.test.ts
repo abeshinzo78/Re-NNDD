@@ -6,7 +6,9 @@ import {
   type RankingTagInfo,
 } from './ngRules';
 
-function makeRule(overrides: Partial<NgRule> & Pick<NgRule, 'targetType' | 'matchMode' | 'pattern'>): NgRule {
+function makeRule(
+  overrides: Partial<NgRule> & Pick<NgRule, 'targetType' | 'matchMode' | 'pattern'>,
+): NgRule {
   return {
     id: 'r1',
     scopeRanking: true,
@@ -37,7 +39,9 @@ describe('isRankingItemBlocked', () => {
   });
 
   test('video_title partial match blocks', () => {
-    const rules = [makeRule({ targetType: 'video_title', matchMode: 'partial', pattern: '替え歌' })];
+    const rules = [
+      makeRule({ targetType: 'video_title', matchMode: 'partial', pattern: '替え歌' }),
+    ];
     expect(isRankingItemBlocked(rules, item).blocked).toBe(true);
   });
 
@@ -102,9 +106,7 @@ describe('isRankingItemBlocked', () => {
   });
 
   test('tag rule is skipped when tags are not provided yet', () => {
-    const rules = [
-      makeRule({ targetType: 'tag', matchMode: 'partial', pattern: 'ニコニコ' }),
-    ];
+    const rules = [makeRule({ targetType: 'tag', matchMode: 'partial', pattern: 'ニコニコ' })];
     // tags=undefined → ルール無効化扱い (= ブロックしない)
     expect(isRankingItemBlocked(rules, item, undefined).blocked).toBe(false);
   });

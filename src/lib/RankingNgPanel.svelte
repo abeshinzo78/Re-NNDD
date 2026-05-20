@@ -325,11 +325,8 @@
             <span class="pill">{describeTagKind(r.tagKind)}</span>
             <span class="pill">{describeMode(r.matchMode)}</span>
             <code>{r.pattern}</code>
-            <button
-              type="button"
-              class="x"
-              aria-label="削除"
-              onclick={() => removeRule(r.id)}>×</button
+            <button type="button" class="x" aria-label="削除" onclick={() => removeRule(r.id)}
+              >×</button
             >
           </li>
         {/each}
@@ -374,11 +371,8 @@
         {#each uploaderIdRules as r (r.id)}
           <li>
             <code>{r.pattern}</code>
-            <button
-              type="button"
-              class="x"
-              aria-label="削除"
-              onclick={() => removeRule(r.id)}>×</button
+            <button type="button" class="x" aria-label="削除" onclick={() => removeRule(r.id)}
+              >×</button
             >
           </li>
         {/each}
@@ -423,11 +417,8 @@
           <li>
             <span class="pill">{describeMode(r.matchMode)}</span>
             <code>{r.pattern}</code>
-            <button
-              type="button"
-              class="x"
-              aria-label="削除"
-              onclick={() => removeRule(r.id)}>×</button
+            <button type="button" class="x" aria-label="削除" onclick={() => removeRule(r.id)}
+              >×</button
             >
           </li>
         {/each}
@@ -475,11 +466,8 @@
           <li>
             <span class="pill">{describeMode(r.matchMode)}</span>
             <code>{r.pattern}</code>
-            <button
-              type="button"
-              class="x"
-              aria-label="削除"
-              onclick={() => removeRule(r.id)}>×</button
+            <button type="button" class="x" aria-label="削除" onclick={() => removeRule(r.id)}
+              >×</button
             >
           </li>
         {/each}
@@ -522,11 +510,8 @@
         {#each videoIdRules as r (r.id)}
           <li>
             <code>{r.pattern}</code>
-            <button
-              type="button"
-              class="x"
-              aria-label="削除"
-              onclick={() => removeRule(r.id)}>×</button
+            <button type="button" class="x" aria-label="削除" onclick={() => removeRule(r.id)}
+              >×</button
             >
           </li>
         {/each}
