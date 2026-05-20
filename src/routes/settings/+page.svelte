@@ -367,7 +367,10 @@
           </div>
         </form>
       {:else}
-        <p class="hint" style="padding:12px;border:1px solid var(--theme-border-strong);border-radius:8px">
+        <p
+          class="hint"
+          style="padding:12px;border:1px solid var(--theme-border-strong);border-radius:8px"
+        >
           MFA セッションを取得できませんでした。下の「Cookie 直入れ」から <code>user_session</code> を貼り付けてください。
         </p>
       {/if}
