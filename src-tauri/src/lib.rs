@@ -117,6 +117,7 @@ pub fn run() {
             commands::delete_setting,
             commands::get_app_info,
             commands::fetch_ranking_html,
+            commands::fetch_video_html,
         ])
         .run(tauri::generate_context!())
     {
