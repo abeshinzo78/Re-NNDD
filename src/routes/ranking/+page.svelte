@@ -132,18 +132,20 @@
   });
 
   async function loadTagsFor(ids: string[]) {
-    // すでにキャッシュ済みのものを Map に流し込む
-    let allCached = true;
+    // すでにキャッシュ済みのものを Map に流し込む。
+    // `tagMap` に id が存在しても値が undefined のもの (= 前回の placeholder
+    // か取得失敗) はキャッシュ済みとは見なさず、再取得対象に含める。
+    let needsFetch = false;
     for (const id of ids) {
       const cached = getCachedTags(id);
       if (cached) {
         tagMap.set(id, cached);
-      } else if (!tagMap.has(id)) {
-        tagMap.set(id, undefined);
-        allCached = false;
+      } else {
+        if (!tagMap.has(id)) tagMap.set(id, undefined);
+        needsFetch = true;
       }
     }
-    if (allCached) return;
+    if (!needsFetch) return;
 
     tagAbort?.abort();
     const ctrl = new AbortController();
@@ -156,6 +158,7 @@
         concurrency: 8,
         signal: ctrl.signal,
         onProgress: (done, total) => {
+          if (tagAbort !== ctrl) return;
           tagFetchDone = done;
           tagFetchTotal = total;
         },
@@ -163,8 +166,13 @@
       if (ctrl.signal.aborted) return;
       for (const [id, tags] of result) tagMap.set(id, tags);
     } finally {
-      if (tagAbort === ctrl) tagAbort = null;
-      tagFetching = false;
+      // 自分が現役のコントローラのときだけ in-progress フラグを下ろす。
+      // 並走中に新しい loadTagsFor が走った場合、古い finally で flag を
+      // 落とすと新しい fetch の進行表示が消えてしまうため。
+      if (tagAbort === ctrl) {
+        tagAbort = null;
+        tagFetching = false;
+      }
     }
   }
 
@@ -297,7 +305,7 @@
   {/if}
 
   {#if tagFetching}
-    <div class="info">
+    <div class="tag-progress">
       タグ取得中… {tagFetchDone} / {tagFetchTotal}
     </div>
   {/if}
@@ -546,7 +554,7 @@
   .ng-panel-toggle .caret {
     font-size: 10px;
   }
-  .info {
+  .tag-progress {
     background: var(--theme-accent-bg, rgba(99, 102, 241, 0.18));
     border: 1px solid var(--theme-accent-soft, rgba(99, 102, 241, 0.4));
     color: var(--theme-accent-soft, #a5b4fc);

@@ -14,6 +14,7 @@
     deleteNgRule,
     listNgRules,
     subscribeNgRules,
+    updateNgRule,
     type NgMatchMode,
     type NgRule,
     type NgTagKind,
@@ -251,7 +252,15 @@
   }
 
   function removeRule(id: string) {
-    deleteNgRule(id);
+    // パネルはランキング scope のみ責任を持つ。他 scope (search / comment)
+    // も併用しているルールは `scopeRanking` だけ落とす。
+    const r = rules.find((x) => x.id === id);
+    if (!r) return;
+    if (r.scopeSearch || r.scopeComment) {
+      updateNgRule(id, { scopeRanking: false });
+    } else {
+      deleteNgRule(id);
+    }
   }
 
   function describeMode(m: NgMatchMode): string {
