@@ -22,7 +22,5 @@ export async function fetchRelatedVideos(
   limit = 12,
 ): Promise<SearchHit[]> {
   const items = await fetchRecommendedVideos(videoId, limit);
-  return items
-    .filter((item) => item.contentId && item.contentId !== videoId)
-    .map(toSearchHit);
+  return items.filter((item) => item.contentId && item.contentId !== videoId).map(toSearchHit);
 }

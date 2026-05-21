@@ -1,9 +1,10 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { beforeNavigate } from '$app/navigation';
+  import { beforeNavigate, goto } from '$app/navigation';
   import { page } from '$app/state';
   import Player from '$lib/player/Player.svelte';
   import CommentList from '$lib/player/CommentList.svelte';
+  import QueueBanner from '$lib/QueueBanner.svelte';
   import {
     deleteLibraryVideo,
     dtoToPlayerComment,
@@ -20,6 +21,14 @@
   import { getBool, getStr, loadSettings } from '$lib/stores/settings.svelte';
   import { sanitizeDescriptionHtml } from '$lib/sanitize';
   import { miniPlayer } from '$lib/player/miniPlayerStore.svelte';
+  import {
+    advanceQueue,
+    getQueue,
+    hasNextInQueue,
+    itemHref,
+    setQueueIndexByVideoId,
+    subscribeQueue,
+  } from '$lib/stores/playbackQueue';
 
   let local = $state<LocalPlaybackPayload | null>(null);
   let localSrc = $state<string | null>(null);
@@ -49,6 +58,34 @@
   let isClassicTheme = $derived(theme === 'niconico-classic');
   let loadingFor: string | null = null;
   let loop = $state(false);
+  // ユーザが Player の loop ボタンを明示的に操作したかを記録する。
+  // true の間は後段の自動再計算 (キュー変更によるリセットなど) を抑止する。
+  let loopUserSet = $state(false);
+
+  function computeDefaultLoop(id: string): boolean {
+    if (!getBool('playback.always_loop')) return false;
+    const fromQueue = page.url.searchParams.get('from') === 'queue';
+    return !(fromQueue && hasNextInQueue(id));
+  }
+
+  // 「ユーザが今キュー再生中である」確証がある時だけ forceAutoplay。
+  // bookmark / shared URL で `?from=queue` 残骸付きでも、キューに乗って
+  // いない動画では `playback.autoplay=false` 設定を尊重する (codex
+  // r3283322762)。
+  function shouldForceAutoplay(id: string): boolean {
+    if (page.url.searchParams.get('from') !== 'queue') return false;
+    const q = getQueue();
+    if (!q) return false;
+    return q.items[q.index]?.videoId === id;
+  }
+
+  // キュー停止/進行で loop の既定値が変わるケースに追従する (codex review)。
+  const unsubQueueLoop = subscribeQueue(() => {
+    if (loopUserSet) return;
+    const id = local?.videoId ?? videoId;
+    if (!id) return;
+    loop = computeDefaultLoop(id);
+  });
 
   let panelWidth = $state(320);
   let dragging = $state(false);
@@ -63,6 +100,26 @@
     if (from === 'history') {
       backHref = '/history';
       backLabel = '← 履歴に戻る';
+    } else if (from === 'queue') {
+      const q = getQueue();
+      if (q) {
+        if (q.context === 'mylist') {
+          backHref = `/playlists?mylistId=${encodeURIComponent(q.contextId)}`;
+          backLabel = `← マイリスト「${q.label}」に戻る`;
+        } else if (q.context === 'smart') {
+          backHref = `/playlists/smart/${q.contextId}`;
+          backLabel = `← スマートプレイリスト「${q.label}」に戻る`;
+        } else if (q.context === 'series') {
+          backHref = `/series/${q.contextId}`;
+          backLabel = `← シリーズ「${q.label}」に戻る`;
+        } else {
+          backHref = '/library';
+          backLabel = '← ライブラリに戻る';
+        }
+      } else {
+        backHref = '/library';
+        backLabel = '← ライブラリに戻る';
+      }
     } else {
       backHref = '/library';
       backLabel = '← ライブラリに戻る';
@@ -87,7 +144,8 @@
     try {
       // 設定と再生情報を並列取得
       const [, result] = await Promise.all([loadSettings(), prepareLocalPlayback(id)]);
-      loop = getBool('playback.always_loop');
+      loop = computeDefaultLoop(id);
+      loopUserSet = false;
       if (loadingFor !== id) return;
       if (!result) {
         error = `${id} はライブラリに無い、または video.mp4 が見つかりません。`;
@@ -130,8 +188,24 @@
     void load(videoId);
   });
 
+  $effect(() => {
+    if (videoId) setQueueIndexByVideoId(videoId);
+  });
+
   function handleSeek(t: number) {
     playerRef?.seek(t);
+  }
+
+  function handleEnded() {
+    if (!getBool('playback.autoplay_queue')) return;
+    const q = getQueue();
+    if (!q) return;
+    const idx = q.items.findIndex((it) => it.videoId === (local?.videoId ?? videoId));
+    if (idx < 0) return;
+    const nxt = q.items[idx + 1];
+    if (!nxt) return;
+    advanceQueue();
+    void goto(itemHref(nxt));
   }
 
   function getResumePosition(id: string): number {
@@ -239,6 +313,7 @@
       },
       title: snapTitle,
       comments: visibleComments,
+      rawComments: comments,
       resumePosition: t,
       expandHref: snapHref,
       loop,
@@ -281,7 +356,7 @@
   // このガードを通って mini へ伝播する。
   $effect(() => {
     if (pipActiveForThis && local && commentsSettled) {
-      miniPlayer.updateComments(local.videoId, visibleComments);
+      miniPlayer.updateComments(local.videoId, visibleComments, comments);
     }
   });
 
@@ -320,6 +395,7 @@
 
   onDestroy(() => {
     ngUnsub();
+    unsubQueueLoop();
   });
 </script>
 
@@ -346,6 +422,8 @@
       >
     {/if}
   </div>
+
+  <QueueBanner videoId={local?.videoId ?? videoId} />
 
   {#if remuxMessage}
     <div class="info">{remuxMessage}</div>
@@ -457,11 +535,16 @@
               videoTitle={lp.title}
               videoId={lp.videoId}
               onTime={handleTimeUpdate}
+              onEnded={handleEnded}
               resumePosition={getResumePosition(lp.videoId)}
               {loop}
-              onLoopChange={(v) => (loop = v)}
+              onLoopChange={(v) => {
+                loop = v;
+                loopUserSet = true;
+              }}
               onTogglePip={togglePip}
               pipActive={false}
+              forceAutoplay={shouldForceAutoplay(lp.videoId)}
             />
           {/if}
           {#if ngFilteredCount > 0}

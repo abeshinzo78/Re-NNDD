@@ -14,6 +14,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import Player from './Player.svelte';
+  import type { PlayerComment } from './types';
   import {
     MINI_CONSTANTS,
     miniPlayer,
@@ -22,8 +23,20 @@
     clampWidth,
     type MiniGeometry,
   } from './miniPlayerStore.svelte';
-  import { getNum } from '$lib/stores/settings.svelte';
+  import { getBool, getNum } from '$lib/stores/settings.svelte';
   import { readSavedMuted, readSavedVolume } from './volumePersistence';
+  import {
+    dtoToPlayerComment,
+    fetchVideoComments,
+    issueHlsUrl,
+    localAudioUrl,
+    localVideoUrl,
+    preparePlayback,
+    prepareLocalPlayback,
+  } from '$lib/api';
+  import { advanceQueue, getQueue, hasNextInQueue, itemHref } from '$lib/stores/playbackQueue';
+  import { filterComments, listNgRules, subscribeNgRules, type NgRule } from '$lib/stores/ngRules';
+  import { addHistory } from '$lib/stores/history';
 
   type PlayerRef = {
     getVideo: () => HTMLVideoElement | null;
@@ -35,6 +48,13 @@
 
   let playerRef = $state<PlayerRef | undefined>();
   let container = $state<HTMLDivElement | null>(null);
+  // NG ルールは PiP 内のキュー進行で取得した新しい動画のコメに対して
+  // フィルタを再適用するために必要 (ページ側 +page.svelte の visibleComments
+  // 相当)。replaceSource() でコメを差し替えた直後、ページ側の updateComments
+  // 効果は別 videoId なので発火しないため、ここで自前で持つ必要がある。
+  let ngRules = $state<NgRule[]>(listNgRules());
+  const ngUnsubMini = subscribeNgRules(() => (ngRules = listNgRules()));
+  onDestroy(() => ngUnsubMini());
   let paused = $state(true);
   let currentTime = $state(0);
   let duration = $state(0);
@@ -89,6 +109,186 @@
     if (paused) playerRef.play();
     else playerRef.pause();
   }
+
+  // PiP 内で再生中の動画が自然終了した時のオートプレイキュー進行。
+  // ページ側 (/video/[id], /library/[id]) の `handleEnded` と同じ意味論を
+  // mini 内で完結させる。PiP は元ページのライフサイクルから独立しているので
+  // PiP 中に「次へ」が止まらないように mini が自前で処理する必要がある。
+  //
+  // ページ側と違って goto しないのは、PiP は元ページが placeholder に化けて
+  // いる前提で動いており、別 URL へ goto すると新ページが「別動画 PiP 中」
+  // プレースホルダを表示してしまい UX が壊れるため。代わりに store の
+  // `replaceSource` で mini の中身だけを差し替える (YouTube ライク)。
+  //
+  // ページ側 `load()` と同じく、コメントと再生位置 (resume) もここで補充する。
+  // 単純に `localAudioUrl()` を呼ぶと `local_audio_url` コマンドは 4 文字
+  // atom を URL に詰めるだけで存在チェックをしないので、audio.mp4 が無い
+  // muxed 動画でも URL が返り 404 連発になる。`prepareLocalPlayback` の
+  // `localAudioPath` を見て分離音声がある時だけ URL を取る。
+  function getResumeFor(id: string): number {
+    if (!getBool('playback.resume_enabled')) return 0;
+    try {
+      return Number(localStorage.getItem(`resume:${id}`)) || 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  // 各 await の後、ユーザがキューを止めたり PiP を閉じたりしていないか
+  // 再確認する。古い fetch が遅延到着して PiP に意図しない動画を流し込む
+  // のを防ぐ (codex review)。`true` を返したら abort してよい。
+  //
+  // index も比較するのが重要 (codex r3283322738): ユーザが QueueBanner の
+  // Next/Prev で手動進行した場合、items[idx+1] は変わらなくても cursor が
+  // 動いている。それを見落とすと旧 handleEnded が advanceQueue() を再度
+  // 走らせて persisted index が二重前進し、queue item を飛ばす。
+  function staleSnapshot(currentId: string, expectedNxtId: string, idx: number): boolean {
+    if (!miniPlayer.active) return true;
+    if (miniPlayer.source?.videoId !== currentId) return true;
+    const q2 = getQueue();
+    if (!q2) return true;
+    if (q2.index !== idx) return true;
+    if (q2.items[idx + 1]?.videoId !== expectedNxtId) return true;
+    return false;
+  }
+
+  // キュー次 item の loop 値を計算。常時ループ設定があり、かつ後続 item が
+  // 無い (= キュー末尾) 時のみループを許可する。ページ側 computeDefaultLoop
+  // と同じ規則。
+  function nextItemLoop(nxtId: string): boolean {
+    if (!getBool('playback.always_loop')) return false;
+    return !hasNextInQueue(nxtId);
+  }
+
+  async function handleEnded() {
+    if (!getBool('playback.autoplay_queue')) return;
+    const q = getQueue();
+    if (!q) return;
+    const currentId = miniPlayer.source?.videoId;
+    if (!currentId) return;
+    const idx = q.items.findIndex((it) => it.videoId === currentId);
+    if (idx < 0) return;
+    const nxt = q.items[idx + 1];
+    if (!nxt) return;
+    try {
+      const expandHref = itemHref(nxt);
+      const title = nxt.title ?? nxt.videoId;
+      const resumePosition = getResumeFor(nxt.videoId);
+      if (nxt.source === 'online') {
+        // `preparePlayback` 1 IPC で hlsUrl + nvComment を取得し、続けて
+        // `fetchVideoComments` を発火する。先方の `/video/[id]` load() と同じ流れ。
+        const result = await preparePlayback(nxt.videoId);
+        if (staleSnapshot(currentId, nxt.videoId, idx)) return;
+        let comments: PlayerComment[] = [];
+        if (result.nvComment) {
+          try {
+            comments = await fetchVideoComments(result.nvComment);
+            if (staleSnapshot(currentId, nxt.videoId, idx)) return;
+          } catch (e) {
+            console.warn('[MiniPlayer] comment fetch on queue advance failed', e);
+          }
+        }
+        // ページ側 visibleComments と同じく NG ルールを適用してから渡す。
+        // raw も保存しておき、後で NG ルールが緩和された時に再フィルタで
+        // 復活できるようにする (codex r3283322745)。
+        const filtered = filterComments(ngRules, comments);
+        miniPlayer.replaceSource({
+          source: {
+            kind: 'online',
+            videoId: nxt.videoId,
+            hlsUrl: result.hlsUrl,
+            refreshHlsUrl: () => issueHlsUrl(nxt.videoId),
+          },
+          title,
+          expandHref,
+          comments: filtered,
+          rawComments: comments,
+          resumePosition,
+          loop: nextItemLoop(nxt.videoId),
+        });
+        // ページ side `load()` と同じく history へ記録 (PiP 内完結再生でも
+        // /history に出るように)。
+        addHistory({
+          videoId: result.video.id,
+          title: result.video.title,
+          thumbnailUrl: result.video.thumbnailUrl,
+          uploaderName: result.owner?.nickname,
+          duration: result.video.duration,
+          viewCount: result.video.viewCount,
+        });
+      } else {
+        // ローカルのコメントとメタは prepareLocalPlayback 一発で取れる。
+        const result = await prepareLocalPlayback(nxt.videoId);
+        if (staleSnapshot(currentId, nxt.videoId, idx)) return;
+        if (!result) {
+          console.warn('[MiniPlayer] queue advance: local playback unavailable for', nxt.videoId);
+          return;
+        }
+        const localSrc = await localVideoUrl(nxt.videoId);
+        if (staleSnapshot(currentId, nxt.videoId, idx)) return;
+        const localAudioSrc = result.localAudioPath ? await localAudioUrl(nxt.videoId) : undefined;
+        if (staleSnapshot(currentId, nxt.videoId, idx)) return;
+        const comments = result.comments.map(dtoToPlayerComment);
+        const filtered = filterComments(ngRules, comments);
+        miniPlayer.replaceSource({
+          source: {
+            kind: 'local',
+            videoId: nxt.videoId,
+            localSrc,
+            localAudioSrc,
+          },
+          title,
+          expandHref,
+          comments: filtered,
+          rawComments: comments,
+          resumePosition,
+          loop: nextItemLoop(nxt.videoId),
+        });
+        addHistory({
+          videoId: result.videoId,
+          title: result.title,
+          thumbnailUrl: result.thumbnailUrl ?? undefined,
+          uploaderName: result.uploaderName ?? undefined,
+          duration: result.durationSec,
+          viewCount: result.viewCount ?? undefined,
+          source: 'local',
+        });
+      }
+      // 成功してから index を進める。先に進めてしまうと fetch 失敗時に
+      // PiP は終わった動画のまま、永続キューだけが先に進む desync が起きる。
+      advanceQueue();
+    } catch (e) {
+      console.warn('[MiniPlayer] queue advance failed', e);
+    }
+  }
+
+  // PiP 内で NG ルールが変化したら現在表示中の comments を再フィルタする。
+  // 重要: 既にフィルタ済みの `miniPlayer.comments` ではなく、`rawComments`
+  // を元に再計算する (codex r3283322745)。そうしないとルールが緩和された
+  // 時に隠していた comment を復活させられない。
+  //
+  // 比較は要素一致まで見る (codex r3283322753)。長さだけだと、別 comment が
+  // 入れ替わっただけの NG 変更を取りこぼす。
+  $effect(() => {
+    if (!miniPlayer.active) return;
+    if (!miniPlayer.replacedFromQueue) return;
+    void ngRules; // subscribe
+    const reFiltered = filterComments(ngRules, miniPlayer.rawComments);
+    const current = miniPlayer.comments;
+    let same = reFiltered.length === current.length;
+    if (same) {
+      for (let i = 0; i < reFiltered.length; i++) {
+        if (reFiltered[i].id !== current[i].id) {
+          same = false;
+          break;
+        }
+      }
+    }
+    if (!same) {
+      const id = miniPlayer.source?.videoId;
+      if (id) miniPlayer.updateComments(id, reFiltered);
+    }
+  });
 
   function onTimeFromPlayer(t: number) {
     currentTime = t;
@@ -439,11 +639,13 @@
             comments={miniPlayer.comments}
             refreshHlsUrl={onlineSrc.refreshHlsUrl}
             onTime={onTimeFromPlayer}
+            onEnded={handleEnded}
             resumePosition={miniPlayer.resumePosition}
             loop={miniPlayer.loop}
             compact={true}
             initialMuted={miniPlayer.wasPlaying}
             onReadyForAudio={handleReadyForAudio}
+            forceAutoplay={miniPlayer.replacedFromQueue}
           />
         {:else if localSrcObj}
           <Player
@@ -453,11 +655,13 @@
             localAudioSrc={localSrcObj.localAudioSrc}
             comments={miniPlayer.comments}
             onTime={onTimeFromPlayer}
+            onEnded={handleEnded}
             resumePosition={miniPlayer.resumePosition}
             loop={miniPlayer.loop}
             compact={true}
             initialMuted={miniPlayer.wasPlaying}
             onReadyForAudio={handleReadyForAudio}
+            forceAutoplay={miniPlayer.replacedFromQueue}
           />
         {/if}
       {/key}

@@ -1,9 +1,10 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { beforeNavigate } from '$app/navigation';
+  import { beforeNavigate, goto } from '$app/navigation';
   import { page } from '$app/state';
   import Player from '$lib/player/Player.svelte';
   import CommentList from '$lib/player/CommentList.svelte';
+  import QueueBanner from '$lib/QueueBanner.svelte';
   import { fetchVideoComments, issueHlsUrl, preparePlayback, type SearchHit } from '$lib/api';
   import { quickDownload } from '$lib/quickDownload';
   import { formatDate, formatDuration, formatNumber, videoUrl } from '$lib/format';
@@ -17,6 +18,14 @@
   import { getBool, getStr, loadSettings } from '$lib/stores/settings.svelte';
   import { sanitizeDescriptionHtml } from '$lib/sanitize';
   import { miniPlayer } from '$lib/player/miniPlayerStore.svelte';
+  import {
+    advanceQueue,
+    getQueue,
+    hasNextInQueue,
+    itemHref,
+    setQueueIndexByVideoId,
+    subscribeQueue,
+  } from '$lib/stores/playbackQueue';
 
   // この route は **オンライン視聴専用**。ローカル再生は /library/[id] で行う。
   // 別ルートに分けることで、ネット接続が要らないときに偶発的に niconico を
@@ -55,6 +64,41 @@
   let isClassicTheme = $derived(theme === 'niconico-classic');
   let loadingFor: string | null = null;
   let loop = $state(false);
+  // ユーザが Player の loop ボタンを明示的に操作したかを記録する。
+  // true の間は後段の自動再計算 (キュー変更によるリセットなど) を抑止する。
+  let loopUserSet = $state(false);
+
+  // 既定 loop 値を計算する。`always_loop` を尊重しつつ、ユーザの明示的な
+  // 連続再生操作 (URL が `?from=queue`) と「キューに後続あり」を満たす時のみ
+  // ループを抑制する。生 URL や履歴遷移で偶然キューに含まれているだけの
+  // 動画では always_loop を維持する (= bug_019 への対処)。
+  function computeDefaultLoop(id: string): boolean {
+    if (!getBool('playback.always_loop')) return false;
+    const fromQueue = page.url.searchParams.get('from') === 'queue';
+    return !(fromQueue && hasNextInQueue(id));
+  }
+
+  // 「ユーザが今キュー再生中である」と確証できる時だけ forceAutoplay を返す。
+  // `?from=queue` だけでは bookmark / shared URL でも true になってしまい
+  // `playback.autoplay=false` 設定をすり抜けてしまう (codex r3283322762)。
+  // 永続キューが存在し、その index が今のページに一致する時のみ強制。
+  function shouldForceAutoplay(id: string): boolean {
+    if (page.url.searchParams.get('from') !== 'queue') return false;
+    const q = getQueue();
+    if (!q) return false;
+    return q.items[q.index]?.videoId === id;
+  }
+
+  // キューが ■ 停止 や advance で変化した時、ユーザが手動で loop を
+  // 弄っていなければ既定値を再評価する。これで「always_loop=true 設定の人が
+  // ページ滞在中にキューを止める → ループが死ぬ」を防ぐ (codex review)。
+  const unsubQueueLoop = subscribeQueue(() => {
+    if (loopUserSet) return;
+    const id = payload?.video.id ?? videoId;
+    if (!id) return;
+    loop = computeDefaultLoop(id);
+  });
+  onDestroy(() => unsubQueueLoop());
 
   let panelWidth = $state(320);
   let dragging = $state(false);
@@ -95,6 +139,32 @@
     } else if (from === 'ranking') {
       backHref = '/ranking';
       backLabel = '← ランキングに戻る';
+    } else if (from === 'queue') {
+      const q = getQueue();
+      if (q) {
+        if (q.context === 'series') {
+          backHref = `/series/${q.contextId}`;
+          backLabel = `← シリーズ「${q.label}」に戻る`;
+        } else if (q.context === 'mylist') {
+          backHref = `/playlists?mylistId=${encodeURIComponent(q.contextId)}`;
+          backLabel = `← マイリスト「${q.label}」に戻る`;
+        } else if (q.context === 'smart') {
+          backHref = `/playlists/smart/${q.contextId}`;
+          backLabel = `← スマートプレイリスト「${q.label}」に戻る`;
+        } else if (q.context === 'library') {
+          backHref = '/library';
+          backLabel = '← ライブラリに戻る';
+        } else if (q.context === 'user') {
+          backHref = `/user/${q.contextId}`;
+          backLabel = `← 「${q.label}」の投稿動画に戻る`;
+        } else {
+          backHref = '/playlists';
+          backLabel = '← プレイリストに戻る';
+        }
+      } else {
+        backHref = '/search';
+        backLabel = '← 検索に戻る';
+      }
     } else {
       const prev = loadSearchState();
       if (prev?.lastQuery) {
@@ -121,7 +191,8 @@
       // 設定と再生情報を並列取得
       const [, result] = await Promise.all([loadSettings(), preparePlayback(id)]);
       if (loadingFor !== id) return;
-      loop = getBool('playback.always_loop');
+      loop = computeDefaultLoop(id);
+      loopUserSet = false;
       payload = result;
       pending = false;
 
@@ -194,8 +265,26 @@
     void load(videoId);
   });
 
+  // 動画 ID が変わったらキューの index を合わせる (前後遷移ボタンの判定用)。
+  // 直接 URL を打って入ってきた場合もここで同期する。
+  $effect(() => {
+    if (videoId) setQueueIndexByVideoId(videoId);
+  });
+
   function handleSeek(t: number) {
     playerRef?.seek(t);
+  }
+
+  function handleEnded() {
+    if (!getBool('playback.autoplay_queue')) return;
+    const q = getQueue();
+    if (!q) return;
+    const idx = q.items.findIndex((it) => it.videoId === (payload?.videoId ?? videoId));
+    if (idx < 0) return;
+    const nxt = q.items[idx + 1];
+    if (!nxt) return;
+    advanceQueue();
+    void goto(itemHref(nxt));
   }
 
   function getResumePosition(id: string): number {
@@ -306,6 +395,7 @@
       },
       title: snapTitle,
       comments: visibleComments,
+      rawComments: comments,
       resumePosition: t,
       expandHref: snapHref,
       loop,
@@ -348,7 +438,7 @@
   // PiP 中はミニ側で取得済みコメの方が新しい可能性があるので、ミニ側にも反映
   $effect(() => {
     if (pipActiveForThis && payload) {
-      miniPlayer.updateComments(payload.videoId, visibleComments);
+      miniPlayer.updateComments(payload.videoId, visibleComments, comments);
     }
   });
 
@@ -421,6 +511,8 @@
   {#if dlMsg}
     <div class="dl-msg {dlMsg.kind}">{dlMsg.text}</div>
   {/if}
+
+  <QueueBanner videoId={payload?.video.id ?? videoId} />
 
   {#if pending}
     <div class="player-row">
@@ -536,11 +628,16 @@
               short={p.isShort}
               refreshHlsUrl={() => issueHlsUrl(p.videoId)}
               onTime={handleTimeUpdate}
+              onEnded={handleEnded}
               resumePosition={getResumePosition(p.videoId)}
               {loop}
-              onLoopChange={(v) => (loop = v)}
+              onLoopChange={(v) => {
+                loop = v;
+                loopUserSet = true;
+              }}
               onTogglePip={togglePip}
               pipActive={false}
+              forceAutoplay={shouldForceAutoplay(p.video.id)}
             />
           {/if}
           {#if ngFilteredCount > 0}
