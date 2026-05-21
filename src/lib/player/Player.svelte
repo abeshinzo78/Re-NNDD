@@ -49,6 +49,12 @@
     /** 無音ロードが完了し音声を引き継げる状態になった通知。`initialMuted=true`
      *  の時のみ発火し、1 度だけ呼ばれる。 */
     onReadyForAudio?: () => void;
+    /** 動画が自然終了した通知。`loop` 中は発火しない (内部でループ巻き戻しのみ行う)。
+     *  オートプレイキューの「次の動画へ進む」フックを親が刺すのに使う。 */
+    onEnded?: () => void;
+    /** `playback.autoplay=false` 設定でも自動再生を強制する。連続再生キューの
+     *  ような「ユーザが明示的に再生継続を指示した」コンテキストで使う。 */
+    forceAutoplay?: boolean;
   };
 
   let {
@@ -68,6 +74,8 @@
     onLoopChange,
     initialMuted = false,
     onReadyForAudio,
+    onEnded: onEndedExternal,
+    forceAutoplay = false,
     videoTitle = '',
     videoId = '',
   }: Props = $props();
@@ -763,6 +771,7 @@
     } else {
       paused = true;
       showControls();
+      onEndedExternal?.();
     }
   }
 
@@ -832,7 +841,9 @@
       }
       if (readSavedMuted()) video.muted = true;
       const autoplay = getBool('playback.autoplay');
-      if (autoplay) {
+      // forceAutoplay は連続再生キュー進行など「ユーザが明示的に継続再生
+      // を選んだ」コンテキスト用。`playback.autoplay=false` でも再生開始する。
+      if (autoplay || forceAutoplay) {
         void video.play().catch(() => undefined);
       }
     }

@@ -1,7 +1,9 @@
 <script lang="ts">
   import { page } from '$app/state';
+  import { goto } from '$app/navigation';
   import { fetchSeriesVideos, type UserVideoItem } from '$lib/api';
   import { formatDate, formatDuration, formatNumber } from '$lib/format';
+  import { setQueue, itemHref, type PlaybackQueueItem } from '$lib/stores/playbackQueue';
 
   let seriesId = $derived(page.params.id ?? '');
 
@@ -16,6 +18,26 @@
 
   function videoHref(id: string): string {
     return `/video/${id}?from=series&seriesId=${encodeURIComponent(seriesId)}&seriesTitle=${encodeURIComponent(seriesTitle)}`;
+  }
+
+  function toQueueItems(): PlaybackQueueItem[] {
+    return items
+      .filter((it) => !!it.contentId)
+      .map((it) => ({
+        videoId: it.contentId,
+        title: it.title,
+        thumbnailUrl: it.thumbnailUrl,
+        lengthSeconds: it.lengthSeconds,
+        source: 'online',
+      }));
+  }
+
+  function startPlayAll(startIndex = 0) {
+    const queueItems = toQueueItems();
+    if (queueItems.length === 0) return;
+    const idx = Math.max(0, Math.min(queueItems.length - 1, startIndex));
+    setQueue('series', seriesId, seriesTitle || seriesId, queueItems, idx);
+    void goto(itemHref(queueItems[idx]));
   }
 
   async function load() {
@@ -65,6 +87,18 @@
         <p class="desc">{seriesDescription}</p>
       {/if}
       <p class="count">{totalCount} 本の動画</p>
+      {#if items.length > 0}
+        <div class="play-actions">
+          <button
+            type="button"
+            class="play-all"
+            onclick={() => startPlayAll(0)}
+            title="先頭から順に連続再生"
+          >
+            ▶ 連続再生
+          </button>
+        </div>
+      {/if}
     </div>
   </header>
 
@@ -76,12 +110,17 @@
     <div class="muted">動画が見つかりませんでした。</div>
   {:else}
     <ul class="results">
-      {#each items as item (item.contentId)}
+      {#each items as item, i (item.contentId)}
         <li class="hit">
           {#if item.thumbnailUrl}
-            <a href={videoHref(item.contentId)}>
+            <button
+              type="button"
+              class="thumb-btn"
+              onclick={() => startPlayAll(i)}
+              title="ここから連続再生"
+            >
               <img class="thumb" src={item.thumbnailUrl} alt="" loading="lazy" />
-            </a>
+            </button>
           {:else}
             <div class="thumb placeholder"></div>
           {/if}
@@ -171,6 +210,33 @@
     font-size: 12px;
     color: var(--theme-text-muted);
     margin: 0;
+  }
+  .play-actions {
+    margin-top: 8px;
+    display: flex;
+    gap: 8px;
+  }
+  .play-all {
+    background: var(--theme-accent);
+    color: #fff;
+    border: 1px solid var(--theme-accent);
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .play-all:hover {
+    background: var(--theme-accent-hover);
+  }
+  .thumb-btn {
+    border: 0;
+    background: transparent;
+    padding: 0;
+    cursor: pointer;
+  }
+  .thumb-btn .thumb {
+    display: block;
   }
   .muted {
     color: var(--theme-text-muted);

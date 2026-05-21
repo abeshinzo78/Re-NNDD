@@ -73,6 +73,15 @@ export const SETTING_DEFS = [
     order: 35,
   },
   {
+    key: 'playback.autoplay_queue',
+    label: 'プレイリスト/シリーズの連続再生',
+    description: '連続再生キューが入っている時、現在の動画が終わると次の動画へ自動で遷移する',
+    section: 'playback',
+    default: true,
+    kind: 'bool',
+    order: 36,
+  },
+  {
     key: 'playback.default_rate',
     label: 'デフォルト再生速度',
     description: '動画を開いた直後の再生倍率',

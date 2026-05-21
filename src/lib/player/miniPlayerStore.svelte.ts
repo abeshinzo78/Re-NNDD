@@ -109,7 +109,11 @@ class MiniPlayerStore {
   active = $state(false);
   source = $state<MiniSource | null>(null);
   title = $state('');
+  /** NG ルール適用済み (= 実際に Player に渡す表示用) のコメント。 */
   comments = $state<PlayerComment[]>([]);
+  /** NG ルール適用前のソース・オブ・トゥルース。NG ルールが PiP 中に変更
+   *  された時、ここから再フィルタする (codex r3283322745)。 */
+  rawComments = $state<PlayerComment[]>([]);
   resumePosition = $state(0);
   expandHref = $state('/');
   loop = $state(false);
@@ -134,6 +138,10 @@ class MiniPlayerStore {
    *  停止状態で引き継いで「停止したい」意図を尊重する。引き継ぎ完了 (audioOwned)
    *  後は更新を停止する。 */
   sourcePaused = $state(false);
+  /** 直前の source 設定が `replaceSource` (= キュー advance) 由来かを示す。
+   *  Player 側で `playback.autoplay=false` 設定でも連続再生を行うフラグ。
+   *  `open()` でリセットされる (初回 PiP は autoplay 設定に従う)。 */
+  replacedFromQueue = $state(false);
   /** 初期化済みか (geometry を 1 度 localStorage からロードしたか) */
   private hydrated = false;
   /** close() 時に退避した復帰先情報。ページ側が consume して PiP 前の位置に復元する。 */
@@ -150,7 +158,10 @@ class MiniPlayerStore {
   open(args: {
     source: MiniSource;
     title: string;
+    /** Player に渡す表示用 (NG 適用済み)。 */
     comments: PlayerComment[];
+    /** NG 適用前。省略時は `comments` をそのまま使う。 */
+    rawComments?: PlayerComment[];
     resumePosition: number;
     expandHref: string;
     loop?: boolean;
@@ -161,6 +172,7 @@ class MiniPlayerStore {
     this.source = args.source;
     this.title = args.title;
     this.comments = args.comments;
+    this.rawComments = args.rawComments ?? args.comments;
     this.resumePosition = Math.max(0, args.resumePosition || 0);
     this.currentTime = this.resumePosition;
     this.expandHref = args.expandHref;
@@ -168,6 +180,8 @@ class MiniPlayerStore {
     this.wasPlaying = !!args.wasPlaying;
     this.handoffTime = this.resumePosition;
     this.sourcePaused = false;
+    // 初回 open は autoplay 設定を尊重するため queue フラグはクリア。
+    this.replacedFromQueue = false;
     // 再生中だった場合のみ「mini ロード完了まで音声引き継ぎ保留」。
     // 一時停止中なら音声が無いので保留する意味が無く、即時にプレースホルダへ。
     this.audioOwned = !args.wasPlaying;
@@ -177,10 +191,55 @@ class MiniPlayerStore {
   /** comments のみ後追いで差し込む (取得が非同期な動画ページから).
    *  ローディング中の一過性 [] で mini を潰さないよう、呼び出し側 ($effect)
    *  が commentsSettled を true にした後でのみここを呼ぶ前提。NG ルールで
-   *  全件除外された結果の [] のような「正当な空」は普通に反映する。 */
-  updateComments(videoId: string, comments: PlayerComment[]) {
+   *  全件除外された結果の [] のような「正当な空」は普通に反映する。
+   *
+   *  `rawComments` を省略した場合は `comments` をそのまま raw として保存
+   *  する (= 既存呼び出し互換)。明示的に渡すと NG 再フィルタの元データを
+   *  更新できる (codex r3283322745)。 */
+  updateComments(videoId: string, comments: PlayerComment[], rawComments?: PlayerComment[]) {
     if (this.source?.videoId !== videoId) return;
     this.comments = comments;
+    if (rawComments !== undefined) {
+      this.rawComments = rawComments;
+    }
+  }
+
+  /** PiP 中に連続再生キューが次へ進む時に呼ぶ。`open()` と違って引き継ぎ
+   *  (`wasPlaying` → `audioOwned` フロー) は走らせない: 既に audio を持って
+   *  いる mini が、自分の中で動画だけ差し替える操作のため。
+   *
+   *  `loop` は item ごとに変わる (キュー末尾は always_loop を再尊重) ので
+   *  毎回更新する。`open()` 時の値だけだと「キュー末尾でループ復帰しない」
+   *  バグになる。 */
+  replaceSource(args: {
+    source: MiniSource;
+    title: string;
+    expandHref: string;
+    resumePosition?: number;
+    /** NG ルール適用済みの表示用コメント。 */
+    comments?: PlayerComment[];
+    /** NG 適用前。省略時は `comments` をそのまま raw として使う。 */
+    rawComments?: PlayerComment[];
+    loop?: boolean;
+  }) {
+    this.source = args.source;
+    this.title = args.title;
+    this.expandHref = args.expandHref;
+    this.resumePosition = Math.max(0, args.resumePosition || 0);
+    this.currentTime = this.resumePosition;
+    this.handoffTime = this.resumePosition;
+    this.comments = args.comments ?? [];
+    this.rawComments = args.rawComments ?? args.comments ?? [];
+    if (args.loop != null) this.loop = args.loop;
+    // mini は既に audio を持っている。Player を {#key videoId} で remount
+    // するので新しい動画は initialMuted=false の通常パスで自動再生開始する。
+    this.audioOwned = true;
+    this.wasPlaying = false;
+    this.sourcePaused = false;
+    // 直前の遷移がキュー advance だったかのフラグ。MiniPlayer は
+    // forceAutoplay にこれを使って `playback.autoplay=false` でも次の動画を
+    // 自動再生する (ユーザの明示的な連続再生意図を優先)。
+    this.replacedFromQueue = true;
   }
 
   setGeometry(g: MiniGeometry) {
@@ -236,6 +295,7 @@ class MiniPlayerStore {
     this.active = false;
     this.source = null;
     this.comments = [];
+    this.rawComments = [];
     this.title = '';
     this.resumePosition = 0;
     this.currentTime = 0;

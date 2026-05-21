@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { goto } from '$app/navigation';
   import { convertFileSrc } from '@tauri-apps/api/core';
   import {
     cleanupStorage,
@@ -9,6 +10,8 @@
     type LibraryVideoItem,
   } from '$lib/api';
   import { formatDuration, formatNumber } from '$lib/format';
+  import { setQueue, itemHref, type PlaybackQueueItem } from '$lib/stores/playbackQueue';
+  import { createSmartPlaylist } from '$lib/stores/smartPlaylists';
 
   let items = $state<LibraryVideoItem[]>([]);
   let loading = $state(true);
@@ -109,6 +112,32 @@
     return Number.isFinite(h) ? `${h}p` : res;
   }
 
+  function toQueueItems(): PlaybackQueueItem[] {
+    return items.map((it) => ({
+      videoId: it.id,
+      title: it.title,
+      thumbnailUrl: it.thumbnailUrl ?? undefined,
+      lengthSeconds: it.durationSec,
+      source: 'local',
+    }));
+  }
+
+  function startPlayAll() {
+    const queueItems = toQueueItems();
+    if (queueItems.length === 0) return;
+    const label = searchQuery.trim() ? `ライブラリ「${searchQuery.trim()}」` : 'ライブラリ';
+    setQueue('library', 'library', label, queueItems, 0);
+    void goto(itemHref(queueItems[0]));
+  }
+
+  function saveAsSmartPlaylist() {
+    const q = searchQuery.trim();
+    const name = window.prompt('スマートプレイリスト名', q ? `検索: ${q}` : '保存検索');
+    if (!name) return;
+    const p = createSmartPlaylist(name, { q: q || undefined });
+    void goto(`/playlists/smart/${p.id}`);
+  }
+
   onMount(refresh);
 </script>
 
@@ -124,6 +153,23 @@
         oninput={onSearchInput}
       />
       <button type="button" class="ghost" onclick={refresh}>更新</button>
+      <button
+        type="button"
+        class="primary"
+        disabled={items.length === 0}
+        onclick={startPlayAll}
+        title="現在表示中の動画を全て連続再生"
+      >
+        ▶ 連続再生
+      </button>
+      <button
+        type="button"
+        class="ghost"
+        onclick={saveAsSmartPlaylist}
+        title="現在の検索条件をスマートプレイリストとして保存"
+      >
+        スマートプレイリスト保存
+      </button>
       <button type="button" class="ghost" disabled={cleaning} onclick={onCleanup}>
         {cleaning ? '掃除中…' : 'ストレージ掃除'}
       </button>
@@ -269,6 +315,23 @@
   }
   .ghost:hover {
     background: var(--theme-surface-3);
+  }
+  .primary {
+    background: var(--theme-accent);
+    color: #fff;
+    border: 1px solid var(--theme-accent);
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .primary:hover:not(:disabled) {
+    background: var(--theme-accent-hover);
+  }
+  .primary:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
   .muted {
     color: var(--theme-text-muted);

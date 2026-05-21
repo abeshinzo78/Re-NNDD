@@ -15,8 +15,8 @@ use crate::api::comment::{Comment, CommentApi, ThreadsClient};
 use crate::api::search::{SearchApi, SnapshotSearchClient};
 use crate::api::types::{SearchQuery, SearchResponse};
 use crate::api::video::{
-    json_value_as_id_string, quality_candidates, NiconicoWatchClient,
-    NvCommentSetup, SeriesInfo, WatchApi, WatchOwner, WatchVideoMeta,
+    json_value_as_id_string, quality_candidates, NiconicoWatchClient, NvCommentSetup, SeriesInfo,
+    WatchApi, WatchOwner, WatchVideoMeta,
 };
 use crate::downloader::tools;
 use crate::downloader::ytdlp as ytdlp_mod;
@@ -312,7 +312,10 @@ fn parse_related_videos(json: serde_json::Value) -> Result<Vec<RelatedVideoItem>
                 .filter_map(|item| {
                     let content = item.get("content")?;
                     let content_id = content.get("id").and_then(|v| v.as_str()).map(String::from);
-                    let title = content.get("title").and_then(|v| v.as_str()).map(String::from);
+                    let title = content
+                        .get("title")
+                        .and_then(|v| v.as_str())
+                        .map(String::from);
                     let view_counter = content
                         .get("count")
                         .and_then(|c| c.get("view"))
@@ -340,12 +343,16 @@ fn parse_related_videos(json: serde_json::Value) -> Result<Vec<RelatedVideoItem>
                         .and_then(|o| o.get("id"))
                         .and_then(|v| v.as_str())
                         .and_then(|raw| raw.parse::<i64>().ok());
-                    let channel_id = content
-                        .get("channelId")
-                        .and_then(|v| v.as_i64())
-                        .or_else(|| {
-                            content.get("owner").and_then(|o| o.get("channelId")).and_then(|v| v.as_i64())
-                        });
+                    let channel_id =
+                        content
+                            .get("channelId")
+                            .and_then(|v| v.as_i64())
+                            .or_else(|| {
+                                content
+                                    .get("owner")
+                                    .and_then(|o| o.get("channelId"))
+                                    .and_then(|v| v.as_i64())
+                            });
 
                     Some(RelatedVideoItem {
                         content_id,
