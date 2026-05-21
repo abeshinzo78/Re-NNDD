@@ -105,6 +105,26 @@ export async function issueHlsUrl(videoId: string): Promise<string> {
   return invoke<string>('issue_hls_url', { videoId });
 }
 
+export type RelatedVideoItem = {
+  contentId?: string;
+  title?: string;
+  viewCounter?: number;
+  commentCounter?: number;
+  mylistCounter?: number;
+  lengthSeconds?: number;
+  thumbnailUrl?: string;
+  startTime?: string;
+  userId?: number;
+  channelId?: number;
+};
+
+export async function fetchRecommendedVideos(
+  videoId: string,
+  limit?: number,
+): Promise<RelatedVideoItem[]> {
+  return invoke<RelatedVideoItem[]>('fetch_related_videos', { videoId, limit });
+}
+
 export async function saveSessionCookie(value: string): Promise<void> {
   await invoke('save_session_cookie', { value });
 }

@@ -15,8 +15,8 @@ use crate::api::comment::{Comment, CommentApi, ThreadsClient};
 use crate::api::search::{SearchApi, SnapshotSearchClient};
 use crate::api::types::{SearchQuery, SearchResponse};
 use crate::api::video::{
-    json_value_as_id_string, quality_candidates, NiconicoWatchClient, NvCommentSetup, SeriesInfo,
-    WatchApi, WatchOwner, WatchVideoMeta,
+    json_value_as_id_string, quality_candidates, NiconicoWatchClient,
+    NvCommentSetup, SeriesInfo, WatchApi, WatchOwner, WatchVideoMeta,
 };
 use crate::downloader::tools;
 use crate::downloader::ytdlp as ytdlp_mod;
@@ -225,6 +225,146 @@ pub async fn search_videos_online(query: SearchQuery) -> Result<SearchResponse> 
     let client = SnapshotSearchClient::new().map_err(AppError::from)?;
     let response = client.search(&query).await.map_err(AppError::from)?;
     Ok(response)
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RelatedVideoItem {
+    #[serde(rename = "contentId")]
+    pub content_id: Option<String>,
+    pub title: Option<String>,
+    #[serde(rename = "viewCounter")]
+    pub view_counter: Option<i64>,
+    #[serde(rename = "commentCounter")]
+    pub comment_counter: Option<i64>,
+    #[serde(rename = "mylistCounter")]
+    pub mylist_counter: Option<i64>,
+    #[serde(rename = "lengthSeconds")]
+    pub length_seconds: Option<i64>,
+    #[serde(rename = "thumbnailUrl")]
+    pub thumbnail_url: Option<String>,
+    #[serde(rename = "startTime")]
+    pub start_time: Option<String>,
+    #[serde(rename = "userId")]
+    pub user_id: Option<i64>,
+    #[serde(rename = "channelId")]
+    pub channel_id: Option<i64>,
+}
+
+#[tauri::command]
+pub async fn fetch_related_videos(
+    video_id: String,
+    limit: Option<i32>,
+    store: State<'_, Arc<SessionStore>>,
+) -> Result<Vec<RelatedVideoItem>> {
+    let limit = limit.unwrap_or(12).min(50);
+    let client = build_nv_client()?;
+    let cookie = store.cookie_header();
+    let has_cookie = cookie.is_some();
+
+    let url = format!(
+        "https://nvapi.nicovideo.jp/v1/recommend?recipeId=video_watch_recommendation&videoId={video_id}&site=nicovideo&frontendId=6&frontendVersion=0&limit={limit}"
+    );
+
+    let mut req = client
+        .get(&url)
+        .header("X-Frontend-Id", "6")
+        .header("X-Frontend-Version", "0")
+        .header("X-Niconico-Language", "ja-jp")
+        .header("X-Request-With", "https://www.nicovideo.jp")
+        .header(header::REFERER, "https://www.nicovideo.jp/")
+        .header(header::ACCEPT, "application/json;charset=utf-8");
+
+    if let Some(ref c) = cookie {
+        req = req.header(header::COOKIE, c.as_str());
+    }
+
+    tracing::debug!(%url, %has_cookie, "fetch_related_videos request");
+
+    let resp = req.send().await.map_err(crate::error::ApiError::from)?;
+    let status = resp.status();
+    let body = resp.text().await.map_err(crate::error::ApiError::from)?;
+
+    if !status.is_success() {
+        let preview: String = body.chars().take(300).collect();
+        tracing::warn!(%url, %status, body = %preview, "fetch_related_videos");
+        return Err(AppError::Other(format!(
+            "fetch_related_videos ({status}): {preview}"
+        )));
+    }
+
+    let json: serde_json::Value =
+        serde_json::from_str(&body).map_err(crate::error::ApiError::from)?;
+
+    parse_related_videos(json)
+}
+
+fn parse_related_videos(json: serde_json::Value) -> Result<Vec<RelatedVideoItem>> {
+    let items = json.pointer("/data/items").and_then(|v| v.as_array());
+    let videos: Vec<RelatedVideoItem> = items
+        .map(|arr| {
+            arr.iter()
+                .filter(|item| {
+                    item.get("contentType")
+                        .and_then(|v| v.as_str())
+                        .map(|t| t == "video")
+                        .unwrap_or(false)
+                })
+                .filter_map(|item| {
+                    let content = item.get("content")?;
+                    let content_id = content.get("id").and_then(|v| v.as_str()).map(String::from);
+                    let title = content.get("title").and_then(|v| v.as_str()).map(String::from);
+                    let view_counter = content
+                        .get("count")
+                        .and_then(|c| c.get("view"))
+                        .and_then(|v| v.as_i64());
+                    let comment_counter = content
+                        .get("count")
+                        .and_then(|c| c.get("comment"))
+                        .and_then(|v| v.as_i64());
+                    let mylist_counter = content
+                        .get("count")
+                        .and_then(|c| c.get("mylist"))
+                        .and_then(|v| v.as_i64());
+                    let length_seconds = content.get("duration").and_then(|v| v.as_i64());
+                    let thumbnail_url = content
+                        .get("thumbnail")
+                        .and_then(|t| t.get("listingUrl").or_else(|| t.get("url")))
+                        .and_then(|v| v.as_str())
+                        .map(String::from);
+                    let start_time = content
+                        .get("registeredAt")
+                        .and_then(|v| v.as_str())
+                        .map(String::from);
+                    let user_id = content
+                        .get("owner")
+                        .and_then(|o| o.get("id"))
+                        .and_then(|v| v.as_str())
+                        .and_then(|raw| raw.parse::<i64>().ok());
+                    let channel_id = content
+                        .get("channelId")
+                        .and_then(|v| v.as_i64())
+                        .or_else(|| {
+                            content.get("owner").and_then(|o| o.get("channelId")).and_then(|v| v.as_i64())
+                        });
+
+                    Some(RelatedVideoItem {
+                        content_id,
+                        title,
+                        view_counter,
+                        comment_counter,
+                        mylist_counter,
+                        length_seconds,
+                        thumbnail_url,
+                        start_time,
+                        user_id,
+                        channel_id,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    Ok(videos)
 }
 
 #[tauri::command]
