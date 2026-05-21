@@ -21,6 +21,7 @@
   import {
     advanceQueue,
     getQueue,
+    hasNextInQueue,
     itemHref,
     setQueueIndexByVideoId,
   } from '$lib/stores/playbackQueue';
@@ -154,7 +155,10 @@
       // 設定と再生情報を並列取得
       const [, result] = await Promise.all([loadSettings(), preparePlayback(id)]);
       if (loadingFor !== id) return;
-      loop = getBool('playback.always_loop');
+      // 連続再生キューに後続がある場合、ユーザの明示的な「連続再生」操作を
+      // グローバルな常時ループ設定より優先する。always_loop=true で固まる
+      // と queue の次に進めず先頭でずっとループしてしまうため。
+      loop = getBool('playback.always_loop') && !hasNextInQueue(id);
       payload = result;
       pending = false;
 

@@ -22,8 +22,10 @@
     clampWidth,
     type MiniGeometry,
   } from './miniPlayerStore.svelte';
-  import { getNum } from '$lib/stores/settings.svelte';
+  import { getBool, getNum } from '$lib/stores/settings.svelte';
   import { readSavedMuted, readSavedVolume } from './volumePersistence';
+  import { issueHlsUrl, localAudioUrl, localVideoUrl } from '$lib/api';
+  import { advanceQueue, getQueue, itemHref } from '$lib/stores/playbackQueue';
 
   type PlayerRef = {
     getVideo: () => HTMLVideoElement | null;
@@ -88,6 +90,65 @@
     if (!playerRef) return;
     if (paused) playerRef.play();
     else playerRef.pause();
+  }
+
+  // PiP 内で再生中の動画が自然終了した時のオートプレイキュー進行。
+  // ページ側 (/video/[id], /library/[id]) の `handleEnded` と同じ意味論を
+  // mini 内で完結させる。PiP は元ページのライフサイクルから独立しているので
+  // PiP 中に「次へ」が止まらないように mini が自前で処理する必要がある。
+  //
+  // ページ側と違って goto しないのは、PiP は元ページが placeholder に化けて
+  // いる前提で動いており、別 URL へ goto すると新ページが「別動画 PiP 中」
+  // プレースホルダを表示してしまい UX が壊れるため。代わりに store の
+  // `replaceSource` で mini の中身だけを差し替える (YouTube ライク)。
+  async function handleEnded() {
+    if (!getBool('playback.autoplay_queue')) return;
+    const q = getQueue();
+    if (!q) return;
+    const currentId = miniPlayer.source?.videoId;
+    if (!currentId) return;
+    const idx = q.items.findIndex((it) => it.videoId === currentId);
+    if (idx < 0) return;
+    const nxt = q.items[idx + 1];
+    if (!nxt) return;
+    advanceQueue();
+    try {
+      const expandHref = itemHref(nxt);
+      const title = nxt.title ?? nxt.videoId;
+      if (nxt.source === 'online') {
+        const hlsUrl = await issueHlsUrl(nxt.videoId);
+        miniPlayer.replaceSource({
+          source: {
+            kind: 'online',
+            videoId: nxt.videoId,
+            hlsUrl,
+            refreshHlsUrl: () => issueHlsUrl(nxt.videoId),
+          },
+          title,
+          expandHref,
+        });
+      } else {
+        const localSrc = await localVideoUrl(nxt.videoId);
+        let localAudioSrc: string | undefined;
+        try {
+          localAudioSrc = await localAudioUrl(nxt.videoId);
+        } catch {
+          /* 音声分離無しの動画はこの例外で正常 */
+        }
+        miniPlayer.replaceSource({
+          source: {
+            kind: 'local',
+            videoId: nxt.videoId,
+            localSrc,
+            localAudioSrc,
+          },
+          title,
+          expandHref,
+        });
+      }
+    } catch (e) {
+      console.warn('[MiniPlayer] queue advance failed', e);
+    }
   }
 
   function onTimeFromPlayer(t: number) {
@@ -439,6 +500,7 @@
             comments={miniPlayer.comments}
             refreshHlsUrl={onlineSrc.refreshHlsUrl}
             onTime={onTimeFromPlayer}
+            onEnded={handleEnded}
             resumePosition={miniPlayer.resumePosition}
             loop={miniPlayer.loop}
             compact={true}
@@ -453,6 +515,7 @@
             localAudioSrc={localSrcObj.localAudioSrc}
             comments={miniPlayer.comments}
             onTime={onTimeFromPlayer}
+            onEnded={handleEnded}
             resumePosition={miniPlayer.resumePosition}
             loop={miniPlayer.loop}
             compact={true}

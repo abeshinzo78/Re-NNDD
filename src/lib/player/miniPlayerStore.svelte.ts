@@ -183,6 +183,30 @@ class MiniPlayerStore {
     this.comments = comments;
   }
 
+  /** PiP 中に連続再生キューが次へ進む時に呼ぶ。`open()` と違って引き継ぎ
+   *  (`wasPlaying` → `audioOwned` フロー) は走らせない: 既に audio を持って
+   *  いる mini が、自分の中で動画だけ差し替える操作のため。 */
+  replaceSource(args: {
+    source: MiniSource;
+    title: string;
+    expandHref: string;
+    resumePosition?: number;
+    comments?: PlayerComment[];
+  }) {
+    this.source = args.source;
+    this.title = args.title;
+    this.expandHref = args.expandHref;
+    this.resumePosition = Math.max(0, args.resumePosition || 0);
+    this.currentTime = this.resumePosition;
+    this.handoffTime = this.resumePosition;
+    this.comments = args.comments ?? [];
+    // mini は既に audio を持っている。Player を {#key videoId} で remount
+    // するので新しい動画は initialMuted=false の通常パスで自動再生開始する。
+    this.audioOwned = true;
+    this.wasPlaying = false;
+    this.sourcePaused = false;
+  }
+
   setGeometry(g: MiniGeometry) {
     this.geometry = g;
     saveGeometry(g);

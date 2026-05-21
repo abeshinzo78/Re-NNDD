@@ -14,6 +14,7 @@
   import {
     createSmartPlaylist,
     deleteSmartPlaylist,
+    getSmartPlaylist,
     listSmartPlaylists,
     subscribeSmartPlaylists,
     summarizeFilter,
@@ -56,6 +57,16 @@
     }
     const t = params.get('tab');
     if (t === 'smart') tab = 'smart';
+    // ?edit=<id> でスマートプレイリスト詳細ページの「編集」リンクから
+    // モーダルを直接開く動線。detail → list へ戻った時の二度手間を省く。
+    const editId = params.get('edit');
+    if (editId) {
+      const target = getSmartPlaylist(editId);
+      if (target) {
+        tab = 'smart';
+        openEditor(target);
+      }
+    }
   });
   onDestroy(() => {
     unsubMylist?.();

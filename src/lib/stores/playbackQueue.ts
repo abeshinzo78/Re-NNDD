@@ -155,3 +155,15 @@ export function itemHref(item: PlaybackQueueItem, withQueueContext = true): stri
   const base = item.source === 'local' ? `/library/${item.videoId}` : `/video/${item.videoId}`;
   return withQueueContext ? `${base}?from=queue` : base;
 }
+
+/** Whether `videoId` is in the active queue and has a successor.
+ *  Used to override `playback.always_loop` while a queue is advancing — the
+ *  user's explicit 連続再生 action should take precedence over the global
+ *  loop preference for queued items. */
+export function hasNextInQueue(videoId: string): boolean {
+  const q = getQueue();
+  if (!q) return false;
+  const idx = q.items.findIndex((it) => it.videoId === videoId);
+  if (idx < 0) return false;
+  return idx + 1 < q.items.length;
+}

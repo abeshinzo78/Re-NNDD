@@ -4,6 +4,7 @@ import {
   clearQueue,
   currentItem,
   getQueue,
+  hasNextInQueue,
   itemHref,
   nextItem,
   prevItem,
@@ -118,6 +119,15 @@ describe('playbackQueue', () => {
     unsub();
     clearQueue();
     expect(count).toBe(2);
+  });
+
+  test('hasNextInQueue is true mid-queue and false at the tail / absent', () => {
+    expect(hasNextInQueue('sm1')).toBe(false); // no queue
+    setQueue('series', 's', 'S', makeItems(3));
+    expect(hasNextInQueue('sm1')).toBe(true);
+    expect(hasNextInQueue('sm2')).toBe(true);
+    expect(hasNextInQueue('sm3')).toBe(false);
+    expect(hasNextInQueue('not-in-queue')).toBe(false);
   });
 
   test('itemHref points at /video/ for online and /library/ for local', () => {

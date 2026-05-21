@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { convertFileSrc } from '@tauri-apps/api/core';
@@ -47,8 +46,9 @@
     }
   }
 
-  onMount(refresh);
-
+  // `$effect` は初回マウント時にも 1 度発火するので `onMount(refresh)` を
+  // 別途付けるのは二重呼び出しになる (queryLibraryVideos の IPC が 1 ページ
+  // ロードで 2 回走る)。effect 単発に揃える (series/[id], library/[id] と同パターン)。
   $effect(() => {
     void smartId;
     void refresh();
@@ -111,7 +111,9 @@
         >
           ▶ 連続再生
         </button>
-        <a class="edit-link" href="/playlists?tab=smart">編集</a>
+        <a class="edit-link" href={`/playlists?tab=smart&edit=${encodeURIComponent(smart.id)}`}
+          >編集</a
+        >
       </div>
     </div>
   {/if}

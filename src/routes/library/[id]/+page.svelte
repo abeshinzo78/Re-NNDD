@@ -24,6 +24,7 @@
   import {
     advanceQueue,
     getQueue,
+    hasNextInQueue,
     itemHref,
     setQueueIndexByVideoId,
   } from '$lib/stores/playbackQueue';
@@ -114,7 +115,9 @@
     try {
       // 設定と再生情報を並列取得
       const [, result] = await Promise.all([loadSettings(), prepareLocalPlayback(id)]);
-      loop = getBool('playback.always_loop');
+      // 連続再生キューに後続がある場合、ユーザの明示的な「連続再生」操作を
+      // グローバルな常時ループ設定より優先する。
+      loop = getBool('playback.always_loop') && !hasNextInQueue(id);
       if (loadingFor !== id) return;
       if (!result) {
         error = `${id} はライブラリに無い、または video.mp4 が見つかりません。`;
