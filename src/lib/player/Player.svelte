@@ -10,6 +10,7 @@
   import type { PlayerComment } from './types';
   import { extractOnlineFrame, extractVideoFrame } from '$lib/api';
   import { getBool, getNum } from '$lib/stores/settings.svelte';
+  import { readSavedMuted, readSavedVolume, saveMuted, saveVolume } from './volumePersistence';
 
   type Props = {
     /** HLS playlist URL（ストリーミング用）。`localSrc` を渡すならこちらは空文字でよい */
@@ -674,10 +675,17 @@
     const next = Math.max(0, Math.min(1, v));
     video.volume = next;
     if (next > 0 && video.muted) video.muted = false;
+    // ユーザ起源の変化のみ永続化する。`onVolumeChange` 経由で全代入を
+    // 保存してしまうと、loadedmetadata の初期セットや PiP 引き継ぎの
+    // ような内部操作で「ユーザが選んだ値」が上書きされてしまう。
+    saveVolume(video.volume);
+    saveMuted(video.muted);
   }
   function toggleMute() {
     if (!video) return;
     video.muted = !video.muted;
+    saveVolume(video.volume);
+    saveMuted(video.muted);
   }
   function setRate(r: number) {
     if (!video) return;
@@ -810,10 +818,19 @@
       video.volume = 0;
       void video.play().catch(() => undefined);
     } else {
-      const defaultVol = getNum('playback.default_volume');
-      if (Number.isFinite(defaultVol)) {
-        video.volume = Math.max(0, Math.min(1, defaultVol));
+      // ユーザが直近で選んだ音量があればそれを優先。無ければ設定の既定値。
+      // これで PiP 切替や別動画への遷移、ページ再マウントで音量が
+      // 既定値にリセットされてしまう挙動を防ぐ。
+      const savedVol = readSavedVolume();
+      if (savedVol != null) {
+        video.volume = savedVol;
+      } else {
+        const defaultVol = getNum('playback.default_volume');
+        if (Number.isFinite(defaultVol)) {
+          video.volume = Math.max(0, Math.min(1, defaultVol));
+        }
       }
+      if (readSavedMuted()) video.muted = true;
       const autoplay = getBool('playback.autoplay');
       if (autoplay) {
         void video.play().catch(() => undefined);
