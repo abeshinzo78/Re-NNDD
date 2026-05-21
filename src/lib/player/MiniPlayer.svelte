@@ -23,6 +23,7 @@
     type MiniGeometry,
   } from './miniPlayerStore.svelte';
   import { getNum } from '$lib/stores/settings.svelte';
+  import { readSavedMuted, readSavedVolume } from './volumePersistence';
 
   type PlayerRef = {
     getVideo: () => HTMLVideoElement | null;
@@ -127,8 +128,19 @@
       }
     }
     if (v) {
-      const vol = getNum('playback.default_volume');
-      v.volume = Number.isFinite(vol) ? Math.max(0, Math.min(1, vol)) : 1;
+      // 引き継ぎ後の音量はソース側 Player の最新値 (= ユーザが直近に
+      // 選んだ値) を引き継ぐ。これが無いと PiP に切り替えた瞬間に
+      // 設定の `default_volume` (既定 1.0) へジャンプしてしまう。
+      // ソース側 Player は `onVolumeChange` でこの値を localStorage に
+      // 書き続けているため、ここで読むだけで OK。
+      const saved = readSavedVolume();
+      if (saved != null) {
+        v.volume = saved;
+      } else {
+        const vol = getNum('playback.default_volume');
+        v.volume = Number.isFinite(vol) ? Math.max(0, Math.min(1, vol)) : 1;
+      }
+      if (readSavedMuted()) v.muted = true;
     }
     // 引き継ぎ完了直前にユーザがソース側で停止していた場合、mini も停止して
     // 引き継ぐ。これでユーザの「停止したい」意図を尊重する。
