@@ -14,6 +14,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import Player from './Player.svelte';
+  import type { PlayerComment } from './types';
   import {
     MINI_CONSTANTS,
     miniPlayer,
@@ -24,7 +25,15 @@
   } from './miniPlayerStore.svelte';
   import { getBool, getNum } from '$lib/stores/settings.svelte';
   import { readSavedMuted, readSavedVolume } from './volumePersistence';
-  import { issueHlsUrl, localAudioUrl, localVideoUrl } from '$lib/api';
+  import {
+    dtoToPlayerComment,
+    fetchVideoComments,
+    issueHlsUrl,
+    localAudioUrl,
+    localVideoUrl,
+    preparePlayback,
+    prepareLocalPlayback,
+  } from '$lib/api';
   import { advanceQueue, getQueue, itemHref } from '$lib/stores/playbackQueue';
 
   type PlayerRef = {
@@ -101,6 +110,21 @@
   // いる前提で動いており、別 URL へ goto すると新ページが「別動画 PiP 中」
   // プレースホルダを表示してしまい UX が壊れるため。代わりに store の
   // `replaceSource` で mini の中身だけを差し替える (YouTube ライク)。
+  //
+  // ページ側 `load()` と同じく、コメントと再生位置 (resume) もここで補充する。
+  // 単純に `localAudioUrl()` を呼ぶと `local_audio_url` コマンドは 4 文字
+  // atom を URL に詰めるだけで存在チェックをしないので、audio.mp4 が無い
+  // muxed 動画でも URL が返り 404 連発になる。`prepareLocalPlayback` の
+  // `localAudioPath` を見て分離音声がある時だけ URL を取る。
+  function getResumeFor(id: string): number {
+    if (!getBool('playback.resume_enabled')) return 0;
+    try {
+      return Number(localStorage.getItem(`resume:${id}`)) || 0;
+    } catch {
+      return 0;
+    }
+  }
+
   async function handleEnded() {
     if (!getBool('playback.autoplay_queue')) return;
     const q = getQueue();
@@ -111,30 +135,43 @@
     if (idx < 0) return;
     const nxt = q.items[idx + 1];
     if (!nxt) return;
-    advanceQueue();
     try {
       const expandHref = itemHref(nxt);
       const title = nxt.title ?? nxt.videoId;
+      const resumePosition = getResumeFor(nxt.videoId);
       if (nxt.source === 'online') {
-        const hlsUrl = await issueHlsUrl(nxt.videoId);
+        // `preparePlayback` 1 IPC で hlsUrl + nvComment を取得し、続けて
+        // `fetchVideoComments` を発火する。先方の `/video/[id]` load() と同じ流れ。
+        const result = await preparePlayback(nxt.videoId);
+        let comments: PlayerComment[] = [];
+        if (result.nvComment) {
+          try {
+            comments = await fetchVideoComments(result.nvComment);
+          } catch (e) {
+            console.warn('[MiniPlayer] comment fetch on queue advance failed', e);
+          }
+        }
         miniPlayer.replaceSource({
           source: {
             kind: 'online',
             videoId: nxt.videoId,
-            hlsUrl,
+            hlsUrl: result.hlsUrl,
             refreshHlsUrl: () => issueHlsUrl(nxt.videoId),
           },
           title,
           expandHref,
+          comments,
+          resumePosition,
         });
       } else {
-        const localSrc = await localVideoUrl(nxt.videoId);
-        let localAudioSrc: string | undefined;
-        try {
-          localAudioSrc = await localAudioUrl(nxt.videoId);
-        } catch {
-          /* 音声分離無しの動画はこの例外で正常 */
+        // ローカルのコメントとメタは prepareLocalPlayback 一発で取れる。
+        const result = await prepareLocalPlayback(nxt.videoId);
+        if (!result) {
+          console.warn('[MiniPlayer] queue advance: local playback unavailable for', nxt.videoId);
+          return;
         }
+        const localSrc = await localVideoUrl(nxt.videoId);
+        const localAudioSrc = result.localAudioPath ? await localAudioUrl(nxt.videoId) : undefined;
         miniPlayer.replaceSource({
           source: {
             kind: 'local',
@@ -144,8 +181,13 @@
           },
           title,
           expandHref,
+          comments: result.comments.map(dtoToPlayerComment),
+          resumePosition,
         });
       }
+      // 成功してから index を進める。先に進めてしまうと fetch 失敗時に
+      // PiP は終わった動画のまま、永続キューだけが先に進む desync が起きる。
+      advanceQueue();
     } catch (e) {
       console.warn('[MiniPlayer] queue advance failed', e);
     }

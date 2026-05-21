@@ -27,6 +27,7 @@
     hasNextInQueue,
     itemHref,
     setQueueIndexByVideoId,
+    subscribeQueue,
   } from '$lib/stores/playbackQueue';
 
   let local = $state<LocalPlaybackPayload | null>(null);
@@ -57,6 +58,23 @@
   let isClassicTheme = $derived(theme === 'niconico-classic');
   let loadingFor: string | null = null;
   let loop = $state(false);
+  // ユーザが Player の loop ボタンを明示的に操作したかを記録する。
+  // true の間は後段の自動再計算 (キュー変更によるリセットなど) を抑止する。
+  let loopUserSet = $state(false);
+
+  function computeDefaultLoop(id: string): boolean {
+    if (!getBool('playback.always_loop')) return false;
+    const fromQueue = page.url.searchParams.get('from') === 'queue';
+    return !(fromQueue && hasNextInQueue(id));
+  }
+
+  // キュー停止/進行で loop の既定値が変わるケースに追従する (codex review)。
+  const unsubQueueLoop = subscribeQueue(() => {
+    if (loopUserSet) return;
+    const id = local?.videoId ?? videoId;
+    if (!id) return;
+    loop = computeDefaultLoop(id);
+  });
 
   let panelWidth = $state(320);
   let dragging = $state(false);
@@ -115,9 +133,8 @@
     try {
       // 設定と再生情報を並列取得
       const [, result] = await Promise.all([loadSettings(), prepareLocalPlayback(id)]);
-      // 連続再生キューに後続がある場合、ユーザの明示的な「連続再生」操作を
-      // グローバルな常時ループ設定より優先する。
-      loop = getBool('playback.always_loop') && !hasNextInQueue(id);
+      loop = computeDefaultLoop(id);
+      loopUserSet = false;
       if (loadingFor !== id) return;
       if (!result) {
         error = `${id} はライブラリに無い、または video.mp4 が見つかりません。`;
@@ -366,6 +383,7 @@
 
   onDestroy(() => {
     ngUnsub();
+    unsubQueueLoop();
   });
 </script>
 
@@ -508,7 +526,10 @@
               onEnded={handleEnded}
               resumePosition={getResumePosition(lp.videoId)}
               {loop}
-              onLoopChange={(v) => (loop = v)}
+              onLoopChange={(v) => {
+                loop = v;
+                loopUserSet = true;
+              }}
               onTogglePip={togglePip}
               pipActive={false}
             />

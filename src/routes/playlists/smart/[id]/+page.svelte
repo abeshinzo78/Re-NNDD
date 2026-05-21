@@ -19,14 +19,46 @@
   let totalCount = $state(0);
   let loading = $state(true);
   let error = $state<string | null>(null);
+  // 進行中の refresh がどの smartId 向けかを記録するトークン。
+  // ユーザが detail ページを連続切替した時に、古い IPC レスポンスが
+  // 後から到着して現在表示中のリストを上書きするのを防ぐ (codex review)。
+  let refreshingFor: string | null = null;
+
+  // バックエンド query_videos は limit 既定 100 / 上限 500。スマート
+  // プレイリストの「全件オートプレイ」が 100 件で切れるのを避けるため、
+  // ユーザが filter.limit を設定していない場合は 500 件まで読み、なお
+  // それを越える場合は offset を進めて全て収集する (codex review)。
+  async function fetchAllMatching(filter: ReturnType<typeof filterToQueryParams>) {
+    const PAGE = 500;
+    const userLimit = filter.limit;
+    const collected: LibraryVideoRow[] = [];
+    let offset = 0;
+    let total = 0;
+    while (true) {
+      const remaining = userLimit != null ? userLimit - collected.length : Infinity;
+      if (remaining <= 0) break;
+      const pageSize = Math.min(PAGE, remaining);
+      const params = { ...filter, limit: pageSize, offset };
+      const result = await queryLibraryVideos(params);
+      total = result.totalCount;
+      collected.push(...result.items);
+      if (result.items.length < pageSize) break;
+      if (collected.length >= total) break;
+      offset += result.items.length;
+    }
+    return { items: collected, totalCount: total };
+  }
 
   async function refresh() {
     if (!smartId) return;
+    const captured = smartId;
+    refreshingFor = captured;
     loading = true;
     error = null;
-    const sp = getSmartPlaylist(smartId);
+    const sp = getSmartPlaylist(captured);
+    if (refreshingFor !== captured) return;
     if (!sp) {
-      error = `スマートプレイリスト ${smartId} が見つかりません`;
+      error = `スマートプレイリスト ${captured} が見つかりません`;
       smart = null;
       items = [];
       totalCount = 0;
@@ -36,13 +68,15 @@
     smart = sp;
     try {
       const params = filterToQueryParams(sp.filter);
-      const result = await queryLibraryVideos(params);
+      const result = await fetchAllMatching(params);
+      if (refreshingFor !== captured) return;
       items = result.items;
       totalCount = result.totalCount;
     } catch (e) {
+      if (refreshingFor !== captured) return;
       error = String(e);
     } finally {
-      loading = false;
+      if (refreshingFor === captured) loading = false;
     }
   }
 

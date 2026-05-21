@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { goto } from '$app/navigation';
+  import { goto, replaceState } from '$app/navigation';
   import { page } from '$app/state';
   import {
     createMylist,
@@ -170,6 +170,18 @@
   function closeEditor() {
     editorOpen = false;
     editorTargetId = null;
+    // detail ページからの ?edit=<id> は one-shot フラグなので consume したら
+    // URL から落としておく。残しておくとリロード/ブックマーク/back で
+    // モーダルが勝手に再オープンする (bug_004)。
+    if (page.url.searchParams.has('edit')) {
+      const url = new URL(page.url);
+      url.searchParams.delete('edit');
+      try {
+        replaceState(url, page.state ?? {});
+      } catch {
+        /* テスト環境などで replaceState が落ちるケースは silently skip */
+      }
+    }
   }
 
   function parseCsv(s: string): string[] {

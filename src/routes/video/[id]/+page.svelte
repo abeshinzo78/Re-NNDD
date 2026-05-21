@@ -24,6 +24,7 @@
     hasNextInQueue,
     itemHref,
     setQueueIndexByVideoId,
+    subscribeQueue,
   } from '$lib/stores/playbackQueue';
 
   // この route は **オンライン視聴専用**。ローカル再生は /library/[id] で行う。
@@ -63,6 +64,30 @@
   let isClassicTheme = $derived(theme === 'niconico-classic');
   let loadingFor: string | null = null;
   let loop = $state(false);
+  // ユーザが Player の loop ボタンを明示的に操作したかを記録する。
+  // true の間は後段の自動再計算 (キュー変更によるリセットなど) を抑止する。
+  let loopUserSet = $state(false);
+
+  // 既定 loop 値を計算する。`always_loop` を尊重しつつ、ユーザの明示的な
+  // 連続再生操作 (URL が `?from=queue`) と「キューに後続あり」を満たす時のみ
+  // ループを抑制する。生 URL や履歴遷移で偶然キューに含まれているだけの
+  // 動画では always_loop を維持する (= bug_019 への対処)。
+  function computeDefaultLoop(id: string): boolean {
+    if (!getBool('playback.always_loop')) return false;
+    const fromQueue = page.url.searchParams.get('from') === 'queue';
+    return !(fromQueue && hasNextInQueue(id));
+  }
+
+  // キューが ■ 停止 や advance で変化した時、ユーザが手動で loop を
+  // 弄っていなければ既定値を再評価する。これで「always_loop=true 設定の人が
+  // ページ滞在中にキューを止める → ループが死ぬ」を防ぐ (codex review)。
+  const unsubQueueLoop = subscribeQueue(() => {
+    if (loopUserSet) return;
+    const id = payload?.video.id ?? videoId;
+    if (!id) return;
+    loop = computeDefaultLoop(id);
+  });
+  onDestroy(() => unsubQueueLoop());
 
   let panelWidth = $state(320);
   let dragging = $state(false);
@@ -155,10 +180,8 @@
       // 設定と再生情報を並列取得
       const [, result] = await Promise.all([loadSettings(), preparePlayback(id)]);
       if (loadingFor !== id) return;
-      // 連続再生キューに後続がある場合、ユーザの明示的な「連続再生」操作を
-      // グローバルな常時ループ設定より優先する。always_loop=true で固まる
-      // と queue の次に進めず先頭でずっとループしてしまうため。
-      loop = getBool('playback.always_loop') && !hasNextInQueue(id);
+      loop = computeDefaultLoop(id);
+      loopUserSet = false;
       payload = result;
       pending = false;
 
@@ -596,7 +619,10 @@
               onEnded={handleEnded}
               resumePosition={getResumePosition(p.videoId)}
               {loop}
-              onLoopChange={(v) => (loop = v)}
+              onLoopChange={(v) => {
+                loop = v;
+                loopUserSet = true;
+              }}
               onTogglePip={togglePip}
               pipActive={false}
             />
