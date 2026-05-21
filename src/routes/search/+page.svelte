@@ -298,7 +298,7 @@
   .chip.active {
     background: var(--theme-border-strong);
     border-color: var(--theme-border-focus);
-    color: var(--theme-surface-2);
+    color: var(--theme-text);
   }
   .chip input {
     display: none;
@@ -320,7 +320,7 @@
     opacity: 0.5;
   }
   select {
-    background: var(--theme-text);
+    background: var(--theme-input-bg);
     border: 1px solid var(--theme-border-strong);
     color: var(--theme-text);
     border-radius: 6px;
@@ -333,7 +333,7 @@
     cursor: not-allowed;
   }
   select option {
-    background: var(--theme-text);
+    background: var(--theme-surface-2);
     color: var(--theme-text);
   }
   button[type='submit'] {

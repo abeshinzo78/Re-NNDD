@@ -241,7 +241,7 @@
   .ml.active {
     background: var(--theme-border-strong);
     border-color: var(--theme-border-focus);
-    color: var(--theme-surface-2);
+    color: var(--theme-text);
   }
   .ml-name {
     flex: 1;

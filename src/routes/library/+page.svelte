@@ -384,7 +384,7 @@
     left: 6px;
     bottom: 6px;
     background: rgba(37, 99, 235, 0.85);
-    color: var(--theme-surface-2);
+    color: #fff;
     padding: 1px 6px;
     border-radius: 4px;
     font-size: 10px;

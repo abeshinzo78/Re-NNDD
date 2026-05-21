@@ -415,8 +415,8 @@
     padding: 6px 10px;
     font-size: 13px;
   }
-  select {
-    background: var(--theme-text);
+  select option {
+    background: var(--theme-surface-2);
     color: var(--theme-text);
   }
   .scopes {
@@ -458,7 +458,7 @@
   button.primary {
     background: var(--theme-accent);
     border-color: var(--theme-accent);
-    color: var(--theme-surface-2);
+    color: #fff;
     margin-left: auto;
   }
   button.primary:hover {

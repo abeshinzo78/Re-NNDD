@@ -153,7 +153,7 @@
   .save.active {
     background: var(--theme-warning-border);
     border-color: var(--theme-warning-text);
-    color: var(--theme-surface-2);
+    color: var(--theme-text);
   }
   .popover {
     position: absolute;

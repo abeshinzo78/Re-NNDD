@@ -923,10 +923,10 @@
     align-items: center;
     justify-content: center;
     gap: 10px;
-    color: var(--theme-surface-2);
+    color: #fff;
   }
   .pip-icon {
-    color: var(--theme-surface-2);
+    color: #fff;
     opacity: 0.85;
   }
   .pip-text {
@@ -937,7 +937,7 @@
   .pip-resume {
     margin-top: 4px;
     background: var(--theme-accent);
-    color: var(--theme-surface-2);
+    color: #fff;
     border: none;
     padding: 8px 16px;
     border-radius: 8px;
@@ -950,7 +950,7 @@
   }
   .pip-other-title {
     font-size: 12px;
-    color: var(--theme-surface-2);
+    color: #fff;
     opacity: 0.85;
     max-width: 80%;
     overflow: hidden;
@@ -968,7 +968,7 @@
     margin-top: 4px;
   }
   .pip-link {
-    color: var(--theme-surface-2);
+    color: #fff;
     opacity: 0.9;
     font-size: 12px;
     text-decoration: underline;
@@ -1002,7 +1002,7 @@
   }
   .tag:hover {
     background: var(--theme-border-strong);
-    color: var(--theme-surface-2);
+    color: var(--theme-text);
   }
   .tag.locked {
     background: var(--theme-accent-bg);

@@ -306,7 +306,7 @@
   }
   .dl-icon-btn:hover:not(:disabled) {
     background: var(--theme-success-border);
-    color: var(--theme-surface-2);
+    color: var(--theme-text);
   }
   .dl-icon-btn:disabled {
     opacity: 0.6;
@@ -324,7 +324,7 @@
   }
   .menu-btn:hover {
     background: var(--theme-border-strong);
-    color: var(--theme-surface-2);
+    color: var(--theme-text);
   }
   .menu {
     position: absolute;

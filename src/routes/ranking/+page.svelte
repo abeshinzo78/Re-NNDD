@@ -692,7 +692,7 @@
   }
   .dl-btn:hover:not(:disabled) {
     background: var(--theme-success-border);
-    color: var(--theme-surface-2);
+    color: var(--theme-text);
   }
   .dl-btn:disabled {
     opacity: 0.6;

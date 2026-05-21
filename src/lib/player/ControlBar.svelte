@@ -477,7 +477,7 @@
   .select select option {
     /* popup だけ光らせて選択肢が読めるように */
     background: var(--theme-surface-2);
-    color: var(--theme-bg);
+    color: var(--theme-text);
   }
   /* 速度ピッカー (上方向に開くカスタムドロップダウン) */
   .rate-picker {

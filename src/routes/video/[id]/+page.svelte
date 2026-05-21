@@ -709,7 +709,7 @@
   }
   .dl-btn:hover:not(:disabled) {
     background: var(--theme-success-border);
-    color: var(--theme-surface-2);
+    color: var(--theme-text);
   }
   .dl-btn:disabled {
     opacity: 0.6;
@@ -1176,7 +1176,7 @@
   }
   .tag:hover {
     background: var(--theme-border-strong);
-    color: var(--theme-surface-2);
+    color: var(--theme-text);
     border-color: var(--theme-border-focus);
   }
   .tag.locked {
@@ -1185,7 +1185,7 @@
   }
   .tag.locked:hover {
     background: var(--theme-accent-border);
-    color: var(--theme-surface-2);
+    color: var(--theme-text);
   }
   .lock {
     font-size: 9px;
@@ -1242,10 +1242,10 @@
     align-items: center;
     justify-content: center;
     gap: 10px;
-    color: var(--theme-surface-2);
+    color: #fff;
   }
   .pip-icon {
-    color: var(--theme-surface-2);
+    color: #fff;
     opacity: 0.85;
   }
   .pip-text {
@@ -1256,7 +1256,7 @@
   .pip-resume {
     margin-top: 4px;
     background: var(--theme-accent);
-    color: var(--theme-surface-2);
+    color: #fff;
     border: none;
     padding: 8px 16px;
     border-radius: 8px;
@@ -1295,7 +1295,7 @@
     width: 36px;
     height: 36px;
     border: 3px solid rgba(255, 255, 255, 0.2);
-    border-top-color: var(--theme-surface-2);
+    border-top-color: #fff;
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
   }

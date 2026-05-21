@@ -704,7 +704,7 @@
   }
   .more-btn:hover {
     background: var(--theme-border-strong);
-    color: var(--theme-surface-2);
+    color: var(--theme-text);
   }
   .more-btn:disabled {
     opacity: 0.5;

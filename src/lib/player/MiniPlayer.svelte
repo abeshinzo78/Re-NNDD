@@ -654,7 +654,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    color: var(--theme-surface-2);
+    color: #fff;
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
   }
   .title {
@@ -675,7 +675,7 @@
   }
   .icon-btn {
     background: rgba(0, 0, 0, 0.5);
-    color: var(--theme-surface-2);
+    color: #fff;
     border: none;
     border-radius: 6px;
     padding: 4px;
@@ -696,7 +696,7 @@
   }
   .play-btn {
     background: rgba(0, 0, 0, 0.55);
-    color: var(--theme-surface-2);
+    color: #fff;
     border: none;
     width: 52px;
     height: 52px;
