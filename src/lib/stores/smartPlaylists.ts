@@ -1,16 +1,30 @@
 /**
- * Smart playlist store — saved filter conditions over the local library.
+ * Smart playlist store — saved filter conditions over the niconico
+ * snapshot search.
  *
  * A smart playlist is a *recipe*, not a static list of videos. Each time
- * the user opens one we re-run `queryLibraryVideos` with the saved filter,
- * so the result reflects whatever is currently in the library (newly DL'd
- * videos appear automatically, deleted ones disappear).
+ * the user opens one we re-run the niconico Snapshot Search API with the
+ * saved filter, so the result reflects the latest catalog state on
+ * niconico (新着動画やランキング変動が即時反映される)。
  *
- * Persisted in localStorage. Mirrors the shape of `LibraryQueryParams`
- * (in `$lib/api`) so opening a smart playlist is a 1:1 invocation.
+ * Persisted in localStorage. The filter shape mirrors what the UI editor
+ * captures; conversion to the Snapshot Search query (with required q /
+ * targets / filters / sort) happens in `filterToSearchQuery`.
+ *
+ * NOTE: 旧実装はローカルライブラリのみを対象に `queryLibraryVideos` を
+ * 叩いていたが、ユーザの期待はオンラインから取得することなので
+ * Snapshot Search ベースに切り替えた。`filterToQueryParams` はテスト/
+ * 後方互換のため残してあるが、本体ロジックでは使われていない。
  */
 
-import type { LibraryQueryParams } from '$lib/api';
+import type {
+  FilterClause,
+  LibraryQueryParams,
+  SearchField,
+  SearchQuery,
+  SearchTarget,
+  SortSpec,
+} from '$lib/api';
 
 const KEY = 'nndd:smart-playlists';
 
@@ -156,7 +170,10 @@ export function normalizeFilter(f: SmartPlaylistFilter): SmartPlaylistFilter {
   return out;
 }
 
-/** Convert a smart filter to the parameters expected by `queryLibraryVideos`. */
+/** Convert a smart filter to the parameters expected by `queryLibraryVideos`.
+ *  注: 本体は `filterToSearchQuery` (オンライン取得) を使う。これは
+ *  既存テストと、将来「ローカル限定モード」を再導入したくなった時の
+ *  ために残してある純粋関数。 */
 export function filterToQueryParams(f: SmartPlaylistFilter): LibraryQueryParams {
   const params: LibraryQueryParams = {};
   if (f.q) params.q = f.q;
@@ -170,6 +187,120 @@ export function filterToQueryParams(f: SmartPlaylistFilter): LibraryQueryParams 
   if (f.sortOrder) params.sortOrder = f.sortOrder;
   if (f.limit != null) params.limit = f.limit;
   return params;
+}
+
+/** Smart playlist の sortBy ラベルを Snapshot Search の field 名へ。
+ *  ローカル専用 (`downloaded_at` / `play_count` / `last_played_at` / `random` /
+ *  `title`) は online には無いので `null` を返し、UI 側で sort 未指定として扱う。 */
+function mapSortFieldToSearch(sortBy?: string): SearchField | null {
+  switch (sortBy) {
+    case 'posted_at':
+      return 'startTime';
+    case 'view_count':
+      return 'viewCounter';
+    case 'comment_count':
+      return 'commentCounter';
+    case 'mylist_count':
+      return 'mylistCounter';
+    case 'duration_sec':
+      return 'lengthSeconds';
+    default:
+      return null;
+  }
+}
+
+/** Snapshot Search が許す最大件数 (1 リクエスト)。サーバ側で固定値。 */
+const SEARCH_MAX_LIMIT = 100;
+
+/** Smart playlist filter を Snapshot Search の SearchQuery へ変換する。
+ *
+ *  Snapshot Search は `q` 必須 / `targets` 必須なので、ユーザ入力に
+ *  応じて妥当なデフォルトを組み立てる:
+ *   - キーワードがあれば: targets=[title,tags] でフリーワード検索
+ *   - キーワードが無くタグ AND がある: 1 つ目のタグを q に、tagsExact で
+ *     完全一致。残りのタグは filters[tagsExact][0] として AND。
+ *   - キーワードが無くタグ OR のみある: タグを " OR " で連結し
+ *     targets=[tagsExact] で投げる (snapshot search の q 構文に OR 演算子あり)
+ *   - 何も無い: 空文字を返す呼び出し側が「条件無しの smart playlist は
+ *     online 検索不可」とエラーにする
+ *
+ *  resolution はオンライン版に対応する場が無いため無視する。
+ */
+export function filterToSearchQuery(f: SmartPlaylistFilter): SearchQuery {
+  const q = (f.q ?? '').trim();
+  const andTags = (f.tags ?? []).filter((t) => t.length > 0);
+  const orTags = (f.tagsAny ?? []).filter((t) => t.length > 0);
+
+  let searchQ = '';
+  let targets: SearchTarget[] = ['title'];
+  const filters: FilterClause[] = [];
+
+  if (q) {
+    searchQ = q;
+    targets = ['title', 'tags'];
+    // キーワード + AND タグは、タグを `tagsExact eq` フィルタで足す。
+    for (const t of andTags) {
+      filters.push({ field: 'tagsExact', op: 'eq', value: t });
+    }
+  } else if (andTags.length > 0) {
+    // タグ AND のみ。先頭タグを q (targets=tagsExact)、残りは filter で AND。
+    searchQ = andTags[0];
+    targets = ['tagsExact'];
+    for (const t of andTags.slice(1)) {
+      filters.push({ field: 'tagsExact', op: 'eq', value: t });
+    }
+  } else if (orTags.length > 0) {
+    // タグ OR のみ。 q の OR 構文を使う。
+    searchQ = orTags.join(' OR ');
+    targets = ['tagsExact'];
+  }
+  // 何も無い場合は searchQ='' のまま返す → 呼び出し側がエラー表示。
+
+  if (f.uploaderId) {
+    filters.push({ field: 'userId', op: 'eq', value: f.uploaderId });
+  }
+  if (f.minDuration != null) {
+    filters.push({ field: 'lengthSeconds', op: 'gte', value: String(f.minDuration) });
+  }
+  if (f.maxDuration != null) {
+    filters.push({ field: 'lengthSeconds', op: 'lte', value: String(f.maxDuration) });
+  }
+
+  const fields: SearchField[] = [
+    'contentId',
+    'title',
+    'viewCounter',
+    'commentCounter',
+    'mylistCounter',
+    'lengthSeconds',
+    'thumbnailUrl',
+    'startTime',
+    'tags',
+    'userId',
+    'channelId',
+  ];
+
+  const sortField = mapSortFieldToSearch(f.sortBy);
+  const sort: SortSpec | undefined = sortField
+    ? { field: sortField, direction: f.sortOrder ?? 'desc' }
+    : undefined;
+
+  const requested = f.limit;
+  const limit =
+    requested != null && Number.isFinite(requested) && requested > 0
+      ? Math.min(SEARCH_MAX_LIMIT, Math.floor(requested))
+      : SEARCH_MAX_LIMIT;
+
+  const query: SearchQuery = {
+    q: searchQ,
+    targets,
+    fields,
+    filters,
+    limit,
+    offset: 0,
+  };
+  if (sort) query.sort = sort;
+  return query;
 }
 
 /** Render a short human-readable summary of the filter, e.g. for cards. */

@@ -1,10 +1,9 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
-  import { convertFileSrc } from '@tauri-apps/api/core';
-  import { queryLibraryVideos, type LibraryVideoRow } from '$lib/api';
+  import { searchVideosOnline, type SearchHit, type SearchQuery } from '$lib/api';
   import {
-    filterToQueryParams,
+    filterToSearchQuery,
     getSmartPlaylist,
     summarizeFilter,
     type SmartPlaylist,
@@ -15,7 +14,7 @@
   let smartId = $derived(page.params.id ?? '');
 
   let smart = $state<SmartPlaylist | null>(null);
-  let items = $state<LibraryVideoRow[]>([]);
+  let items = $state<SearchHit[]>([]);
   let totalCount = $state(0);
   let loading = $state(true);
   let error = $state<string | null>(null);
@@ -24,37 +23,31 @@
   // 後から到着して現在表示中のリストを上書きするのを防ぐ (codex review)。
   let refreshingFor: string | null = null;
 
-  // バックエンド query_videos は limit 既定 100 / 上限 500。スマート
-  // プレイリストの「全件オートプレイ」が 100 件で切れるのを避けるため、
-  // ユーザが filter.limit を設定していない場合は 500 件まで読み、なお
-  // それを越える場合は offset を進めて全て収集する (codex review)。
-  //
-  // ただし sort=random は SQLite の `ORDER BY RANDOM()` を query 毎に
-  // 新シャッフルで実行するため、offset/limit pagination すると各 page が
-  // 独立サンプルになって重複/欠落が出る (bug_006)。random の時は単一
-  // page (最大 500 件) で打ち切り、ユーザの「ランダム再生」期待値を満たす。
-  async function fetchAllMatching(filter: ReturnType<typeof filterToQueryParams>) {
-    const PAGE = 500;
-    if (filter.sortBy === 'random') {
-      const pageSize = Math.min(PAGE, filter.limit ?? PAGE);
-      const result = await queryLibraryVideos({ ...filter, limit: pageSize, offset: 0 });
-      return { items: result.items, totalCount: result.totalCount };
-    }
-    const userLimit = filter.limit;
-    const collected: LibraryVideoRow[] = [];
+  // Snapshot Search v2 は 1 リクエストあたり最大 100 件。ユーザ指定の
+  // 上限が無い場合は最大 500 件まで offset を進めて引っ張る。
+  // (検索 API のレート/負荷も考慮し 500 件で打ち切り。
+  // 「全件オートプレイ」のニーズに対しては十分。)
+  async function fetchAllMatching(baseQuery: SearchQuery, userLimit: number | undefined) {
+    const PAGE = 100;
+    const HARD_CAP = 500;
+    const target = userLimit ?? HARD_CAP;
+    const collected: SearchHit[] = [];
     let offset = 0;
     let total = 0;
     while (true) {
-      const remaining = userLimit != null ? userLimit - collected.length : Infinity;
+      const remaining = target - collected.length;
       if (remaining <= 0) break;
       const pageSize = Math.min(PAGE, remaining);
-      const params = { ...filter, limit: pageSize, offset };
-      const result = await queryLibraryVideos(params);
-      total = result.totalCount;
-      collected.push(...result.items);
-      if (result.items.length < pageSize) break;
+      const resp = await searchVideosOnline({
+        ...baseQuery,
+        limit: pageSize,
+        offset,
+      });
+      total = resp.meta.totalCount ?? collected.length + resp.data.length;
+      collected.push(...resp.data);
+      if (resp.data.length < pageSize) break;
       if (collected.length >= total) break;
-      offset += result.items.length;
+      offset += resp.data.length;
     }
     return { items: collected, totalCount: total };
   }
@@ -77,8 +70,18 @@
     }
     smart = sp;
     try {
-      const params = filterToQueryParams(sp.filter);
-      const result = await fetchAllMatching(params);
+      const baseQuery = filterToSearchQuery(sp.filter);
+      // Snapshot Search は q が空だと 400 になる。条件未設定の smart
+      // playlist はオンライン検索不可なので明示的にエラー表示する。
+      if (!baseQuery.q) {
+        if (refreshingFor !== captured) return;
+        items = [];
+        totalCount = 0;
+        error = '検索条件が空です。キーワード / タグ / 投稿者 ID のいずれかを指定してください。';
+        loading = false;
+        return;
+      }
+      const result = await fetchAllMatching(baseQuery, sp.filter.limit);
       if (refreshingFor !== captured) return;
       items = result.items;
       totalCount = result.totalCount;
@@ -98,14 +101,21 @@
     void refresh();
   });
 
+  // SearchHit は contentId が optional だが、queue に積めない hit は
+  // フィルタで弾く (再生先動画 ID が無いと itemHref が成立しない)。
   function toQueueItems(): PlaybackQueueItem[] {
-    return items.map((it) => ({
-      videoId: it.id,
-      title: it.title,
-      thumbnailUrl: it.thumbnailUrl ?? undefined,
-      lengthSeconds: it.durationSec,
-      source: 'local',
-    }));
+    const out: PlaybackQueueItem[] = [];
+    for (const it of items) {
+      if (!it.contentId) continue;
+      out.push({
+        videoId: it.contentId,
+        title: it.title ?? it.contentId,
+        thumbnailUrl: it.thumbnailUrl ?? undefined,
+        lengthSeconds: it.lengthSeconds ?? undefined,
+        source: 'online',
+      });
+    }
+    return out;
   }
 
   function startPlayAll(startIndex = 0) {
@@ -117,14 +127,15 @@
     void goto(itemHref(queueItems[idx]));
   }
 
-  function thumbSrc(item: LibraryVideoRow): string | undefined {
-    if (item.localThumbnailPath) return convertFileSrc(item.localThumbnailPath);
+  function thumbSrc(item: SearchHit): string | undefined {
     return item.thumbnailUrl ?? undefined;
   }
 
-  function relativeDate(unix: number | null): string {
-    if (!unix) return '';
-    const d = new Date(unix * 1000);
+  /** Snapshot Search の startTime は ISO 8601 文字列。yyyy/mm/dd へ整形。 */
+  function postedAt(iso: string | undefined): string {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
     return d.toLocaleDateString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit' });
   }
 </script>
@@ -170,12 +181,12 @@
     <div class="empty">
       <p class="muted">条件にマッチする動画がありません。</p>
       <p class="muted">
-        ライブラリに動画を DL するか、<a href="/playlists?tab=smart">条件を見直して</a>ください。
+        <a href="/playlists?tab=smart">条件を見直して</a>ください。
       </p>
     </div>
   {:else}
     <div class="grid">
-      {#each items as item, i (item.id)}
+      {#each items as item, i (item.contentId ?? i)}
         <button type="button" class="card" onclick={() => startPlayAll(i)} title="ここから連続再生">
           <div class="thumb-wrap">
             {#if thumbSrc(item)}
@@ -183,7 +194,9 @@
             {:else}
               <div class="thumb-placeholder">?</div>
             {/if}
-            <span class="duration">{formatDuration(item.durationSec)}</span>
+            {#if item.lengthSeconds != null}
+              <span class="duration">{formatDuration(item.lengthSeconds)}</span>
+            {/if}
             {#if i === 0}
               <span class="start-badge">先頭から再生</span>
             {/if}
@@ -191,15 +204,19 @@
           <div class="meta-row">
             <h3 class="title" title={item.title}>{item.title}</h3>
             <div class="row muted">
-              {#if item.uploaderName}<span>{item.uploaderName}</span>{/if}
-              {#if item.viewCount != null}
-                <span class="dot">·</span><span>{formatNumber(item.viewCount)} 再生</span>
+              {#if item.viewCounter != null}
+                <span>{formatNumber(item.viewCounter)} 再生</span>
+              {/if}
+              {#if item.commentCounter != null}
+                <span class="dot">·</span><span>コメ {formatNumber(item.commentCounter)}</span>
+              {/if}
+              {#if item.mylistCounter != null}
+                <span class="dot">·</span><span>マイ {formatNumber(item.mylistCounter)}</span>
               {/if}
             </div>
             <div class="row muted small">
-              <span>DL {relativeDate(item.downloadedAt)}</span>
-              {#if item.resolution}
-                <span class="dot">·</span><span>{item.resolution}</span>
+              {#if postedAt(item.startTime)}
+                <span>投稿 {postedAt(item.startTime)}</span>
               {/if}
             </div>
           </div>

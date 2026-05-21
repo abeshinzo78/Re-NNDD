@@ -3,6 +3,7 @@ import {
   createSmartPlaylist,
   deleteSmartPlaylist,
   filterToQueryParams,
+  filterToSearchQuery,
   getSmartPlaylist,
   listSmartPlaylists,
   normalizeFilter,
@@ -160,5 +161,79 @@ describe('summarizeFilter', () => {
 
   test('returns a fallback for empty filters', () => {
     expect(summarizeFilter({})).toBe('条件なし (全件)');
+  });
+});
+
+describe('filterToSearchQuery (online snapshot search)', () => {
+  test('keyword becomes q with title+tags targets', () => {
+    const q = filterToSearchQuery({ q: 'ボカロ' });
+    expect(q.q).toBe('ボカロ');
+    expect(q.targets).toEqual(['title', 'tags']);
+    expect(q.filters).toEqual([]);
+  });
+
+  test('AND tags without keyword: first tag is q (tagsExact), rest become filters', () => {
+    const q = filterToSearchQuery({ tags: ['ボカロ', '名作'] });
+    expect(q.q).toBe('ボカロ');
+    expect(q.targets).toEqual(['tagsExact']);
+    expect(q.filters).toEqual([{ field: 'tagsExact', op: 'eq', value: '名作' }]);
+  });
+
+  test('OR tags only: joined with OR operator', () => {
+    const q = filterToSearchQuery({ tagsAny: ['替え歌', '弾いてみた'] });
+    expect(q.q).toBe('替え歌 OR 弾いてみた');
+    expect(q.targets).toEqual(['tagsExact']);
+  });
+
+  test('keyword + AND tags: tags become tagsExact filters', () => {
+    const q = filterToSearchQuery({ q: 'ライブ', tags: ['ボカロ'] });
+    expect(q.q).toBe('ライブ');
+    expect(q.targets).toEqual(['title', 'tags']);
+    expect(q.filters).toContainEqual({ field: 'tagsExact', op: 'eq', value: 'ボカロ' });
+  });
+
+  test('uploader / duration become snapshot search filters', () => {
+    const q = filterToSearchQuery({
+      q: 'a',
+      uploaderId: '12345',
+      minDuration: 60,
+      maxDuration: 600,
+    });
+    expect(q.filters).toContainEqual({ field: 'userId', op: 'eq', value: '12345' });
+    expect(q.filters).toContainEqual({ field: 'lengthSeconds', op: 'gte', value: '60' });
+    expect(q.filters).toContainEqual({ field: 'lengthSeconds', op: 'lte', value: '600' });
+  });
+
+  test('sort maps to snapshot search field names', () => {
+    const q = filterToSearchQuery({ q: 'a', sortBy: 'view_count', sortOrder: 'desc' });
+    expect(q.sort).toEqual({ field: 'viewCounter', direction: 'desc' });
+  });
+
+  test('local-only sort fields are dropped (no sort emitted)', () => {
+    const q = filterToSearchQuery({ q: 'a', sortBy: 'play_count', sortOrder: 'desc' });
+    expect(q.sort).toBeUndefined();
+  });
+
+  test('limit is capped to snapshot search max (100)', () => {
+    const q = filterToSearchQuery({ q: 'a', limit: 500 });
+    expect(q.limit).toBeLessThanOrEqual(100);
+  });
+
+  test('limit honors user value when small', () => {
+    const q = filterToSearchQuery({ q: 'a', limit: 25 });
+    expect(q.limit).toBe(25);
+  });
+
+  test('empty filter yields empty q (caller surfaces a UX error)', () => {
+    const q = filterToSearchQuery({});
+    expect(q.q).toBe('');
+  });
+
+  test('resolution is silently ignored online', () => {
+    const q = filterToSearchQuery({ q: 'a', resolution: '1280x720' });
+    const hasResolutionFilter = (q.filters ?? []).some(
+      (c) => String(c.field).toLowerCase() === 'resolution',
+    );
+    expect(hasResolutionFilter).toBe(false);
   });
 });
