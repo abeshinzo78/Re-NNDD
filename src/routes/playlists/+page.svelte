@@ -147,7 +147,10 @@
   let editorResolution = $state('');
   let editorSortBy = $state('downloaded_at');
   let editorSortOrder = $state<'asc' | 'desc'>('desc');
-  let editorLimit = $state<number | null>(100);
+  // 新規作成時の既定値は null (= 制限なし)。ラベルにも「空欄=制限なし」と
+  // 出している (codex review)。100 を強制すると、既に作った無制限プレイリスト
+  // を編集モーダルで開いて保存しただけで 100 件に絞られてしまうため。
+  let editorLimit = $state<number | null>(null);
 
   function openEditor(target: SmartPlaylist | null) {
     editorTargetId = target?.id ?? null;
@@ -163,7 +166,7 @@
     editorResolution = f.resolution ?? '';
     editorSortBy = f.sortBy ?? 'downloaded_at';
     editorSortOrder = f.sortOrder ?? 'desc';
-    editorLimit = f.limit ?? 100;
+    editorLimit = f.limit ?? null;
     editorOpen = true;
   }
 
@@ -514,8 +517,8 @@
               </div>
 
               <label class="field">
-                <span>上限件数 (空欄=既定 100、最大 500)</span>
-                <input type="number" min="1" max="500" bind:value={editorLimit} />
+                <span>上限件数 (空欄=制限なし)</span>
+                <input type="number" min="1" bind:value={editorLimit} />
               </label>
             </fieldset>
           </div>

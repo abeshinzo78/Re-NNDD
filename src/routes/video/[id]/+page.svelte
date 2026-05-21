@@ -625,6 +625,7 @@
               }}
               onTogglePip={togglePip}
               pipActive={false}
+              forceAutoplay={page.url.searchParams.get('from') === 'queue'}
             />
           {/if}
           {#if ngFilteredCount > 0}

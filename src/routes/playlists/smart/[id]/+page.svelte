@@ -28,8 +28,18 @@
   // プレイリストの「全件オートプレイ」が 100 件で切れるのを避けるため、
   // ユーザが filter.limit を設定していない場合は 500 件まで読み、なお
   // それを越える場合は offset を進めて全て収集する (codex review)。
+  //
+  // ただし sort=random は SQLite の `ORDER BY RANDOM()` を query 毎に
+  // 新シャッフルで実行するため、offset/limit pagination すると各 page が
+  // 独立サンプルになって重複/欠落が出る (bug_006)。random の時は単一
+  // page (最大 500 件) で打ち切り、ユーザの「ランダム再生」期待値を満たす。
   async function fetchAllMatching(filter: ReturnType<typeof filterToQueryParams>) {
     const PAGE = 500;
+    if (filter.sortBy === 'random') {
+      const pageSize = Math.min(PAGE, filter.limit ?? PAGE);
+      const result = await queryLibraryVideos({ ...filter, limit: pageSize, offset: 0 });
+      return { items: result.items, totalCount: result.totalCount };
+    }
     const userLimit = filter.limit;
     const collected: LibraryVideoRow[] = [];
     let offset = 0;
