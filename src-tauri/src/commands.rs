@@ -228,35 +228,6 @@ pub async fn search_videos_online(query: SearchQuery) -> Result<SearchResponse> 
     Ok(response)
 }
 
-/// ショート動画の人気ランキングを検索 API 経由で取得。
-/// contentType=short でフィルタし、再生数降順。
-#[tauri::command]
-pub async fn search_shorts_ranking(
-    offset: Option<u32>,
-    limit: Option<u32>,
-) -> Result<SearchResponse> {
-    let client = SnapshotSearchClient::new().map_err(AppError::from)?;
-    let query = SearchQuery {
-        q: "\u{306E}".to_string(),
-        targets: vec![crate::api::types::SearchTarget::TagsExact],
-        fields: vec![],
-        filters: vec![crate::api::types::FilterClause {
-            field: crate::api::types::SearchField::ContentType,
-            op: crate::api::types::FilterOp::Eq,
-            value: "short".to_string(),
-        }],
-        sort: Some(crate::api::types::SortSpec {
-            field: crate::api::types::SearchField::ViewCounter,
-            direction: crate::api::types::SortDirection::Desc,
-        }),
-        offset: offset.unwrap_or(0),
-        limit: limit.unwrap_or(100).min(100),
-        context: "re-nndd-shorts".to_string(),
-    };
-    let response = client.search(&query).await.map_err(AppError::from)?;
-    Ok(response)
-}
-
 #[derive(Debug, Clone, Serialize)]
 pub struct RelatedVideoItem {
     #[serde(rename = "contentId")]

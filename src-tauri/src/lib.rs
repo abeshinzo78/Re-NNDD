@@ -68,7 +68,6 @@ pub fn run() {
             commands::get_app_version,
             commands::web_log,
             commands::search_videos_online,
-            commands::search_shorts_ranking,
             commands::save_session_cookie,
             commands::clear_session_cookie,
             commands::session_cookie_status,

@@ -85,7 +85,8 @@
     ngRules.some((r) => r.enabled && r.scopeRanking && r.targetType === 'tag'),
   );
 
-  let displayed = $derived(applyNgFilter(items, ngRules, tagMap));
+  let baseItems = $derived(rankShort ? items.filter((item) => item.id.startsWith('ss')) : items);
+  let displayed = $derived(applyNgFilter(baseItems, ngRules, tagMap));
   let blockedCount = $derived(items.length - displayed.length);
 
   function applyNgFilter(
@@ -182,51 +183,16 @@
     pending = true;
     error = null;
     try {
-      if (rankShort) {
-        const resp = await invoke<{
-          meta: { status: number };
-          data: { contentId?: string; title?: string; lengthSeconds?: number; viewCounter?: number; commentCounter?: number; mylistCounter?: number; likeCounter?: number; thumbnailUrl?: string; description?: string; startTime?: string }[];
-        }>('search_shorts_ranking', {
-          offset: (page - 1) * 100,
-          limit: 100,
-        });
-        const shortItems = (resp.data ?? [])
-          .filter((h) => h.contentId)
-          .map(
-            (h): RankingItem =>
-              ({
-                id: h.contentId!,
-                title: h.title ?? h.contentId!,
-                contentType: 'short',
-                duration: h.lengthSeconds ?? null,
-                count: {
-                  view: h.viewCounter ?? 0,
-                  comment: h.commentCounter ?? 0,
-                  mylist: h.mylistCounter ?? 0,
-                  like: h.likeCounter ?? 0,
-                },
-                thumbnail: { url: h.thumbnailUrl ?? null },
-                shortDescription: h.description ?? null,
-                registeredAt: h.startTime ?? null,
-                owner: null,
-              }) as RankingItem,
-          );
-        items = shortItems;
-        hasNext = shortItems.length === 100;
-        label = 'ショート動画ランキング';
-        fetchedAt = new Date().toISOString();
-      } else {
-        const genreKey = GENRE_KEY_BY_NAME[genre];
-        const params = new URLSearchParams({ term, page: String(page) });
-        const url = `https://www.nicovideo.jp/ranking/genre/${genreKey}?${params}`;
-        const html = await invoke<string>('fetch_ranking_html', { url });
-        const { parsed } = extractAndParse(html);
-        const ranking = parsed.data.response.$getTeibanRanking.data;
-        items = ranking.items;
-        hasNext = ranking.hasNext;
-        label = ranking.label;
-        fetchedAt = new Date().toISOString();
-      }
+      const genreKey = GENRE_KEY_BY_NAME[genre];
+      const params = new URLSearchParams({ term, page: String(page) });
+      const url = `https://www.nicovideo.jp/ranking/genre/${genreKey}?${params}`;
+      const html = await invoke<string>('fetch_ranking_html', { url });
+      const { parsed } = extractAndParse(html);
+      const ranking = parsed.data.response.$getTeibanRanking.data;
+      items = ranking.items;
+      hasNext = ranking.hasNext;
+      label = ranking.label;
+      fetchedAt = new Date().toISOString();
     } catch (e) {
       error = String(e);
       items = [];
