@@ -31,6 +31,11 @@ pub const MIGRATIONS: &[Migration] = &[
         name: "is_short",
         sql: include_str!("schema/m003_is_short.sql"),
     },
+    Migration {
+        version: 4,
+        name: "ss_shorts",
+        sql: include_str!("schema/m004_ss_shorts.sql"),
+    },
 ];
 
 /// Apply pending migrations. Idempotent — safe to call on every startup.

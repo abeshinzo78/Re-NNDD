@@ -55,6 +55,11 @@
   }
 
   let searchTimeout: ReturnType<typeof setTimeout> | null = null;
+  function onToggleShort() {
+    filterShort = !filterShort;
+    refresh();
+  }
+
   function onSearchInput() {
     if (searchTimeout) clearTimeout(searchTimeout);
     searchTimeout = setTimeout(refresh, 300);
@@ -158,7 +163,7 @@
         oninput={onSearchInput}
       />
       <label class="short-toggle">
-        <input type="checkbox" bind:checked={filterShort} onchange={refresh} />
+        <input type="checkbox" checked={filterShort} onchange={onToggleShort} />
         <span>ショート</span>
       </label>
       <button type="button" class="ghost" onclick={refresh}>更新</button>

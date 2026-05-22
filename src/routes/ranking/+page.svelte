@@ -85,7 +85,8 @@
     ngRules.some((r) => r.enabled && r.scopeRanking && r.targetType === 'tag'),
   );
 
-  let displayed = $derived(applyNgFilter(items, ngRules, tagMap));
+  let baseItems = $derived(rankShort ? items.filter((item) => item.id.startsWith('ss')) : items);
+  let displayed = $derived(applyNgFilter(baseItems, ngRules, tagMap));
   let blockedCount = $derived(items.length - displayed.length);
 
   function applyNgFilter(
@@ -182,7 +183,7 @@
     pending = true;
     error = null;
     try {
-      const genreKey = rankShort ? 'short' : GENRE_KEY_BY_NAME[genre];
+      const genreKey = GENRE_KEY_BY_NAME[genre];
       const params = new URLSearchParams({ term, page: String(page) });
       const url = `https://www.nicovideo.jp/ranking/genre/${genreKey}?${params}`;
       const html = await invoke<string>('fetch_ranking_html', { url });
@@ -279,7 +280,7 @@
 
     <div class="row">
       <label class="short-rank-toggle">
-        <input type="checkbox" bind:checked={rankShort} onchange={runFetch} />
+        <input type="checkbox" checked={rankShort} onchange={() => (rankShort = !rankShort)} />
         <span>ショート</span>
       </label>
     </div>
