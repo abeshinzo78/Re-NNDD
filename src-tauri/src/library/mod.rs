@@ -8,6 +8,7 @@ pub mod query;
 pub mod queue;
 pub mod schema;
 pub mod settings;
+pub mod snapshots;
 pub mod videos;
 
 /// 現在時刻を UNIX 秒で返す。クロックが UNIX_EPOCH より前にずれている (= 環境の

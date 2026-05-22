@@ -25,6 +25,7 @@ use crate::library::db::LibraryHandle;
 use crate::library::query::{self, LibraryQuery, LibraryStats, QueryResult};
 use crate::library::queue::{self, DownloadQueueItem};
 use crate::library::settings;
+use crate::library::snapshots;
 use crate::library::videos::{self, CommentRecord, IngestPayload, TagRecord, VideoRecord};
 use crate::local_server::LocalServer;
 
@@ -2197,9 +2198,12 @@ pub struct LibraryTag {
 
 /// ローカルに DL 済みの動画がある場合のみ Some を返す。
 /// 無ければ呼び出し側は `prepare_playback` (HLS) にフォールバックする。
+/// `snapshot_id` を指定するとそのスナップショットのコメントを返す。
+/// 省略時は最新スナップショット（後方互換）。
 #[tauri::command]
 pub async fn prepare_local_playback(
     video_id: String,
+    snapshot_id: Option<i64>,
     library: State<'_, Arc<LibraryHandle>>,
     app: tauri::AppHandle,
 ) -> Result<Option<LocalPlaybackPayload>> {
@@ -2283,15 +2287,18 @@ pub async fn prepare_local_playback(
         .filter_map(|r| r.ok())
         .collect();
 
-    // 最新の snapshot のコメント
-    let snap_id: Option<i64> = conn
-        .query_row(
+    // 最新の snapshot のコメント（snapshot_id 指定時はそれを使用）
+    let snap_id: Option<i64> = if let Some(sid) = snapshot_id {
+        Some(sid)
+    } else {
+        conn.query_row(
             "SELECT id FROM comment_snapshots WHERE video_id = ?1 \
              ORDER BY taken_at DESC, id DESC LIMIT 1",
             rusqlite::params![video_id],
             |row| row.get(0),
         )
-        .ok();
+        .ok()
+    };
     let comments: Vec<LocalPlayerComment> = if let Some(sid) = snap_id {
         let mut stmt = conn
             .prepare(
@@ -2351,6 +2358,150 @@ pub async fn prepare_local_playback(
         local_thumbnail_path: thumb_abs,
         comments,
     }))
+}
+
+// =================== コメントスナップショット運用 ===================
+
+/// 指定動画の全スナップショットを一覧取得。
+#[tauri::command]
+pub async fn list_comment_snapshots(
+    video_id: String,
+    library: State<'_, Arc<LibraryHandle>>,
+) -> Result<Vec<snapshots::CommentSnapshotRow>> {
+    validate_video_id(&video_id)?;
+    let conn = library.lock().await;
+    snapshots::list_snapshots(&conn, &video_id).map_err(AppError::from)
+}
+
+/// スナップショットに含まれるコメントを LocalPlayerComment 形式で取得。
+#[tauri::command]
+pub async fn load_snapshot_comments(
+    snapshot_id: i64,
+    library: State<'_, Arc<LibraryHandle>>,
+) -> Result<Vec<LocalPlayerComment>> {
+    let conn = library.lock().await;
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, no, vpos_ms, content, mail, user_hash, is_owner, posted_at \
+             FROM comments WHERE snapshot_id = ?1 ORDER BY vpos_ms ASC",
+        )
+        .map_err(|e| AppError::Other(format!("prepare: {e}")))?;
+
+    let rows = stmt
+        .query_map(rusqlite::params![snapshot_id], |row| {
+            let mail: Option<String> = row.get(4)?;
+            let mail_str = mail.unwrap_or_default();
+            let commands: Vec<String> =
+                mail_str.split_whitespace().map(|s| s.to_string()).collect();
+            let is_owner = row.get::<_, i64>(6)? != 0;
+            let fork = if is_owner { "owner" } else { "main" };
+            Ok(LocalPlayerComment {
+                id: row.get::<_, i64>(0)?.to_string(),
+                no: row.get(1)?,
+                vpos_ms: row.get(2)?,
+                content: row.get(3)?,
+                mail: mail_str,
+                commands,
+                user_id: row.get(5)?,
+                posted_at: row.get::<_, Option<i64>>(7)?.map(|t| t.to_string()),
+                fork: fork.to_string(),
+                is_owner,
+                nicoru_count: None,
+                score: None,
+            })
+        })
+        .map_err(|e| AppError::Other(format!("query comments: {e}")))?;
+    let collected: Vec<LocalPlayerComment> = rows.filter_map(|r| r.ok()).collect();
+    Ok(collected)
+}
+
+/// スナップショットを削除（CASCADE でコメントも消える）。
+#[tauri::command]
+pub async fn delete_comment_snapshot(
+    snapshot_id: i64,
+    library: State<'_, Arc<LibraryHandle>>,
+) -> Result<bool> {
+    let conn = library.lock().await;
+    snapshots::delete_snapshot(&conn, snapshot_id).map_err(AppError::from)
+}
+
+/// スナップショットの note を更新。null でクリア。
+#[tauri::command]
+pub async fn update_snapshot_note(
+    snapshot_id: i64,
+    note: Option<String>,
+    library: State<'_, Arc<LibraryHandle>>,
+) -> Result<bool> {
+    let conn = library.lock().await;
+    snapshots::update_snapshot_note(&conn, snapshot_id, note.as_deref()).map_err(AppError::from)
+}
+
+/// DL 済み動画のコメントを niconico API から再取得し、新規スナップショットを作成。
+/// 成功時は新しい snapshot_id を返す。
+#[tauri::command]
+pub async fn refetch_video_comments(
+    video_id: String,
+    library: State<'_, Arc<LibraryHandle>>,
+    store: State<'_, Arc<SessionStore>>,
+) -> Result<i64> {
+    use crate::api::video::NiconicoWatchClient;
+    validate_video_id(&video_id)?;
+
+    // 動画がライブラリに存在するか確認
+    {
+        let conn = library.lock().await;
+        let exists: bool = conn
+            .query_row(
+                "SELECT COUNT(*) > 0 FROM videos WHERE id = ?1 AND video_path IS NOT NULL",
+                rusqlite::params![video_id],
+                |row| row.get(0),
+            )
+            .unwrap_or(false);
+        if !exists {
+            return Err(AppError::Other("動画がダウンロードされていません".into()));
+        }
+    }
+
+    let session = Arc::clone(&store);
+    let watch = NiconicoWatchClient::new(Arc::clone(&session)).map_err(AppError::from)?;
+    let page = watch.fetch_watch_page(&video_id).await.ok();
+    let comments_dto = if let Some(p) = page.as_ref().and_then(|p| p.nv_comment.as_ref()) {
+        let cclient = ThreadsClient::new(Arc::clone(&session)).map_err(AppError::from)?;
+        cclient.fetch_comments(p).await.unwrap_or_default()
+    } else {
+        return Err(AppError::Other(
+            "watch ページからコメント情報を取得できませんでした".into(),
+        ));
+    };
+
+    let comment_records: Vec<CommentRecord> = comments_dto
+        .iter()
+        .map(|c| CommentRecord {
+            no: c.no,
+            vpos_ms: c.vpos_ms,
+            content: c.content.clone(),
+            mail: if c.mail.is_empty() {
+                None
+            } else {
+                Some(c.mail.clone())
+            },
+            user_hash: c.user_id.clone(),
+            is_owner: c.is_owner,
+            posted_at: c.posted_at.as_deref().and_then(parse_iso8601_to_unix),
+        })
+        .collect();
+
+    let mut conn = library.lock().await;
+    let snapshot_id = snapshots::take_snapshot(&mut conn, &video_id, &comment_records, None)
+        .map_err(AppError::from)?;
+
+    tracing::info!(
+        video_id = %video_id,
+        snapshot_id = snapshot_id,
+        comments = comment_records.len(),
+        "refetched video comments"
+    );
+    Ok(snapshot_id)
 }
 
 // =================== ライブラリ検索・整列・集計 ===================

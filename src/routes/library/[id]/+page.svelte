@@ -13,6 +13,12 @@
     prepareLocalPlayback,
     remuxLocalVideo,
     type LocalPlaybackPayload,
+    listCommentSnapshots,
+    loadSnapshotComments,
+    deleteCommentSnapshot,
+    updateSnapshotNote,
+    refetchVideoComments,
+    type CommentSnapshotRow,
   } from '$lib/api';
   import { formatDate, formatDuration, formatNumber, videoUrl } from '$lib/format';
   import type { PlayerComment } from '$lib/player/types';
@@ -47,6 +53,17 @@
 
   let visibleComments = $derived(filterComments(ngRules, comments));
   let ngFilteredCount = $derived(comments.length - visibleComments.length);
+
+  // コメントスナップショット管理
+  let snapshots = $state<CommentSnapshotRow[]>([]);
+  let activeSnapshotId = $state<number | null>(null);
+  let snapshotLoading = $state(false);
+  let snapshotMessage = $state<string | null>(null);
+  let editingNoteId = $state<number | null>(null);
+  let editingNoteText = $state('');
+  let playerKey = $state(0);
+  // スナップショット切替時の再生位置復元用（テンプレート内で消費するので $state 禁止）
+  let _pendingResumeTime: number | null = null;
 
   // 動画は内蔵 HTTP サーバ (http://127.0.0.1:port/v/{id}/...) 経由で配信する。
   // Blob URL は WebKitGTK + GStreamer の組合せだと後方 seek でガビガビになる。
@@ -153,6 +170,12 @@
         return;
       }
       local = result;
+      // スナップショット一覧も並行取得
+      await loadSnapshots(id);
+      // 使用中のスナップショットIDを記録。最初は最新を選択。
+      if (snapshots.length > 0) {
+        activeSnapshotId = snapshots[0].id;
+      }
       // 内蔵 HTTP サーバの URL を取る。Range 対応なので後方 seek が clean。
       try {
         localSrc = await localVideoUrl(id);
@@ -209,6 +232,11 @@
   }
 
   function getResumePosition(id: string): number {
+    if (_pendingResumeTime != null) {
+      const t = _pendingResumeTime;
+      _pendingResumeTime = null;
+      return t;
+    }
     const pipPos = miniPlayer.consumeReturnPosition(id);
     if (pipPos > 0) return pipPos;
     if (!getBool('playback.resume_enabled')) return 0;
@@ -393,6 +421,97 @@
     }
   }
 
+  async function loadSnapshots(vid: string) {
+    try {
+      snapshots = await listCommentSnapshots(vid);
+    } catch {
+      snapshots = [];
+    }
+  }
+
+  async function switchSnapshot(snapId: number) {
+    if (snapshotLoading) return;
+    snapshotLoading = true;
+    snapshotMessage = null;
+    try {
+      const cs = await loadSnapshotComments(snapId);
+      const newComments = cs.map(dtoToPlayerComment);
+      // 現在の再生位置を保存
+      const vid = playerRef?.getVideo();
+      const t = vid ? vid.currentTime : currentTime;
+      _pendingResumeTime = t;
+      // 全 state を同期的に更新（Svelte が一括で処理 → Player を即再マウント）
+      comments = newComments;
+      commentsSettled = true;
+      activeSnapshotId = snapId;
+      playerKey++;
+      // スナップショット一覧は後で更新（表示のみ、ブロッキング不要）
+      void loadSnapshots(videoId);
+    } catch (e) {
+      snapshotMessage = `コメント読込失敗: ${e}`;
+      void loadSnapshots(videoId);
+    } finally {
+      snapshotLoading = false;
+    }
+  }
+
+  async function onRefetch(vid: string) {
+    if (!confirm('niconico から最新のコメントを再取得しますか？')) return;
+    snapshotLoading = true;
+    snapshotMessage = null;
+    try {
+      const newId = await refetchVideoComments(vid);
+      await loadSnapshots(vid);
+      snapshotMessage = `再取得完了 (新スナップショット #${newId})`;
+      activeSnapshotId = newId;
+    } catch (e) {
+      snapshotMessage = `再取得失敗: ${e}`;
+    } finally {
+      snapshotLoading = false;
+    }
+  }
+
+  async function onDeleteSnapshot(snapId: number) {
+    if (!confirm('このスナップショットを削除しますか？')) return;
+    try {
+      await deleteCommentSnapshot(snapId);
+      await loadSnapshots(videoId);
+      if (activeSnapshotId === snapId) {
+        activeSnapshotId = null;
+        // 削除後、必要なら最新に戻す
+        if (snapshots.length > 0) {
+          await switchSnapshot(snapshots[0].id);
+        } else {
+          comments = [];
+          commentsSettled = true;
+        }
+      }
+    } catch (e) {
+      snapshotMessage = `削除失敗: ${e}`;
+    }
+  }
+
+  function startEditNote(snap: CommentSnapshotRow) {
+    editingNoteId = snap.id;
+    editingNoteText = snap.note ?? '';
+  }
+
+  function cancelEditNote() {
+    editingNoteId = null;
+    editingNoteText = '';
+  }
+
+  async function saveNote(snapId: number) {
+    try {
+      await updateSnapshotNote(snapId, editingNoteText || null);
+      await loadSnapshots(videoId);
+      editingNoteId = null;
+      editingNoteText = '';
+    } catch (e) {
+      snapshotMessage = `ノート保存失敗: ${e}`;
+    }
+  }
+
   onDestroy(() => {
     ngUnsub();
     unsubQueueLoop();
@@ -526,26 +645,28 @@
               </div>
             </div>
           {:else}
-            <Player
-              bind:this={playerRef}
-              hlsUrl=""
-              localSrc={ls}
-              localAudioSrc={las ?? undefined}
-              comments={visibleComments}
-              videoTitle={lp.title}
-              videoId={lp.videoId}
-              onTime={handleTimeUpdate}
-              onEnded={handleEnded}
-              resumePosition={getResumePosition(lp.videoId)}
-              {loop}
-              onLoopChange={(v) => {
-                loop = v;
-                loopUserSet = true;
-              }}
-              onTogglePip={togglePip}
-              pipActive={false}
-              forceAutoplay={shouldForceAutoplay(lp.videoId)}
-            />
+            {#key playerKey}
+              <Player
+                bind:this={playerRef}
+                hlsUrl=""
+                localSrc={ls}
+                localAudioSrc={las ?? undefined}
+                comments={visibleComments}
+                videoTitle={lp.title}
+                videoId={lp.videoId}
+                onTime={handleTimeUpdate}
+                onEnded={handleEnded}
+                resumePosition={getResumePosition(lp.videoId)}
+                {loop}
+                onLoopChange={(v) => {
+                  loop = v;
+                  loopUserSet = true;
+                }}
+                onTogglePip={togglePip}
+                pipActive={false}
+                forceAutoplay={shouldForceAutoplay(lp.videoId)}
+              />
+            {/key}
           {/if}
           {#if ngFilteredCount > 0}
             <div class="ng-banner">NG: {ngFilteredCount} 件のコメを除外中</div>
@@ -628,6 +749,101 @@
             <p class="desc">{@html sanitizeDescriptionHtml(lp.description)}</p>
           </details>
         {/if}
+      </div>
+
+      <!-- コメントスナップショット管理 -->
+      <div class="snapshot-section">
+        <h3>コメントスナップショット</h3>
+        {#if snapshotMessage}
+          <div class="snap-msg">{snapshotMessage}</div>
+        {/if}
+        {#if snapshots.length === 0}
+          <div class="muted">スナップショットがありません</div>
+        {:else}
+          <table class="snap-table">
+            <thead>
+              <tr>
+                <th>取得日時</th>
+                <th>コメント数</th>
+                <th>ノート</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each snapshots as snap (snap.id)}
+                <tr class:active={activeSnapshotId === snap.id}>
+                  <td>
+                    {formatDate(new Date(snap.takenAt * 1000).toISOString())}
+                    {#if snap.isInitial}<span class="snap-badge">初期</span>{/if}
+                  </td>
+                  <td>{snap.commentCount}</td>
+                  <td class="note-cell">
+                    {#if editingNoteId === snap.id}
+                      <input
+                        type="text"
+                        class="note-input"
+                        bind:value={editingNoteText}
+                        placeholder="ノート…"
+                        onkeydown={(e) => {
+                          if (e.key === 'Enter') saveNote(snap.id);
+                          if (e.key === 'Escape') cancelEditNote();
+                        }}
+                      />
+                      <button type="button" class="snap-btn-small" onclick={() => saveNote(snap.id)}
+                        >保存</button
+                      >
+                      <button type="button" class="snap-btn-small" onclick={cancelEditNote}
+                        >取消</button
+                      >
+                    {:else}
+                      <!-- svelte-ignore a11y_no_static_element_interactions -->
+                      <span class="note-text" ondblclick={() => startEditNote(snap)}
+                        >{snap.note ?? ''}</span
+                      >
+                    {/if}
+                  </td>
+                  <td class="actions-cell">
+                    {#if activeSnapshotId !== snap.id}
+                      <button
+                        type="button"
+                        class="snap-btn"
+                        disabled={snapshotLoading}
+                        onclick={() => switchSnapshot(snap.id)}>切替</button
+                      >
+                    {:else}
+                      <span class="snap-active">使用中</span>
+                    {/if}
+                    <button
+                      type="button"
+                      class="snap-btn-edit"
+                      title="ノート編集"
+                      onclick={() => startEditNote(snap)}
+                      disabled={editingNoteId !== null}>✎</button
+                    >
+                    {#if !snap.isInitial}
+                      <button
+                        type="button"
+                        class="snap-btn-del"
+                        title="削除"
+                        onclick={() => onDeleteSnapshot(snap.id)}>✕</button
+                      >
+                    {/if}
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        {/if}
+        <div class="snap-actions">
+          <button
+            type="button"
+            class="snap-refetch-btn"
+            disabled={snapshotLoading}
+            onclick={() => onRefetch(lp.videoId)}
+          >
+            {snapshotLoading ? '再取得中…' : 'niconico からコメント再取得'}
+          </button>
+        </div>
       </div>
     </div>
   {/if}
@@ -1100,5 +1316,179 @@
   :global(body:has(:fullscreen)) .comment-panel,
   :global(body:has(:fullscreen)) .below {
     display: none !important;
+  }
+
+  /* コメントスナップショット管理 */
+  .snapshot-section {
+    background: var(--theme-surface-2);
+    border: 1px solid var(--theme-border);
+    border-radius: 6px;
+    padding: 12px 14px;
+    min-width: 0;
+  }
+  .page.classic .snapshot-section {
+    border-radius: 3px;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.75) inset;
+  }
+  .snapshot-section h3 {
+    margin: 0 0 10px 0;
+    font-size: 14px;
+  }
+  .snap-msg {
+    background: var(--theme-accent-bg);
+    color: var(--theme-accent-soft);
+    border: 1px solid var(--theme-accent-border);
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    margin-bottom: 8px;
+  }
+  .snap-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .snap-table th {
+    text-align: left;
+    color: var(--theme-text-muted);
+    font-weight: 500;
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--theme-border);
+    font-size: 11px;
+  }
+  .snap-table td {
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--theme-border);
+    vertical-align: middle;
+  }
+  .snap-table tr:hover {
+    background: var(--theme-surface-hover);
+  }
+  .snap-table tr.active {
+    background: var(--theme-accent-bg);
+  }
+  .snap-badge {
+    background: var(--theme-success-bg);
+    color: var(--theme-success-text);
+    border: 1px solid var(--theme-success-border);
+    padding: 1px 6px;
+    border-radius: 999px;
+    font-size: 10px;
+    margin-left: 6px;
+  }
+  .note-cell {
+    max-width: 200px;
+  }
+  .note-text {
+    color: var(--theme-text-soft);
+    cursor: default;
+    display: inline-block;
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    line-height: 1.4;
+  }
+  .note-text:hover {
+    color: var(--theme-text);
+    text-decoration: underline;
+    text-decoration-style: dotted;
+  }
+  .note-input {
+    width: 120px;
+    padding: 2px 6px;
+    border: 1px solid var(--theme-accent-border);
+    border-radius: 4px;
+    font-size: 12px;
+    background: var(--theme-bg);
+    color: var(--theme-text);
+  }
+  .actions-cell {
+    white-space: nowrap;
+    text-align: right;
+  }
+  .snap-btn {
+    background: var(--theme-accent);
+    color: #fff;
+    border: none;
+    padding: 3px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 11px;
+  }
+  .snap-btn:hover:not(:disabled) {
+    background: var(--theme-accent-hover);
+  }
+  .snap-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .snap-active {
+    color: var(--theme-accent-soft);
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .snap-btn-edit {
+    background: transparent;
+    border: 1px solid var(--theme-border-strong);
+    color: var(--theme-text-soft);
+    padding: 3px 6px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 11px;
+    margin-left: 4px;
+  }
+  .snap-btn-edit:hover:not(:disabled) {
+    background: var(--theme-surface-hover);
+  }
+  .snap-btn-edit:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .snap-btn-del {
+    background: transparent;
+    border: 1px solid var(--theme-danger-border);
+    color: var(--theme-danger-text);
+    padding: 3px 6px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 11px;
+    margin-left: 4px;
+  }
+  .snap-btn-del:hover {
+    background: var(--theme-danger-bg);
+  }
+  .snap-btn-small {
+    background: var(--theme-surface-3);
+    border: 1px solid var(--theme-border);
+    color: var(--theme-text-soft);
+    padding: 2px 6px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 10px;
+    margin-left: 3px;
+  }
+  .snap-btn-small:hover {
+    background: var(--theme-surface-hover);
+  }
+  .snap-actions {
+    margin-top: 10px;
+  }
+  .snap-refetch-btn {
+    background: var(--theme-accent);
+    color: #fff;
+    border: none;
+    padding: 6px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .snap-refetch-btn:hover:not(:disabled) {
+    background: var(--theme-accent-hover);
+  }
+  .snap-refetch-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 </style>

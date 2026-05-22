@@ -519,8 +519,48 @@ export async function listLibraryUploaders(limit?: number): Promise<UploaderInfo
   return invoke<UploaderInfo[]>('list_library_uploaders', { limit: limit ?? 50 });
 }
 
-export async function prepareLocalPlayback(videoId: string): Promise<LocalPlaybackPayload | null> {
-  return invoke<LocalPlaybackPayload | null>('prepare_local_playback', { videoId });
+export async function prepareLocalPlayback(
+  videoId: string,
+  snapshotId?: number | null,
+): Promise<LocalPlaybackPayload | null> {
+  return invoke<LocalPlaybackPayload | null>('prepare_local_playback', {
+    videoId,
+    snapshotId: snapshotId ?? null,
+  });
+}
+
+// =================== コメントスナップショット運用 ===================
+
+export type CommentSnapshotRow = {
+  id: number;
+  videoId: string;
+  takenAt: number;
+  isInitial: boolean;
+  commentCount: number;
+  note: string | null;
+};
+
+export async function listCommentSnapshots(videoId: string): Promise<CommentSnapshotRow[]> {
+  return invoke<CommentSnapshotRow[]>('list_comment_snapshots', { videoId });
+}
+
+export async function loadSnapshotComments(snapshotId: number): Promise<LocalPlayerCommentDto[]> {
+  return invoke<LocalPlayerCommentDto[]>('load_snapshot_comments', { snapshotId });
+}
+
+export async function deleteCommentSnapshot(snapshotId: number): Promise<boolean> {
+  return invoke<boolean>('delete_comment_snapshot', { snapshotId });
+}
+
+export async function updateSnapshotNote(
+  snapshotId: number,
+  note: string | null,
+): Promise<boolean> {
+  return invoke<boolean>('update_snapshot_note', { snapshotId, note });
+}
+
+export async function refetchVideoComments(videoId: string): Promise<number> {
+  return invoke<number>('refetch_video_comments', { videoId });
 }
 
 export async function remuxLocalVideo(videoId: string): Promise<string> {
