@@ -46,7 +46,6 @@
     { value: 'animal', label: '動物' },
     { value: 'other', label: 'その他' },
   ];
-  // ショート動画は GENRE_KEY_BY_NAME に無いので直接キーを渡す
 
   const TERMS: { value: Term; label: string }[] = [
     { value: 'hour', label: '毎時' },
