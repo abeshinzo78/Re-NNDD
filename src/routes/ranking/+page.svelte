@@ -59,7 +59,6 @@
   let genre = $state<GenreName>('all');
   let term = $state<Term>('24h');
   let page = $state(1);
-  let rankShort = $state(false);
 
   let pending = $state(false);
   let error = $state<string | null>(null);
@@ -85,8 +84,7 @@
     ngRules.some((r) => r.enabled && r.scopeRanking && r.targetType === 'tag'),
   );
 
-  let baseItems = $derived(rankShort ? items.filter((item) => item.id.startsWith('ss')) : items);
-  let displayed = $derived(applyNgFilter(baseItems, ngRules, tagMap));
+  let displayed = $derived(applyNgFilter(items, ngRules, tagMap));
   let blockedCount = $derived(items.length - displayed.length);
 
   function applyNgFilter(
@@ -276,13 +274,6 @@
           {g.label}
         </button>
       {/each}
-    </div>
-
-    <div class="row">
-      <label class="short-rank-toggle">
-        <input type="checkbox" checked={rankShort} onchange={() => (rankShort = !rankShort)} />
-        <span>ショート</span>
-      </label>
     </div>
 
     <div class="row">
@@ -766,17 +757,5 @@
   }
   .pagination button:hover {
     background: var(--theme-accent-hover);
-  }
-  .short-rank-toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 12px;
-    color: var(--theme-text-soft);
-    cursor: pointer;
-    user-select: none;
-  }
-  .short-rank-toggle input {
-    accent-color: var(--theme-accent);
   }
 </style>
