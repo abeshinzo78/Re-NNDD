@@ -221,10 +221,8 @@
     }));
     nc = new NiconiComments(canvas, threads as never, {
       format: 'v1',
-      // V1 コメは HTML5 系レンダラで描く。default は legacy/flash に
-      // 切り替わる経路があり、稀に解釈ズレが起きるので明示する。
       mode: 'html5',
-      // Linux/X11 で defaultConfig が generic フォントになるのを上書き
+      scale: portrait ? 0.85 : 1,
       config: buildConfigOverride() as never,
     });
     ncCanvasW = canvas.width;
