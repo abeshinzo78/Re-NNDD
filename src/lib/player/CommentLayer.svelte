@@ -31,6 +31,9 @@
 
   let resizeObserver: ResizeObserver | null = null;
 
+  // 肖像（縦長）動画かどうか
+  let portrait = $state(false);
+
   // niconicomments のプラットフォーム判定は Linux/X11 を "other" に落として
   // generic な sans-serif/serif しか指定しない。WebKitGTK の Canvas2D は
   // CSS の per-glyph フォールバックを完全には行わないことがあるため、
@@ -149,22 +152,45 @@
     if (dw === cacheElW && dh === cacheElH) return { valid: true, changed: false };
     cacheElW = dw;
     cacheElH = dh;
-    // niconicomments の internal canvas は 1920x1080 を基準にしている。
-    // DPR を考慮して目標バッファサイズを決め、内部スケールに合わせて 1920x1080
-    // を上限にすることで、コメ職人系の AA や細い線をボヤけさせずに描く。
+    portrait = dh > dw;
+
     const dpr = Math.max(
       1,
       Math.min(2, (typeof window !== 'undefined' && window.devicePixelRatio) || 1),
     );
-    const wantW = dw * dpr;
-    const wantH = dh * dpr;
-    const scale = Math.min(1, 1920 / wantW, 1080 / wantH);
-    const pw = Math.max(2, Math.round(wantW * scale));
-    const ph = Math.max(2, Math.round(wantH * scale));
-    canvas.width = pw; // canvas.width 代入で内部バッファがクリアされる
+
+    let pw: number;
+    let ph: number;
+
+    if (portrait) {
+      // 肖像動画: 内部バッファは 16:9 を維持（NiconiComments の X/Y スケールを均等に）
+      const baseH = dh * dpr;
+      const baseW = baseH * (16 / 9);
+      const s = Math.min(1, 1920 / baseW, 1080 / baseH);
+      pw = Math.max(2, Math.round(baseW * s));
+      ph = Math.max(2, Math.round(baseH * s));
+    } else {
+      const wantW = dw * dpr;
+      const wantH = dh * dpr;
+      const scale = Math.min(1, 1920 / wantW, 1080 / wantH);
+      pw = Math.max(2, Math.round(wantW * scale));
+      ph = Math.max(2, Math.round(wantH * scale));
+    }
+
+    canvas.width = pw;
     canvas.height = ph;
-    canvas.style.width = dw + 'px';
-    canvas.style.height = dh + 'px';
+
+    if (portrait) {
+      // CSS 表示サイズも 16:9 で設定、wrapper の overflow:hidden でクリップ
+      const cssH = dh;
+      const cssW = cssH * (16 / 9);
+      canvas.style.width = cssW + 'px';
+      canvas.style.height = cssH + 'px';
+    } else {
+      canvas.style.width = dw + 'px';
+      canvas.style.height = dh + 'px';
+    }
+
     return { valid: true, changed: true };
   }
 
@@ -179,12 +205,6 @@
     // Force Canvas2D renderer — WebGL2 on WebKitGTK is slow/unstable.
     // Pre-binding '2d' makes getContext('webgl2') return null inside NC.
     canvas.getContext('2d');
-
-    // 16:9 より狭いアスペクト比（肖像/ショート動画）では、
-    // NiconiComments のフォント高さがキャンバス高さに引きずられて
-    // 縦長になるのを軽く補正する。
-    const canvasAspect = Math.min(1, canvas.width / canvas.height);
-    const ncScale = 0.5 + canvasAspect * 0.5;
 
     const byFork = new SvelteMap<string, ReturnType<typeof toV1Comment>[]>();
     for (const c of comments) {
@@ -204,7 +224,6 @@
       // V1 コメは HTML5 系レンダラで描く。default は legacy/flash に
       // 切り替わる経路があり、稀に解釈ズレが起きるので明示する。
       mode: 'html5',
-      scale: ncScale,
       // Linux/X11 で defaultConfig が generic フォントになるのを上書き
       config: buildConfigOverride() as never,
     });
@@ -314,15 +333,24 @@
   });
 </script>
 
-<canvas bind:this={canvas} class="layer" style:opacity={enabled ? opacity : 0}></canvas>
+<div class="layer-wrap" style:opacity={enabled ? opacity : 0}>
+  <canvas bind:this={canvas} class="layer-canvas"></canvas>
+</div>
 
 <style>
-  .layer {
+  .layer-wrap {
     position: absolute;
     inset: 0;
+    overflow: hidden;
     pointer-events: none;
     transition: opacity 0.15s linear;
-    /* Canvas を表示位置で再サンプリングする際にぼやけにくくする */
+  }
+  .layer-canvas {
+    position: absolute;
+    left: 50%;
+    top: 0;
+    transform: translateX(-50%);
+    pointer-events: none;
     image-rendering: -webkit-optimize-contrast;
   }
 </style>
