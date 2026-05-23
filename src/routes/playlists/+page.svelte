@@ -15,6 +15,7 @@
     createSmartPlaylist,
     deleteSmartPlaylist,
     getSmartPlaylist,
+    isOnlineSortBy,
     listSmartPlaylists,
     subscribeSmartPlaylists,
     summarizeFilter,
@@ -144,8 +145,9 @@
   let editorUploaderId = $state('');
   let editorMinDuration = $state<number | null>(null);
   let editorMaxDuration = $state<number | null>(null);
-  let editorResolution = $state('');
-  let editorSortBy = $state('downloaded_at');
+  // 既定 sort: オンライン (snapshot search) で唯一の "目利き" 系である再生数降順。
+  // 旧実装の `downloaded_at` 等はローカル専用フィールドだったため廃止。
+  let editorSortBy = $state('posted_at');
   let editorSortOrder = $state<'asc' | 'desc'>('desc');
   // 新規作成時の既定値は null (= 制限なし)。ラベルにも「空欄=制限なし」と
   // 出している (codex review)。100 を強制すると、既に作った無制限プレイリスト
@@ -163,8 +165,10 @@
     editorUploaderId = f.uploaderId ?? '';
     editorMinDuration = f.minDuration ?? null;
     editorMaxDuration = f.maxDuration ?? null;
-    editorResolution = f.resolution ?? '';
-    editorSortBy = f.sortBy ?? 'downloaded_at';
+    // 旧仕様 (downloaded_at / play_count 等) が保存されていた場合は
+    // online 互換が無いので既定値に巻き戻す。保存し直すと normalizeFilter
+    // 経由で localStorage 側も自動的にクリーンアップされる。
+    editorSortBy = isOnlineSortBy(f.sortBy) ? f.sortBy : 'posted_at';
     editorSortOrder = f.sortOrder ?? 'desc';
     editorLimit = f.limit ?? null;
     editorOpen = true;
@@ -202,7 +206,6 @@
       uploaderId: editorUploaderId,
       minDuration: editorMinDuration ?? undefined,
       maxDuration: editorMaxDuration ?? undefined,
-      resolution: editorResolution,
       sortBy: editorSortBy,
       sortOrder: editorSortOrder,
       limit: editorLimit ?? undefined,
@@ -486,25 +489,15 @@
                 </label>
               </div>
 
-              <label class="field">
-                <span>解像度 (例: 1280x720)</span>
-                <input type="text" bind:value={editorResolution} />
-              </label>
-
               <div class="row-2">
                 <label class="field">
                   <span>並び順</span>
                   <select bind:value={editorSortBy}>
-                    <option value="downloaded_at">DL 日時</option>
                     <option value="posted_at">投稿日時</option>
-                    <option value="title">タイトル</option>
                     <option value="view_count">再生回数</option>
                     <option value="comment_count">コメ数</option>
                     <option value="mylist_count">マイリス数</option>
-                    <option value="play_count">ローカル再生回数</option>
-                    <option value="last_played_at">最終再生</option>
                     <option value="duration_sec">長さ</option>
-                    <option value="random">ランダム</option>
                   </select>
                 </label>
                 <label class="field">
