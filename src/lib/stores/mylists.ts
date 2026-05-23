@@ -10,6 +10,8 @@
  * surface until the HLS downloader (Phase 1.2) lands.
  */
 
+import { createListenerRegistry } from './listenerRegistry';
+
 export type MylistVideo = {
   videoId: string;
   title: string;
@@ -31,6 +33,9 @@ export type Mylist = {
 
 const KEY = 'nndd:mylists';
 const SAVED_ID = 'saved';
+
+const { notify, subscribe: subscribeMylists } = createListenerRegistry();
+export { subscribeMylists };
 
 function defaultMylists(): Mylist[] {
   const now = Date.now();
@@ -81,15 +86,6 @@ function write(list: Mylist[]): void {
   if (typeof localStorage === 'undefined') return;
   localStorage.setItem(KEY, JSON.stringify(list));
   notify();
-}
-
-const listeners = new Set<() => void>();
-function notify() {
-  for (const fn of listeners) fn();
-}
-export function subscribeMylists(fn: () => void): () => void {
-  listeners.add(fn);
-  return () => listeners.delete(fn);
 }
 
 export function listMylists(): Mylist[] {

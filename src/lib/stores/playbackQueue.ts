@@ -10,6 +10,8 @@
  * user expects "play all" to survive incidental refreshes.
  */
 
+import { createListenerRegistry } from './listenerRegistry';
+
 const KEY = 'nndd:playback-queue';
 
 export type QueueSource = 'online' | 'local';
@@ -38,16 +40,8 @@ export type PlaybackQueue = {
   createdAt: number;
 };
 
-const listeners = new Set<() => void>();
-
-function notify(): void {
-  for (const fn of listeners) fn();
-}
-
-export function subscribeQueue(fn: () => void): () => void {
-  listeners.add(fn);
-  return () => listeners.delete(fn);
-}
+const { notify, subscribe: subscribeQueue } = createListenerRegistry();
+export { subscribeQueue };
 
 export function getQueue(): PlaybackQueue | null {
   if (typeof localStorage === 'undefined') return null;

@@ -13,6 +13,7 @@
  */
 
 import type { FilterClause, SearchField, SearchQuery, SearchTarget, SortSpec } from '$lib/api';
+import { createListenerRegistry } from './listenerRegistry';
 
 const KEY = 'nndd:smart-playlists';
 
@@ -59,16 +60,8 @@ export type SmartPlaylist = {
   filter: SmartPlaylistFilter;
 };
 
-const listeners = new Set<() => void>();
-
-function notify(): void {
-  for (const fn of listeners) fn();
-}
-
-export function subscribeSmartPlaylists(fn: () => void): () => void {
-  listeners.add(fn);
-  return () => listeners.delete(fn);
-}
+const { notify, subscribe: subscribeSmartPlaylists } = createListenerRegistry();
+export { subscribeSmartPlaylists };
 
 function read(): SmartPlaylist[] {
   if (typeof localStorage === 'undefined') return [];

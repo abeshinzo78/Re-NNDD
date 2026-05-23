@@ -7,6 +7,8 @@
  * immediately without re-fetching.
  */
 
+import { createListenerRegistry } from './listenerRegistry';
+
 export type NgTargetType =
   | 'video_title'
   | 'uploader'
@@ -43,14 +45,8 @@ export type NgRule = {
 
 const KEY = 'nndd:ngRules';
 
-const listeners = new Set<() => void>();
-function notify() {
-  for (const fn of listeners) fn();
-}
-export function subscribeNgRules(fn: () => void): () => void {
-  listeners.add(fn);
-  return () => listeners.delete(fn);
-}
+const { notify, subscribe: subscribeNgRules } = createListenerRegistry();
+export { subscribeNgRules };
 
 function read(): NgRule[] {
   if (typeof localStorage === 'undefined') return [];
@@ -264,27 +260,11 @@ export function isCommentBlocked(
 
 /** Pure filtering helper. Hit counters must be updated outside derived/render calculations. */
 export function filterSearchHits<T extends SearchHitLike>(rules: NgRule[], hits: T[]): T[] {
-  const out: T[] = [];
-  for (const h of hits) {
-    const r = isHitBlocked(rules, h);
-    if (r.blocked) {
-      continue;
-    }
-    out.push(h);
-  }
-  return out;
+  return hits.filter((h) => !isHitBlocked(rules, h).blocked);
 }
 
 export function filterComments<T extends CommentLike>(rules: NgRule[], comments: T[]): T[] {
-  const out: T[] = [];
-  for (const c of comments) {
-    const r = isCommentBlocked(rules, c);
-    if (r.blocked) {
-      continue;
-    }
-    out.push(c);
-  }
-  return out;
+  return comments.filter((c) => !isCommentBlocked(rules, c).blocked);
 }
 
 /* ------------------------------------------------------------------------ */
