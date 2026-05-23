@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, test } from 'vitest';
 import {
   createSmartPlaylist,
   deleteSmartPlaylist,
-  filterToQueryParams,
   filterToSearchQuery,
   getSmartPlaylist,
   listSmartPlaylists,
@@ -85,7 +84,6 @@ describe('normalizeFilter', () => {
       uploaderId: '',
       minDuration: 0,
       maxDuration: -1,
-      resolution: '   ',
       sortBy: '',
       limit: 0,
     });
@@ -95,7 +93,6 @@ describe('normalizeFilter', () => {
     expect(f.uploaderId).toBeUndefined();
     expect(f.minDuration).toBeUndefined();
     expect(f.maxDuration).toBeUndefined();
-    expect(f.resolution).toBeUndefined();
     expect(f.sortBy).toBeUndefined();
     expect(f.limit).toBeUndefined();
   });
@@ -116,38 +113,17 @@ describe('normalizeFilter', () => {
     const f = normalizeFilter({ sortOrder: 'sideways' as unknown as 'asc' });
     expect(f.sortOrder).toBeUndefined();
   });
-});
 
-describe('filterToQueryParams', () => {
-  test('maps every populated field 1:1', () => {
-    const params = filterToQueryParams({
-      q: 'a',
-      tags: ['t1'],
-      tagsAny: ['t2'],
-      uploaderId: 'u1',
-      minDuration: 10,
-      maxDuration: 99,
-      resolution: '1920x1080',
-      sortBy: 'view_count',
-      sortOrder: 'asc',
-      limit: 200,
-    });
-    expect(params).toEqual({
-      q: 'a',
-      tags: ['t1'],
-      tagsAny: ['t2'],
-      uploaderId: 'u1',
-      minDuration: 10,
-      maxDuration: 99,
-      resolution: '1920x1080',
-      sortBy: 'view_count',
-      sortOrder: 'asc',
-      limit: 200,
-    });
+  test('drops legacy local-only sortBy labels (旧仕様の残骸)', () => {
+    for (const stale of ['downloaded_at', 'title', 'play_count', 'last_played_at', 'random']) {
+      const f = normalizeFilter({ sortBy: stale });
+      expect(f.sortBy).toBeUndefined();
+    }
   });
 
-  test('omits empty arrays and undefined fields', () => {
-    expect(filterToQueryParams({ tags: [], tagsAny: [] })).toEqual({});
+  test('keeps valid online sortBy labels', () => {
+    const f = normalizeFilter({ sortBy: 'posted_at' });
+    expect(f.sortBy).toBe('posted_at');
   });
 });
 
@@ -209,9 +185,19 @@ describe('filterToSearchQuery (online snapshot search)', () => {
     expect(q.sort).toEqual({ field: 'viewCounter', direction: 'desc' });
   });
 
-  test('local-only sort fields are dropped (no sort emitted)', () => {
-    const q = filterToSearchQuery({ q: 'a', sortBy: 'play_count', sortOrder: 'desc' });
-    expect(q.sort).toBeUndefined();
+  test('legacy local-only sort fields fall back to default online sort', () => {
+    // Snapshot Search の _sort は必須なので、旧仕様の `downloaded_at` 等が
+    // 残っていても必ず妥当な sort を組み立てる (bug: HTTP 400)。
+    for (const stale of ['downloaded_at', 'title', 'play_count', 'last_played_at', 'random']) {
+      const q = filterToSearchQuery({ q: 'a', sortBy: stale, sortOrder: 'desc' });
+      expect(q.sort).toEqual({ field: 'viewCounter', direction: 'desc' });
+    }
+  });
+
+  test('missing sortBy still emits a sort (snapshot search requires _sort)', () => {
+    const q = filterToSearchQuery({ q: 'a' });
+    expect(q.sort).toBeDefined();
+    expect(q.sort?.field).toBe('viewCounter');
   });
 
   test('limit is capped to snapshot search max (100)', () => {
@@ -227,13 +213,5 @@ describe('filterToSearchQuery (online snapshot search)', () => {
   test('empty filter yields empty q (caller surfaces a UX error)', () => {
     const q = filterToSearchQuery({});
     expect(q.q).toBe('');
-  });
-
-  test('resolution is silently ignored online', () => {
-    const q = filterToSearchQuery({ q: 'a', resolution: '1280x720' });
-    const hasResolutionFilter = (q.filters ?? []).some(
-      (c) => String(c.field).toLowerCase() === 'resolution',
-    );
-    expect(hasResolutionFilter).toBe(false);
   });
 });

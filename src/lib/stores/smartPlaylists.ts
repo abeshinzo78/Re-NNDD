@@ -10,21 +10,9 @@
  * Persisted in localStorage. The filter shape mirrors what the UI editor
  * captures; conversion to the Snapshot Search query (with required q /
  * targets / filters / sort) happens in `filterToSearchQuery`.
- *
- * NOTE: 旧実装はローカルライブラリのみを対象に `queryLibraryVideos` を
- * 叩いていたが、ユーザの期待はオンラインから取得することなので
- * Snapshot Search ベースに切り替えた。`filterToQueryParams` はテスト/
- * 後方互換のため残してあるが、本体ロジックでは使われていない。
  */
 
-import type {
-  FilterClause,
-  LibraryQueryParams,
-  SearchField,
-  SearchQuery,
-  SearchTarget,
-  SortSpec,
-} from '$lib/api';
+import type { FilterClause, SearchField, SearchQuery, SearchTarget, SortSpec } from '$lib/api';
 
 const KEY = 'nndd:smart-playlists';
 
@@ -38,12 +26,28 @@ export type SmartPlaylistFilter = {
   uploaderId?: string;
   minDuration?: number;
   maxDuration?: number;
-  resolution?: string;
   sortBy?: string;
   sortOrder?: 'asc' | 'desc';
   /** 表示件数上限。 */
   limit?: number;
 };
+
+/** Online (Snapshot Search) で許可される sortBy ラベルの集合。
+ *  旧実装 (ローカルライブラリ向け) の `downloaded_at` / `title` /
+ *  `play_count` / `last_played_at` / `random` は除外済み。 */
+export const ONLINE_SORT_BY_VALUES = [
+  'posted_at',
+  'view_count',
+  'comment_count',
+  'mylist_count',
+  'duration_sec',
+] as const;
+
+export type OnlineSortBy = (typeof ONLINE_SORT_BY_VALUES)[number];
+
+export function isOnlineSortBy(v: string | undefined): v is OnlineSortBy {
+  return typeof v === 'string' && (ONLINE_SORT_BY_VALUES as readonly string[]).includes(v);
+}
 
 export type SmartPlaylist = {
   id: string;
@@ -145,7 +149,10 @@ export function deleteSmartPlaylist(id: string): boolean {
   return true;
 }
 
-/** Strip empty / invalid values so the resulting filter is round-trippable. */
+/** Strip empty / invalid values so the resulting filter is round-trippable.
+ *  旧実装のローカル専用 sortBy ラベル (`downloaded_at`/`title`/`play_count`/
+ *  `last_played_at`/`random`) が混入していた場合はオンライン互換が無いので
+ *  ここで黙って drop し、`filterToSearchQuery` 側のデフォルトに任せる。 */
 export function normalizeFilter(f: SmartPlaylistFilter): SmartPlaylistFilter {
   const out: SmartPlaylistFilter = {};
   if (f.q && f.q.trim()) out.q = f.q.trim();
@@ -162,36 +169,14 @@ export function normalizeFilter(f: SmartPlaylistFilter): SmartPlaylistFilter {
     out.minDuration = Math.floor(f.minDuration as number);
   if (Number.isFinite(f.maxDuration) && (f.maxDuration as number) > 0)
     out.maxDuration = Math.floor(f.maxDuration as number);
-  if (f.resolution && f.resolution.trim()) out.resolution = f.resolution.trim();
-  if (f.sortBy && f.sortBy.trim()) out.sortBy = f.sortBy.trim();
+  if (f.sortBy && isOnlineSortBy(f.sortBy.trim())) out.sortBy = f.sortBy.trim();
   if (f.sortOrder === 'asc' || f.sortOrder === 'desc') out.sortOrder = f.sortOrder;
   if (Number.isFinite(f.limit) && (f.limit as number) > 0)
     out.limit = Math.floor(f.limit as number);
   return out;
 }
 
-/** Convert a smart filter to the parameters expected by `queryLibraryVideos`.
- *  注: 本体は `filterToSearchQuery` (オンライン取得) を使う。これは
- *  既存テストと、将来「ローカル限定モード」を再導入したくなった時の
- *  ために残してある純粋関数。 */
-export function filterToQueryParams(f: SmartPlaylistFilter): LibraryQueryParams {
-  const params: LibraryQueryParams = {};
-  if (f.q) params.q = f.q;
-  if (f.tags && f.tags.length > 0) params.tags = f.tags;
-  if (f.tagsAny && f.tagsAny.length > 0) params.tagsAny = f.tagsAny;
-  if (f.uploaderId) params.uploaderId = f.uploaderId;
-  if (f.minDuration != null) params.minDuration = f.minDuration;
-  if (f.maxDuration != null) params.maxDuration = f.maxDuration;
-  if (f.resolution) params.resolution = f.resolution;
-  if (f.sortBy) params.sortBy = f.sortBy;
-  if (f.sortOrder) params.sortOrder = f.sortOrder;
-  if (f.limit != null) params.limit = f.limit;
-  return params;
-}
-
-/** Smart playlist の sortBy ラベルを Snapshot Search の field 名へ。
- *  ローカル専用 (`downloaded_at` / `play_count` / `last_played_at` / `random` /
- *  `title`) は online には無いので `null` を返し、UI 側で sort 未指定として扱う。 */
+/** Smart playlist の sortBy ラベルを Snapshot Search の field 名へ。 */
 function mapSortFieldToSearch(sortBy?: string): SearchField | null {
   switch (sortBy) {
     case 'posted_at':
@@ -209,6 +194,10 @@ function mapSortFieldToSearch(sortBy?: string): SearchField | null {
   }
 }
 
+/** Snapshot Search の `_sort` は必須パラメータ。明示指定が無い (もしくは
+ *  旧ローカル専用ラベルが残っている) 場合のフォールバック値。 */
+const DEFAULT_SORT: SortSpec = { field: 'viewCounter', direction: 'desc' };
+
 /** Snapshot Search が許す最大件数 (1 リクエスト)。サーバ側で固定値。 */
 const SEARCH_MAX_LIMIT = 100;
 
@@ -224,7 +213,9 @@ const SEARCH_MAX_LIMIT = 100;
  *   - 何も無い: 空文字を返す呼び出し側が「条件無しの smart playlist は
  *     online 検索不可」とエラーにする
  *
- *  resolution はオンライン版に対応する場が無いため無視する。
+ *  Snapshot Search の `_sort` は必須なので、ユーザ未指定 / 旧ローカル
+ *  専用ラベル (`downloaded_at` 等) が残っていた場合でも `viewCounter desc`
+ *  にフォールバックして必ず付与する (空送信だとサーバ 400)。
  */
 export function filterToSearchQuery(f: SmartPlaylistFilter): SearchQuery {
   const q = (f.q ?? '').trim();
@@ -281,9 +272,9 @@ export function filterToSearchQuery(f: SmartPlaylistFilter): SearchQuery {
   ];
 
   const sortField = mapSortFieldToSearch(f.sortBy);
-  const sort: SortSpec | undefined = sortField
+  const sort: SortSpec = sortField
     ? { field: sortField, direction: f.sortOrder ?? 'desc' }
-    : undefined;
+    : DEFAULT_SORT;
 
   const requested = f.limit;
   const limit =
@@ -291,16 +282,15 @@ export function filterToSearchQuery(f: SmartPlaylistFilter): SearchQuery {
       ? Math.min(SEARCH_MAX_LIMIT, Math.floor(requested))
       : SEARCH_MAX_LIMIT;
 
-  const query: SearchQuery = {
+  return {
     q: searchQ,
     targets,
     fields,
     filters,
+    sort,
     limit,
     offset: 0,
   };
-  if (sort) query.sort = sort;
-  return query;
 }
 
 /** Render a short human-readable summary of the filter, e.g. for cards. */
@@ -312,8 +302,7 @@ export function summarizeFilter(f: SmartPlaylistFilter): string {
   if (f.uploaderId) parts.push(`投稿者:${f.uploaderId}`);
   if (f.minDuration != null) parts.push(`${f.minDuration}s〜`);
   if (f.maxDuration != null) parts.push(`〜${f.maxDuration}s`);
-  if (f.resolution) parts.push(f.resolution);
-  if (f.sortBy) parts.push(`順:${f.sortBy} ${f.sortOrder ?? 'desc'}`);
+  if (isOnlineSortBy(f.sortBy)) parts.push(`順:${f.sortBy} ${f.sortOrder ?? 'desc'}`);
   if (f.limit) parts.push(`上限 ${f.limit}`);
   return parts.length === 0 ? '条件なし (全件)' : parts.join(' / ');
 }
