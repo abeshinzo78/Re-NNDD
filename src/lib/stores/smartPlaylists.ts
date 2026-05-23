@@ -12,13 +12,7 @@
  * targets / filters / sort) happens in `filterToSearchQuery`.
  */
 
-import type {
-  FilterClause,
-  SearchField,
-  SearchQuery,
-  SearchTarget,
-  SortSpec,
-} from '$lib/api';
+import type { FilterClause, SearchField, SearchQuery, SearchTarget, SortSpec } from '$lib/api';
 
 const KEY = 'nndd:smart-playlists';
 
