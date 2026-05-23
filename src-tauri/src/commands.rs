@@ -3090,6 +3090,306 @@ pub async fn fetch_ranking_html(url: String) -> Result<String> {
     Ok(html)
 }
 
+// =================== ショート動画ランキング ===================
+//
+// Snapshot Search API はショート動画 (`ss` プレフィックス) を索引しておらず、
+// 公式の `/ranking/genre/*` ページ HTML にもショートは含まれない
+// (https://blog.nicovideo.jp/niconews/270458.html「ランキングにはショートは
+// 掲載されません」)。
+//
+// 一方で niconico の新 Web クライアントは `nvapi.nicovideo.jp/v2/search/video`
+// を `selectContentType=short` 付きで叩いてショート一覧を取得している。
+// このエンドポイントは `keyword` / `tag` / `lockTag` のいずれかを必須とするが、
+// 一般的な日本語の助詞 (例: 「の」) を渡せばタイトル/説明文/タグの広いマッチで
+// ほぼ全ショートを拾える (確認時点で 24,000+ 件)。
+//
+// sortKey:
+//   - hot           (sortOrder=none) … トレンド (Web 既定)
+//   - viewCount     (sortOrder=desc) … 再生数
+//   - registeredAt  (sortOrder=desc) … 新着
+//   - commentCount  (sortOrder=desc) … コメ数
+//   - mylistCount   (sortOrder=desc) … マイリスト数
+//   - likeCount     (sortOrder=desc) … いいね数
+
+const SHORT_SEARCH_URL: &str = "https://nvapi.nicovideo.jp/v2/search/video";
+
+/// 一覧 API の 1 文字ワイルドカード。「の」は約 24,056 件の short を返す。
+/// 並び順が viewCount desc / hot のとき、上位の結果は他のひらがなを使った
+/// 場合と一致するので問題なし。
+const SHORT_SEARCH_WILDCARD: &str = "の";
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ShortRankingCount {
+    pub view: i64,
+    pub comment: i64,
+    pub mylist: i64,
+    pub like: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShortRankingThumbnail {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub middle_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub large_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub listing_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub n_hd_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub short_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShortRankingOwner {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShortRankingItem {
+    pub id: String,
+    pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub registered_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub short_description: Option<String>,
+    pub count: ShortRankingCount,
+    pub thumbnail: ShortRankingThumbnail,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner: Option<ShortRankingOwner>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShortRankingResponse {
+    pub items: Vec<ShortRankingItem>,
+    pub total_count: i64,
+    pub has_next: bool,
+}
+
+/// `sort_key` / `genre` が API 仕様で許可された値かを検証する。
+/// API の 400 を増やさないよう、不正値はここで弾く。
+fn validate_short_sort(sort_key: &str) -> Result<&'static str> {
+    // 戻り値は対応する sortOrder。hot だけ none、それ以外は desc。
+    match sort_key {
+        "hot" => Ok("none"),
+        "viewCount" | "registeredAt" | "commentCount" | "mylistCount" | "likeCount" => Ok("desc"),
+        other => Err(AppError::Other(format!(
+            "invalid sort_key for shorts: {other}"
+        ))),
+    }
+}
+
+/// `/v2/search/video?selectContentType=short` が受け付けるジャンル名。
+/// 公式ランキングのジャンル名と一部しか重ならない (例: music_sound, commentary_lecture)
+/// ことに注意。
+const SHORT_GENRES: &[&str] = &[
+    "anime",
+    "game",
+    "music_sound",
+    "entertainment",
+    "dance",
+    "commentary_lecture",
+    "cooking",
+    "nature",
+    "vehicle",
+    "radio",
+    "sports",
+    "animal",
+    "other",
+];
+
+fn validate_short_genre(genre: &str) -> Result<()> {
+    if SHORT_GENRES.contains(&genre) {
+        Ok(())
+    } else {
+        Err(AppError::Other(format!(
+            "invalid genre for shorts: {genre}"
+        )))
+    }
+}
+
+/// niconico ショート動画のランキング相当を取得する。
+/// `genre` を `None` にすると全ジャンルから集計する。
+#[tauri::command]
+pub async fn search_short_ranking(
+    sort_key: Option<String>,
+    genre: Option<String>,
+    page: Option<u32>,
+    page_size: Option<u32>,
+) -> Result<ShortRankingResponse> {
+    let sort_key = sort_key.as_deref().unwrap_or("hot");
+    let sort_order = validate_short_sort(sort_key)?;
+    if let Some(g) = genre.as_deref() {
+        validate_short_genre(g)?;
+    }
+    let page = page.unwrap_or(1).max(1);
+    let page_size = page_size.unwrap_or(50).clamp(1, 100);
+
+    let mut url = url::Url::parse(SHORT_SEARCH_URL).map_err(|e| AppError::Other(e.to_string()))?;
+    {
+        let mut q = url.query_pairs_mut();
+        q.append_pair("selectContentType", "short");
+        q.append_pair("sortKey", sort_key);
+        q.append_pair("sortOrder", sort_order);
+        q.append_pair("keyword", SHORT_SEARCH_WILDCARD);
+        if let Some(g) = genre.as_deref() {
+            q.append_pair("genres", g);
+        }
+        q.append_pair("pageSize", &page_size.to_string());
+        q.append_pair("page", &page.to_string());
+    }
+
+    let client = build_nv_client()?;
+    let (json, _body) =
+        nv_get_json(&client, url.as_str(), None, "short ranking fetch failed").await?;
+
+    let data = &json["data"];
+    let total_count = data["totalCount"].as_i64().unwrap_or(0);
+    let has_next = data["hasNext"].as_bool().unwrap_or(false);
+    let raw_items = data["items"].as_array().cloned().unwrap_or_default();
+
+    let items: Vec<ShortRankingItem> = raw_items
+        .into_iter()
+        .filter_map(parse_short_ranking_item)
+        .collect();
+
+    tracing::debug!(
+        ?sort_key,
+        ?genre,
+        page,
+        page_size,
+        total_count,
+        items = items.len(),
+        "short ranking fetched"
+    );
+
+    Ok(ShortRankingResponse {
+        items,
+        total_count,
+        has_next,
+    })
+}
+
+fn parse_short_ranking_item(v: serde_json::Value) -> Option<ShortRankingItem> {
+    let id = v.get("id")?.as_str()?.to_string();
+    if id.is_empty() {
+        return None;
+    }
+    let title = v
+        .get("title")
+        .and_then(|x| x.as_str())
+        .unwrap_or("(無題)")
+        .to_string();
+    let content_type = v
+        .get("contentType")
+        .and_then(|x| x.as_str())
+        .map(String::from);
+    let registered_at = v
+        .get("registeredAt")
+        .and_then(|x| x.as_str())
+        .map(String::from);
+    let duration = v.get("duration").and_then(|x| x.as_i64());
+    let short_description = v
+        .get("shortDescription")
+        .and_then(|x| x.as_str())
+        .map(String::from);
+
+    let count_v = v.get("count");
+    let count = ShortRankingCount {
+        view: count_v
+            .and_then(|c| c.get("view"))
+            .and_then(|x| x.as_i64())
+            .unwrap_or(0),
+        comment: count_v
+            .and_then(|c| c.get("comment"))
+            .and_then(|x| x.as_i64())
+            .unwrap_or(0),
+        mylist: count_v
+            .and_then(|c| c.get("mylist"))
+            .and_then(|x| x.as_i64())
+            .unwrap_or(0),
+        like: count_v
+            .and_then(|c| c.get("like"))
+            .and_then(|x| x.as_i64())
+            .unwrap_or(0),
+    };
+
+    let thumb_v = v.get("thumbnail");
+    let thumbnail = ShortRankingThumbnail {
+        url: thumb_v
+            .and_then(|t| t.get("url"))
+            .and_then(|x| x.as_str())
+            .map(String::from),
+        middle_url: thumb_v
+            .and_then(|t| t.get("middleUrl"))
+            .and_then(|x| x.as_str())
+            .map(String::from),
+        large_url: thumb_v
+            .and_then(|t| t.get("largeUrl"))
+            .and_then(|x| x.as_str())
+            .map(String::from),
+        listing_url: thumb_v
+            .and_then(|t| t.get("listingUrl"))
+            .and_then(|x| x.as_str())
+            .map(String::from),
+        n_hd_url: thumb_v
+            .and_then(|t| t.get("nHdUrl"))
+            .and_then(|x| x.as_str())
+            .map(String::from),
+        short_url: thumb_v
+            .and_then(|t| t.get("shortUrl"))
+            .and_then(|x| x.as_str())
+            .map(String::from),
+    };
+
+    let owner = v.get("owner").filter(|o| !o.is_null()).map(|o| {
+        // owner.id は文字列か数値のどちらでも返るので両対応にする。
+        let owner_id = o.get("id").and_then(|x| {
+            x.as_str()
+                .map(String::from)
+                .or_else(|| x.as_i64().map(|n| n.to_string()))
+        });
+        ShortRankingOwner {
+            owner_type: o
+                .get("ownerType")
+                .and_then(|x| x.as_str())
+                .map(String::from),
+            id: owner_id,
+            name: o.get("name").and_then(|x| x.as_str()).map(String::from),
+            icon_url: o.get("iconUrl").and_then(|x| x.as_str()).map(String::from),
+        }
+    });
+
+    Some(ShortRankingItem {
+        id,
+        title,
+        content_type,
+        registered_at,
+        duration,
+        short_description,
+        count,
+        thumbnail,
+        owner,
+    })
+}
+
 /// niconico 動画ページ (watch/{id}) の HTML を取得する。
 /// `@kongyo2/nicotag-api` の `extractAndParse` でタグ情報を抜くために、
 /// ランキング NG のタグフィルタから呼ばれる。
@@ -3131,6 +3431,7 @@ pub async fn fetch_video_html(
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
 
@@ -3159,5 +3460,113 @@ mod tests {
     fn validate_video_id_rejects_overlong() {
         let long = "a".repeat(65);
         assert!(validate_video_id(&long).is_err());
+    }
+
+    #[test]
+    fn validate_short_sort_maps_known_keys() {
+        assert_eq!(validate_short_sort("hot").unwrap(), "none");
+        assert_eq!(validate_short_sort("viewCount").unwrap(), "desc");
+        assert_eq!(validate_short_sort("registeredAt").unwrap(), "desc");
+        assert_eq!(validate_short_sort("commentCount").unwrap(), "desc");
+        assert_eq!(validate_short_sort("mylistCount").unwrap(), "desc");
+        assert_eq!(validate_short_sort("likeCount").unwrap(), "desc");
+    }
+
+    #[test]
+    fn validate_short_sort_rejects_unknown() {
+        assert!(validate_short_sort("popularity").is_err());
+        assert!(validate_short_sort("").is_err());
+        assert!(validate_short_sort("HOT").is_err());
+    }
+
+    #[test]
+    fn validate_short_genre_accepts_supported() {
+        for g in SHORT_GENRES {
+            assert!(validate_short_genre(g).is_ok(), "genre `{g}` should be ok");
+        }
+    }
+
+    #[test]
+    fn validate_short_genre_rejects_unsupported() {
+        // 公式ランキングにはあるがショート検索 API では弾かれるジャンル群。
+        for bad in &["vocaloid", "voicesynth", "sing", "play", "travel", "music"] {
+            assert!(
+                validate_short_genre(bad).is_err(),
+                "genre `{bad}` should be rejected"
+            );
+        }
+        assert!(validate_short_genre("").is_err());
+        assert!(validate_short_genre("all").is_err());
+    }
+
+    #[test]
+    fn parse_short_ranking_item_handles_minimal_object() {
+        let v = serde_json::json!({
+            "id": "ss12345",
+            "title": "テスト",
+        });
+        let item = parse_short_ranking_item(v).expect("should parse");
+        assert_eq!(item.id, "ss12345");
+        assert_eq!(item.title, "テスト");
+        assert_eq!(item.count.view, 0);
+        assert!(item.owner.is_none());
+    }
+
+    #[test]
+    fn parse_short_ranking_item_handles_full_object() {
+        let v = serde_json::json!({
+            "id": "ss46342592",
+            "contentType": "short",
+            "title": "サンプル",
+            "registeredAt": "2026-05-22T21:00:00+09:00",
+            "duration": 17,
+            "shortDescription": "desc",
+            "count": {"view": 100, "comment": 5, "mylist": 2, "like": 7},
+            "thumbnail": {
+                "url": "https://example.test/thumb.jpg",
+                "listingUrl": "https://example.test/thumb_l.jpg"
+            },
+            "owner": {
+                "ownerType": "user",
+                "id": "12345",
+                "name": "投稿者",
+                "iconUrl": "https://example.test/icon.jpg"
+            }
+        });
+        let item = parse_short_ranking_item(v).expect("should parse");
+        assert_eq!(item.id, "ss46342592");
+        assert_eq!(item.content_type.as_deref(), Some("short"));
+        assert_eq!(item.duration, Some(17));
+        assert_eq!(item.count.view, 100);
+        assert_eq!(item.count.like, 7);
+        assert_eq!(
+            item.thumbnail.url.as_deref(),
+            Some("https://example.test/thumb.jpg")
+        );
+        let owner = item.owner.expect("owner present");
+        assert_eq!(owner.id.as_deref(), Some("12345"));
+        assert_eq!(owner.name.as_deref(), Some("投稿者"));
+    }
+
+    #[test]
+    fn parse_short_ranking_item_handles_numeric_owner_id() {
+        // owner.id が数値で来るバリエーション (nvapi の他エンドポイントでは
+        // 文字列で来るが、念のため両対応にしているのでテストで保証する)
+        let v = serde_json::json!({
+            "id": "ss1",
+            "title": "x",
+            "owner": {"id": 42, "name": "ｎ"}
+        });
+        let item = parse_short_ranking_item(v).expect("should parse");
+        assert_eq!(
+            item.owner.as_ref().and_then(|o| o.id.as_deref()),
+            Some("42")
+        );
+    }
+
+    #[test]
+    fn parse_short_ranking_item_rejects_missing_id() {
+        let v = serde_json::json!({"title": "no id"});
+        assert!(parse_short_ranking_item(v).is_none());
     }
 }

@@ -123,6 +123,7 @@ pub fn run() {
             commands::delete_setting,
             commands::get_app_info,
             commands::fetch_ranking_html,
+            commands::search_short_ranking,
             commands::fetch_video_html,
             commands::fetch_related_videos,
         ])

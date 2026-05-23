@@ -20,6 +20,13 @@
 
   type GenreName = keyof typeof GENRE_KEY_BY_NAME;
   type Term = 'hour' | '24h' | 'week' | 'month' | 'total';
+  type ShortSortKey =
+    | 'hot'
+    | 'viewCount'
+    | 'registeredAt'
+    | 'commentCount'
+    | 'mylistCount'
+    | 'likeCount';
 
   const GENRES: { value: GenreName; label: string }[] = [
     { value: 'all', label: '総合' },
@@ -55,9 +62,43 @@
     { value: 'total', label: '合計' },
   ];
 
+  // ショートランキング (nvapi /v2/search/video) で指定できるソートキー。
+  // hot は内部的に sortOrder=none、その他は desc 固定 (バックエンド側で付与)。
+  const SHORT_SORTS: { value: ShortSortKey; label: string }[] = [
+    { value: 'hot', label: '人気' },
+    { value: 'viewCount', label: '再生数' },
+    { value: 'registeredAt', label: '新着' },
+    { value: 'commentCount', label: 'コメ数' },
+    { value: 'mylistCount', label: 'マイリスト数' },
+    { value: 'likeCount', label: 'いいね数' },
+  ];
+
+  // nvapi /v2/search/video?selectContentType=short が `genres` で受け付ける
+  // 値。公式ランキングの一部ジャンル (vocaloid 等) は受け付けないので、
+  // ショートモード時にだけ無効化する。`'all'` は API に渡さない (=全ジャンル)。
+  // バックエンドの `SHORT_GENRES` (commands.rs) と同期させること。
+  const SHORT_GENRE_MAP: Partial<Record<GenreName, string>> = {
+    all: '', // 空 = ジャンル指定無し
+    anime: 'anime',
+    game: 'game',
+    music: 'music_sound',
+    entertainment: 'entertainment',
+    dance: 'dance',
+    commentary: 'commentary_lecture',
+    cooking: 'cooking',
+    nature: 'nature',
+    vehicle: 'vehicle',
+    radio: 'radio',
+    sports: 'sports',
+    animal: 'animal',
+    other: 'other',
+  };
+
   let genre = $state<GenreName>('all');
   let term = $state<Term>('24h');
   let page = $state(1);
+  let rankShort = $state(false);
+  let shortSort = $state<ShortSortKey>('hot');
 
   let pending = $state(false);
   let error = $state<string | null>(null);
@@ -176,19 +217,41 @@
     }
   }
 
+  // ショートランキングは公式ランキング HTML (ジャンル+期間で出し分け) と違い、
+  // niconico の検索 API (`/v2/search/video?selectContentType=short`) を裏で
+  // 叩く別建ての取得経路。期間タブは利かないので隠す。
   async function runFetch() {
     pending = true;
     error = null;
     try {
-      const genreKey = GENRE_KEY_BY_NAME[genre];
-      const params = new URLSearchParams({ term, page: String(page) });
-      const url = `https://www.nicovideo.jp/ranking/genre/${genreKey}?${params}`;
-      const html = await invoke<string>('fetch_ranking_html', { url });
-      const { parsed } = extractAndParse(html);
-      const ranking = parsed.data.response.$getTeibanRanking.data;
-      items = ranking.items;
-      hasNext = ranking.hasNext;
-      label = ranking.label;
+      if (rankShort) {
+        const apiGenre = SHORT_GENRE_MAP[genre] ?? '';
+        const resp = await invoke<{
+          items: RankingItem[];
+          totalCount: number;
+          hasNext: boolean;
+        }>('search_short_ranking', {
+          sortKey: shortSort,
+          genre: apiGenre === '' ? null : apiGenre,
+          page,
+          pageSize: 50,
+        });
+        items = resp.items;
+        hasNext = resp.hasNext;
+        const sortLabel = SHORT_SORTS.find((s) => s.value === shortSort)?.label ?? shortSort;
+        const genreLabel = GENRES.find((g) => g.value === genre)?.label ?? '';
+        label = `ショート - ${genreLabel} - ${sortLabel}`;
+      } else {
+        const genreKey = GENRE_KEY_BY_NAME[genre];
+        const params = new URLSearchParams({ term, page: String(page) });
+        const url = `https://www.nicovideo.jp/ranking/genre/${genreKey}?${params}`;
+        const html = await invoke<string>('fetch_ranking_html', { url });
+        const { parsed } = extractAndParse(html);
+        const ranking = parsed.data.response.$getTeibanRanking.data;
+        items = ranking.items;
+        hasNext = ranking.hasNext;
+        label = ranking.label;
+      }
       fetchedAt = new Date().toISOString();
     } catch (e) {
       error = String(e);
@@ -200,6 +263,9 @@
   }
 
   function onChangeGenre(g: GenreName) {
+    // ショートモードで未対応ジャンルが選ばれた場合、API が 400 を返す前に
+    // ガード (UI 側で既に disabled だが、保険として)。
+    if (rankShort && !(g in SHORT_GENRE_MAP)) return;
     genre = g;
     page = 1;
     void runFetch();
@@ -208,6 +274,20 @@
   function onChangeTerm(t: Term) {
     term = t;
     page = 1;
+    void runFetch();
+  }
+
+  function onChangeShortSort(s: ShortSortKey) {
+    shortSort = s;
+    page = 1;
+    void runFetch();
+  }
+
+  function onToggleShort() {
+    rankShort = !rankShort;
+    page = 1;
+    // ショート未対応ジャンルが選ばれていたら「総合」に戻す。
+    if (rankShort && !(genre in SHORT_GENRE_MAP)) genre = 'all';
     void runFetch();
   }
 
@@ -268,6 +348,11 @@
         <button
           class="chip"
           class:active={genre === g.value}
+          class:disabled={rankShort && !(g.value in SHORT_GENRE_MAP)}
+          disabled={rankShort && !(g.value in SHORT_GENRE_MAP)}
+          title={rankShort && !(g.value in SHORT_GENRE_MAP)
+            ? 'このジャンルはショートで指定できません'
+            : ''}
           onclick={() => onChangeGenre(g.value)}
         >
           {g.label}
@@ -276,13 +361,35 @@
     </div>
 
     <div class="row">
-      <div class="term-tabs">
-        {#each TERMS as t (t.value)}
-          <button class="tab" class:active={term === t.value} onclick={() => onChangeTerm(t.value)}>
-            {t.label}
-          </button>
-        {/each}
-      </div>
+      {#if rankShort}
+        <div class="term-tabs">
+          {#each SHORT_SORTS as s (s.value)}
+            <button
+              class="tab"
+              class:active={shortSort === s.value}
+              onclick={() => onChangeShortSort(s.value)}
+            >
+              {s.label}
+            </button>
+          {/each}
+        </div>
+      {:else}
+        <div class="term-tabs">
+          {#each TERMS as t (t.value)}
+            <button
+              class="tab"
+              class:active={term === t.value}
+              onclick={() => onChangeTerm(t.value)}
+            >
+              {t.label}
+            </button>
+          {/each}
+        </div>
+      {/if}
+      <label class="short-rank-toggle">
+        <input type="checkbox" checked={rankShort} onchange={onToggleShort} />
+        <span>ショート</span>
+      </label>
       <button
         type="button"
         class="ng-panel-toggle"
@@ -328,7 +435,7 @@
     <ol class="ranking">
       {#each displayed as item, i (item.id)}
         <li class="rank-item">
-          <span class="rank-num">{i + 1 + (page - 1) * 100}</span>
+          <span class="rank-num">{i + 1 + (page - 1) * (rankShort ? 50 : 100)}</span>
 
           {#if item.thumbnail?.url ?? item.thumbnail?.listingUrl ?? item.thumbnail?.middleUrl}
             <a href="/video/{item.id}?from=ranking">
@@ -502,6 +609,33 @@
     background: var(--theme-accent);
     color: white;
     border-color: var(--theme-accent);
+  }
+  .chip.disabled,
+  .chip:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+    background: var(--theme-surface-2);
+    color: var(--theme-text-muted);
+  }
+  .short-rank-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 13px;
+    color: var(--theme-text-soft);
+    cursor: pointer;
+    user-select: none;
+    padding: 4px 8px;
+    border: 1px solid var(--theme-border-strong);
+    border-radius: 6px;
+    background: var(--theme-surface-2);
+  }
+  .short-rank-toggle:hover {
+    background: var(--theme-border-strong);
+  }
+  .short-rank-toggle input {
+    accent-color: var(--theme-accent);
+    margin: 0;
   }
   .row {
     display: flex;
