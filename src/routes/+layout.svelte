@@ -2,7 +2,7 @@
   import { page } from '$app/state';
   import { onMount } from 'svelte';
   import { installConsoleBridge } from '$lib/consoleBridge';
-  import { getStr, isLoaded, loadSettings } from '$lib/stores/settings.svelte';
+  import { getStr, loadSettings } from '$lib/stores/settings.svelte';
   import MiniPlayer from '$lib/player/MiniPlayer.svelte';
 
   let { children } = $props();
@@ -35,20 +35,13 @@
     if (typeof document === 'undefined') return;
     document.documentElement.dataset.theme = theme;
     document.body.dataset.theme = theme;
-    // app.html の sync 初期化スクリプトが次回起動時に読む localStorage
-    // ミラー。Tauri invoke (DB 読み込み) の非同期完了を待つあいだ、`theme`
-    // が一過性に def.default 'dark' を返してしまうため、isLoaded() が
-    // true になる (= DB から正値で cache が埋まった) までは絶対に
-    // localStorage を上書きしない。これを怠ると classic 設定のユーザが
-    // load 完了前にアプリを閉じた時に localStorage が 'dark' に汚染され、
-    // 次回起動の app.html sync が間違ったテーマで初期描画して FOUC が
-    // 再発する (codex review r3293692947 / r3293692949)。
-    if (!isLoaded()) return;
-    try {
-      window.localStorage.setItem('appearance.theme', theme);
-    } catch {
-      /* localStorage 不可環境 (シークレットモード等) は無視 */
-    }
+    // ※ localStorage への theme ミラーは settings.svelte.ts 内の
+    //   loadSettings / setSetting / resetSetting で行う (DB 書き込み
+    //   成功後にのみ反映する設計)。ここから書くと:
+    //   - 起動時の def.default 'dark' で classic 設定を上書きする
+    //   - setSetting の DB write 失敗時にも localStorage を更新する
+    //   といった DB <-> localStorage 乖離の原因となる
+    //   (codex review r3293692947 / r3293692949 / r3293708194)。
   });
 </script>
 
