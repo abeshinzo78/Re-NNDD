@@ -272,17 +272,22 @@
         disabled={abLoop.in == null || abLoop.out == null}>↻</button
       >
       <button type="button" class="btn small" onclick={onClearAb} title="クリア">×</button>
-      <span class="ab-classic-label">A B S</span>
+      <span class="ab-classic-label">区間リピート</span>
     </div>
 
     <div class="comments-controls">
       <button
         type="button"
-        class="btn"
+        class="btn comments-btn"
         class:active={commentsEnabled}
         onclick={onToggleComments}
-        title="コメ表示 (C)">コメ {commentsEnabled ? 'ON' : 'OFF'}</button
+        title="コメ表示 (C)"
+        aria-label="コメ表示"
+        aria-pressed={commentsEnabled}
       >
+        <span class="btn-icon classic-only" aria-hidden="true">💬</span>
+        <span class="text-label">コメ {commentsEnabled ? 'ON' : 'OFF'}</span>
+      </button>
       <input
         type="range"
         min="0.1"
@@ -329,8 +334,11 @@
       class:active={loop}
       onclick={onToggleLoop}
       title="リピート再生"
+      aria-label="リピート再生"
+      aria-pressed={loop}
     >
-      ループ
+      <span class="btn-icon classic-only" aria-hidden="true">↻</span>
+      <span class="text-label">ループ</span>
     </button>
   </div>
 </div>
@@ -347,7 +355,8 @@
     flex-shrink: 0;
   }
   .classic-label,
-  .ab-classic-label {
+  .ab-classic-label,
+  .classic-only {
     display: none;
   }
   .seek {
@@ -555,7 +564,7 @@
   }
   .rate-menu button.current {
     background: var(--theme-accent);
-    color: white;
+    color: var(--theme-accent-fg);
   }
   :global(html[data-theme='niconico-classic']) .rate-menu button.current {
     background: linear-gradient(180deg, #edf4ff 0%, #dbe7fb 100%);
@@ -622,17 +631,33 @@
     font-size: 13px;
     line-height: 1;
   }
-  :global(html[data-theme='niconico-classic']) .classic-label {
+  :global(html[data-theme='niconico-classic']) .classic-label,
+  :global(html[data-theme='niconico-classic']) .classic-only {
     display: inline;
     font-size: 12px;
     line-height: 1;
   }
   :global(html[data-theme='niconico-classic']) .ab-classic-label {
     display: inline;
-    margin-left: 2px;
+    margin-left: 6px;
     font-size: 12px;
     color: #4a4038;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.04em;
+  }
+  /* クラシック時の .text-label は他のラベルと統一サイズ */
+  :global(html[data-theme='niconico-classic']) .text-label {
+    font-size: 12px;
+    line-height: 1;
+  }
+  /* クラシック時の primary/active ボタン内のラベル色を強制 (継承で
+     ダーク茶になり淡青背景上で読みづらくなるのを防ぐ)。
+     .btn.primary は再生/一時停止ボタン (.classic-label のみ)、
+     .btn.active は AB ループのトグル / コメ ON 時 (.text-label など) で
+     使われる。 */
+  :global(html[data-theme='niconico-classic']) .btn.primary .classic-label,
+  :global(html[data-theme='niconico-classic']) .btn.active .classic-label,
+  :global(html[data-theme='niconico-classic']) .btn.active .text-label {
+    color: #2a4d78;
   }
   :global(html[data-theme='niconico-classic']) .btn.small {
     min-width: 28px;
@@ -641,4 +666,20 @@
   :global(html[data-theme='niconico-classic']) .loop-btn {
     min-width: 60px;
   }
+  /* クラシック時の音量・コメ透明度スライダーのつまみ色をシーク
+     バーと統一 (デフォルトは color-scheme: light で薄青になり違和感) */
+  :global(html[data-theme='niconico-classic']) .volume input[type='range'],
+  :global(html[data-theme='niconico-classic']) .comments-controls input[type='range'] {
+    accent-color: #3f73b3;
+  }
+  /* クラシック時はラベル付きでボタン幅が広がるので、行間を詰めて
+     折り返してもバランスが取れる見た目にする。`overflow-x: auto` は
+     rate-menu (position:absolute で上に開く) が切れるので使わない。 */
+  :global(html[data-theme='niconico-classic']) .controls {
+    row-gap: 4px;
+  }
+  /* `.controls-wrap` は classic で position: static (常時表示) なのに
+     opacity transition が残っていると意図しないフェードが入る可能性。
+     classic では透過アニメーションを抑止する。
+     ※ Player.svelte 側の .controls-wrap への classic オーバライド補強 */
 </style>

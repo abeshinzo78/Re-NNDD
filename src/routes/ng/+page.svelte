@@ -458,7 +458,7 @@
   button.primary {
     background: var(--theme-accent);
     border-color: var(--theme-accent);
-    color: #fff;
+    color: var(--theme-accent-fg);
     margin-left: auto;
   }
   button.primary:hover {

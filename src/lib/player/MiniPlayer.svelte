@@ -770,13 +770,15 @@
   .mini {
     position: fixed;
     z-index: 9999;
-    background: var(--theme-bg);
+    /* PiP 内部は常に黒地で映像を出す。テーマ変数 var(--theme-bg) を
+       使うと classic の白背景がそのまま出てしまい、メタデータロード
+       前の <video> の周囲に「白い箱」が見える違和感が出る。 */
+    background: #000000;
     border-radius: 12px;
     overflow: hidden;
-    box-shadow:
-      0 10px 32px rgba(0, 0, 0, 0.55),
-      0 2px 8px rgba(0, 0, 0, 0.4),
-      0 0 0 1px rgba(255, 255, 255, 0.08);
+    /* dark テーマは強い黒影、classic は控えめな茶系の影。トークン化
+       して切替える。 */
+    box-shadow: var(--theme-menu-shadow-strong);
     transition:
       left 0.18s cubic-bezier(0.22, 1, 0.36, 1),
       top 0.18s cubic-bezier(0.22, 1, 0.36, 1),

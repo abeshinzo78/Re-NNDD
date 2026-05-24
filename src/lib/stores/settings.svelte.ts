@@ -7,6 +7,7 @@
 // 各画面は同期的に値を読める。書き換えは `setSetting(key, value)` で
 // in-memory 即時更新 + DB 永続化を非同期で行う。
 
+import { SvelteSet } from 'svelte/reactivity';
 import { deleteSettingRaw, getSettings, setSettingRaw } from '$lib/api';
 
 // ----- 設定キー定義 -----
@@ -234,12 +235,71 @@ const cache = $state<Record<string, string>>({});
 let loaded = false;
 let loadPromise: Promise<void> | null = null;
 
+// app.html の sync 初期化が data-theme を読む localStorage キー。
+// `setSetting` (DB write 成功時) と `resetSetting` (DB delete 成功時)、
+// および `loadSettings` (DB load 完了時) からのみ更新する。
+// layout.svelte の $effect からは書かない (= DB との乖離を防ぐ)。
+const LS_THEME_KEY = 'appearance.theme';
+
+function syncThemeToLocalStorage(value: string | null): void {
+  if (typeof globalThis === 'undefined') return;
+  const ls = (globalThis as unknown as { localStorage?: Storage }).localStorage;
+  if (!ls) return;
+  try {
+    if (value == null) ls.removeItem(LS_THEME_KEY);
+    else ls.setItem(LS_THEME_KEY, value);
+  } catch {
+    /* localStorage 不可環境 (シークレットモード等) は無視 */
+  }
+}
+
+// 起動直後にローカルストレージから theme だけ先行シードしておく。
+// loadSettings() は Tauri invoke で非同期、それを待つあいだに $derived の
+// theme が def.default ('dark') を返してしまい、せっかく app.html の sync
+// script が data-theme をクラシックに揃えても layout の $effect が一過性に
+// 'dark' で上書きする (classic → dark → classic の FOUC)。
+// 永続化は DB が正だが、表示の整合のためにここでもキャッシュを温める。
+// `loadSettings()` 完了時に DB 値で上書きされ、DB に無ければ後段で削除する
+// (= DB が空 = default を採用、を尊重)。
+const seededKeys = new SvelteSet<string>();
+if (typeof globalThis !== 'undefined') {
+  const ls = (globalThis as unknown as { localStorage?: Storage }).localStorage;
+  if (ls) {
+    try {
+      const t = ls.getItem(LS_THEME_KEY);
+      if (t != null) {
+        cache[LS_THEME_KEY] = t;
+        seededKeys.add(LS_THEME_KEY);
+      }
+    } catch {
+      /* localStorage 不可環境は無視 */
+    }
+  }
+}
+
 export function loadSettings(): Promise<void> {
   if (loadPromise) return loadPromise;
   loadPromise = (async () => {
     try {
       const all = await getSettings();
-      for (const k of Object.keys(all)) cache[k] = all[k];
+      for (const k of Object.keys(all)) {
+        cache[k] = all[k];
+        // DB が canonical を返したので seed フラグはクリア。
+        seededKeys.delete(k);
+      }
+      // DB に無い (= default を使う semantics) のに localStorage seed で
+      // cache に残っている値は削除する。新規プロファイル / DB リセット /
+      // 別 DB のインポート後で localStorage だけ古い値が残っているケース
+      // で、seed が永続的に残って DB と乖離する問題を防ぐ
+      // (codex review r3293708193)。
+      for (const k of seededKeys) {
+        delete cache[k];
+      }
+      seededKeys.clear();
+      // DB の真値を localStorage にも反映 (次回起動の app.html sync 用)。
+      // DB に theme が無ければ localStorage も消す (= default 'dark' で
+      // bootstrap される)。
+      syncThemeToLocalStorage(all[LS_THEME_KEY] ?? null);
     } finally {
       loaded = true;
     }
@@ -293,12 +353,17 @@ export async function setSetting(key: SettingKey, value: unknown): Promise<void>
   const raw = String(value);
   cache[key] = raw;
   await setSettingRaw(key, raw);
+  // DB 書き込みが成功してから localStorage に反映する。await 前に
+  // ミラーすると、DB エラーで失敗した値を次回起動時に app.html sync が
+  // 拾って、DB と乖離した状態で起動してしまう (codex review r3293708194)。
+  if (key === LS_THEME_KEY) syncThemeToLocalStorage(raw);
 }
 
 /** 既定値に戻す (DB 行削除)。 */
 export async function resetSetting(key: SettingKey): Promise<void> {
   delete cache[key];
   await deleteSettingRaw(key);
+  if (key === LS_THEME_KEY) syncThemeToLocalStorage(null);
 }
 
 /** Svelte 内で reactivity に使えるラッパ。`$derived(get(key))` で値を読める。 */

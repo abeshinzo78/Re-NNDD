@@ -1204,8 +1204,11 @@
     bottom: 12px;
     left: 12px;
     right: 12px;
-    background: rgba(20, 20, 20, 0.78);
-    color: var(--theme-text);
+    /* 映像の上に重ねるバナーなので、テーマに関係なく暗いオーバレイ +
+       白文字で固定する (classic 時に --theme-text が暗茶になり、
+       grey-78% 背景上で潰れる問題を防ぐ)。 */
+    background: var(--theme-overlay-strong);
+    color: var(--theme-on-overlay);
     padding: 8px 12px;
     border-radius: 6px;
     font-size: 13px;
@@ -1232,21 +1235,38 @@
     background: #ffffff;
     border-radius: 0;
   }
-  :global(html[data-theme='niconico-classic']) .player :global(video) {
-    aspect-ratio: auto;
-    height: auto;
-    max-height: calc(100vh - 300px);
+  /* 横長 (通常) 動画のみ 16:9 を維持。.player.short (縦長/ショート動画)
+     は別途 9:16 ルール (.player.short :global(video)) があるので、ここで
+     上書きしないよう :not(.short) に限定する。これを怠ると classic 時に
+     縦動画も 16:9 で描かれ、画面の左右が大きく letterbox になる
+     (codex review r3293692948)。 */
+  :global(html[data-theme='niconico-classic']) .player:not(.short) :global(video) {
+    /* metadata 未ロード時に <video> が高さ 0 に潰れて初期表示が空白に
+       なる (旧コードの aspect-ratio: auto + height: auto バグ) のを防ぐ
+       ため 16:9 を維持する。 */
+    aspect-ratio: 16 / 9;
+    max-height: min(calc(100vh - 320px), 80vh);
+    background: #000000;
+  }
+  /* 縦長 (ショート) 動画は classic でも背景を黒にだけ揃える。
+     aspect-ratio は .player.short の既存ルール (9/16) を尊重。 */
+  :global(html[data-theme='niconico-classic']) .player.short :global(video) {
     background: #000000;
   }
   :global(html[data-theme='niconico-classic']) .controls-wrap {
     position: static;
     opacity: 1;
     pointer-events: auto;
+    /* opacity transition は dark の auto-hide 用。classic は常時表示
+       なので、controlsVisible が一過性に false に振れた瞬間の意図しない
+       フェードを抑止する。 */
+    transition: none;
   }
   :global(html[data-theme='niconico-classic']) .player.fullscreen :global(video) {
     width: 100%;
     height: 100%;
     max-height: none;
+    aspect-ratio: auto;
   }
   :global(html[data-theme='niconico-classic']) .player.fullscreen .controls-wrap {
     position: absolute;
@@ -1282,8 +1302,11 @@
     top: 12px;
     left: 50%;
     transform: translateX(-50%);
-    background: rgba(0, 0, 0, 0.78);
-    color: var(--theme-success-text);
+    /* 映像の上に重ねるトーストなのでテーマに関係なく暗オーバレイ +
+       白系文字で視認性を担保 (classic の --theme-success-text=#355f2e
+       が暗グレ背景に紛れる問題への対処)。 */
+    background: var(--theme-overlay-strong);
+    color: var(--theme-on-overlay);
     padding: 6px 14px;
     border-radius: 6px;
     font-size: 13px;

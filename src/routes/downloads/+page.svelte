@@ -263,7 +263,7 @@
   }
   .enqueue button {
     background: var(--theme-accent);
-    color: #fff;
+    color: var(--theme-accent-fg);
     border: none;
     padding: 8px 14px;
     border-radius: 6px;

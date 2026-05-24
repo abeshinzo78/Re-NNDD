@@ -556,7 +556,7 @@
   }
   .tab.active {
     background: var(--theme-accent);
-    color: #fff;
+    color: var(--theme-accent-fg);
   }
 
   .muted {
@@ -625,7 +625,7 @@
   }
   .badge {
     background: var(--theme-accent);
-    color: white;
+    color: var(--theme-accent-fg);
     font-size: 10px;
     padding: 1px 6px;
     border-radius: 999px;
@@ -680,7 +680,7 @@
   .modal-foot .primary {
     background: var(--theme-accent);
     border-color: var(--theme-accent);
-    color: #fff;
+    color: var(--theme-accent-fg);
     font-weight: 600;
   }
   .actions button.primary:hover,
@@ -800,7 +800,7 @@
   }
   .smart-toolbar button {
     background: var(--theme-accent);
-    color: #fff;
+    color: var(--theme-accent-fg);
     border: 1px solid var(--theme-accent);
     border-radius: 6px;
     padding: 6px 14px;
@@ -869,7 +869,7 @@
   }
   .smart-actions .action-link {
     background: var(--theme-accent);
-    color: #fff;
+    color: var(--theme-accent-fg);
     border: 1px solid var(--theme-accent);
     border-radius: 6px;
     padding: 4px 10px;
@@ -897,7 +897,7 @@
   .modal-backdrop {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.55);
+    background: var(--theme-overlay-medium);
     display: flex;
     align-items: center;
     justify-content: center;

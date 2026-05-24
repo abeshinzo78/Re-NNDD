@@ -1393,10 +1393,10 @@
     align-items: center;
     justify-content: center;
     gap: 10px;
-    color: #fff;
+    color: var(--theme-on-overlay);
   }
   .pip-icon {
-    color: #fff;
+    color: var(--theme-on-overlay);
     opacity: 0.85;
   }
   .pip-text {
@@ -1407,7 +1407,7 @@
   .pip-resume {
     margin-top: 4px;
     background: var(--theme-accent);
-    color: #fff;
+    color: var(--theme-accent-fg);
     border: none;
     padding: 8px 16px;
     border-radius: 8px;
@@ -1420,7 +1420,7 @@
   }
   .pip-other-title {
     font-size: 12px;
-    color: #fff;
+    color: var(--theme-on-overlay);
     opacity: 0.85;
     max-width: 80%;
     overflow: hidden;
@@ -1438,7 +1438,7 @@
     margin-top: 4px;
   }
   .pip-link {
-    color: #fff;
+    color: var(--theme-on-overlay);
     opacity: 0.9;
     font-size: 12px;
     text-decoration: underline;
