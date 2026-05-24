@@ -2,7 +2,7 @@
   import { page } from '$app/state';
   import { onMount } from 'svelte';
   import { installConsoleBridge } from '$lib/consoleBridge';
-  import { getStr, loadSettings } from '$lib/stores/settings.svelte';
+  import { getStr, isLoaded, loadSettings } from '$lib/stores/settings.svelte';
   import MiniPlayer from '$lib/player/MiniPlayer.svelte';
 
   let { children } = $props();
@@ -36,8 +36,14 @@
     document.documentElement.dataset.theme = theme;
     document.body.dataset.theme = theme;
     // app.html の sync 初期化スクリプトが次回起動時に読む localStorage
-    // ミラーを更新。これで Tauri invoke (DB 読み込み) の non-blocking
-    // 完了を待たず、初回フレームから正しいテーマで描ける (FOUC 防止)。
+    // ミラー。Tauri invoke (DB 読み込み) の非同期完了を待つあいだ、`theme`
+    // が一過性に def.default 'dark' を返してしまうため、isLoaded() が
+    // true になる (= DB から正値で cache が埋まった) までは絶対に
+    // localStorage を上書きしない。これを怠ると classic 設定のユーザが
+    // load 完了前にアプリを閉じた時に localStorage が 'dark' に汚染され、
+    // 次回起動の app.html sync が間違ったテーマで初期描画して FOUC が
+    // 再発する (codex review r3293692947 / r3293692949)。
+    if (!isLoaded()) return;
     try {
       window.localStorage.setItem('appearance.theme', theme);
     } catch {

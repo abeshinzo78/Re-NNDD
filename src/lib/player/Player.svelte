@@ -1235,12 +1235,22 @@
     background: #ffffff;
     border-radius: 0;
   }
-  :global(html[data-theme='niconico-classic']) .player :global(video) {
-    /* クラシックでも 16:9 を維持。aspect-ratio: auto + height: auto だと
-       metadata 未ロード時に <video> が高さ 0 に潰れ、初期表示が空白に
-       なる (bug). 高さ上限だけ classic の framing に合わせて絞る。 */
+  /* 横長 (通常) 動画のみ 16:9 を維持。.player.short (縦長/ショート動画)
+     は別途 9:16 ルール (.player.short :global(video)) があるので、ここで
+     上書きしないよう :not(.short) に限定する。これを怠ると classic 時に
+     縦動画も 16:9 で描かれ、画面の左右が大きく letterbox になる
+     (codex review r3293692948)。 */
+  :global(html[data-theme='niconico-classic']) .player:not(.short) :global(video) {
+    /* metadata 未ロード時に <video> が高さ 0 に潰れて初期表示が空白に
+       なる (旧コードの aspect-ratio: auto + height: auto バグ) のを防ぐ
+       ため 16:9 を維持する。 */
     aspect-ratio: 16 / 9;
     max-height: min(calc(100vh - 320px), 80vh);
+    background: #000000;
+  }
+  /* 縦長 (ショート) 動画は classic でも背景を黒にだけ揃える。
+     aspect-ratio は .player.short の既存ルール (9/16) を尊重。 */
+  :global(html[data-theme='niconico-classic']) .player.short :global(video) {
     background: #000000;
   }
   :global(html[data-theme='niconico-classic']) .controls-wrap {

@@ -234,6 +234,22 @@ const cache = $state<Record<string, string>>({});
 let loaded = false;
 let loadPromise: Promise<void> | null = null;
 
+// 起動直後にローカルストレージから theme だけ先行シードしておく。
+// loadSettings() は Tauri invoke で非同期、それを待つあいだに $derived の
+// theme が def.default ('dark') を返してしまい、せっかく app.html の sync
+// script が data-theme をクラシックに揃えても layout の $effect が一過性に
+// 'dark' で上書きする (classic → dark → classic の FOUC)。
+// 永続化は DB が正だが、表示の整合のためにここでもキャッシュを温める。
+// `loadSettings()` 完了時に DB 値で上書きされるので、ズレは自動で解消する。
+if (typeof globalThis !== 'undefined' && typeof globalThis.localStorage !== 'undefined') {
+  try {
+    const t = globalThis.localStorage.getItem('appearance.theme');
+    if (t != null) cache['appearance.theme'] = t;
+  } catch {
+    /* localStorage 不可環境は無視 */
+  }
+}
+
 export function loadSettings(): Promise<void> {
   if (loadPromise) return loadPromise;
   loadPromise = (async () => {
