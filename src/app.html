@@ -4,6 +4,21 @@
     <meta charset="utf-8" />
     <link rel="icon" href="data:image/png;base64,iVBORw0KGgo=" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script>
+      // FOUC 対策: テーマは設定 DB に永続化されているが、loadSettings は
+      // 非同期 (Tauri invoke) なので最初の描画 1 フレームはダークが必ず
+      // 出てしまう。前回適用したテーマを localStorage に sync mirror して
+      // おき、ここで HTML が描かれる前に data-theme を埋める。
+      // 値が無い (初回起動 / 未設定) なら 'dark' で従来挙動を維持。
+      (function () {
+        try {
+          var t = localStorage.getItem('appearance.theme') || 'dark';
+          document.documentElement.setAttribute('data-theme', t);
+        } catch (_) {
+          document.documentElement.setAttribute('data-theme', 'dark');
+        }
+      })();
+    </script>
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover">

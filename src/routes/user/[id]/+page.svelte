@@ -695,7 +695,7 @@
   }
   .play-all {
     background: var(--theme-accent);
-    color: #fff;
+    color: var(--theme-accent-fg);
     border: 1px solid var(--theme-accent);
     border-radius: 6px;
     padding: 5px 14px;

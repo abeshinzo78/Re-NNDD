@@ -645,7 +645,7 @@
   }
   .primary {
     background: var(--theme-accent);
-    color: white;
+    color: var(--theme-accent-fg);
     border: none;
     border-radius: 6px;
     padding: 8px 18px;

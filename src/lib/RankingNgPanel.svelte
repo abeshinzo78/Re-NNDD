@@ -622,7 +622,7 @@
   button.primary {
     background: var(--theme-accent);
     border-color: var(--theme-accent);
-    color: #fff;
+    color: var(--theme-accent-fg);
   }
   button.primary:hover {
     background: var(--theme-accent-hover);

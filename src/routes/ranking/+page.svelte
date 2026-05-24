@@ -607,7 +607,7 @@
   }
   .chip.active {
     background: var(--theme-accent);
-    color: white;
+    color: var(--theme-accent-fg);
     border-color: var(--theme-accent);
   }
   .chip.disabled,
@@ -661,7 +661,7 @@
   }
   .tab.active {
     background: var(--theme-accent);
-    color: white;
+    color: var(--theme-accent-fg);
     border-color: var(--theme-accent);
   }
   .ng-panel-toggle {
@@ -683,7 +683,7 @@
   .ng-panel-toggle.active {
     background: var(--theme-accent);
     border-color: var(--theme-accent);
-    color: #fff;
+    color: var(--theme-accent-fg);
   }
   .ng-panel-toggle .caret {
     font-size: 10px;
@@ -755,13 +755,13 @@
     min-height: 90px;
   }
   .rank-item:nth-child(1) .rank-num {
-    color: #ffd700;
+    color: var(--theme-medal-gold);
   }
   .rank-item:nth-child(2) .rank-num {
-    color: #c0c0c0;
+    color: var(--theme-medal-silver);
   }
   .rank-item:nth-child(3) .rank-num {
-    color: #cd7f32;
+    color: var(--theme-medal-bronze);
   }
   .thumb {
     width: 160px;
@@ -815,7 +815,7 @@
     align-items: flex-start;
   }
   .dl-btn {
-    background: rgba(26, 58, 38, 0.85);
+    background: var(--theme-success-bg);
     color: var(--theme-success-text);
     border: 1px solid var(--theme-success-border);
     border-radius: 6px;
@@ -856,7 +856,7 @@
     border-radius: 8px;
     padding: 4px;
     min-width: 200px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    box-shadow: var(--theme-menu-shadow);
   }
   .ng-menu-item {
     display: block;
@@ -881,7 +881,7 @@
   }
   .pagination button {
     background: var(--theme-accent);
-    color: white;
+    color: var(--theme-accent-fg);
     border: none;
     border-radius: 6px;
     padding: 6px 14px;

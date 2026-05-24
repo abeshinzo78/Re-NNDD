@@ -35,6 +35,14 @@
     if (typeof document === 'undefined') return;
     document.documentElement.dataset.theme = theme;
     document.body.dataset.theme = theme;
+    // app.html の sync 初期化スクリプトが次回起動時に読む localStorage
+    // ミラーを更新。これで Tauri invoke (DB 読み込み) の non-blocking
+    // 完了を待たず、初回フレームから正しいテーマで描ける (FOUC 防止)。
+    try {
+      window.localStorage.setItem('appearance.theme', theme);
+    } catch {
+      /* localStorage 不可環境 (シークレットモード等) は無視 */
+    }
   });
 </script>
 
@@ -111,6 +119,25 @@
     --theme-nav-hover: #1f1f1f;
     --theme-nav-active: #2a2a2a;
     --theme-content-bg: var(--theme-bg-gradient);
+    /* 半透明オーバレイ (サムネ上の duration/resolution など)
+       と、その上に乗せる文字色。dark/classic 共通で白文字 + 暗色背景。 */
+    --theme-overlay-strong: rgba(0, 0, 0, 0.78);
+    --theme-overlay-medium: rgba(0, 0, 0, 0.55);
+    --theme-overlay-soft: rgba(0, 0, 0, 0.4);
+    --theme-on-overlay: #ffffff;
+    --theme-on-overlay-muted: rgba(255, 255, 255, 0.78);
+    /* アクセント (青ボタンなど) の上に乗る文字色。常に白に近い色。 */
+    --theme-accent-fg: #ffffff;
+    /* ポップアップ/ドロップダウンメニューの影。dark は黒影で OK。 */
+    --theme-menu-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+    --theme-menu-shadow-strong: 0 10px 32px rgba(0, 0, 0, 0.55);
+    /* ランキング1/2/3位メダル色 (dark 向き) */
+    --theme-medal-gold: #ffd700;
+    --theme-medal-silver: #c0c0c0;
+    --theme-medal-bronze: #cd7f32;
+    /* 選択範囲とフォーカスリング */
+    --theme-selection-bg: rgba(37, 99, 235, 0.45);
+    --theme-focus-ring: rgba(37, 99, 235, 0.6);
   }
   :global(html[data-theme='niconico-classic']) {
     color-scheme: light;
@@ -160,6 +187,25 @@
     --theme-nav-hover: #ededed;
     --theme-nav-active: #e3e3e3;
     --theme-content-bg: var(--theme-bg-gradient);
+    /* 半透明オーバレイは classic でも darkness を維持 (サムネ上の duration
+       バッジは映像の上に乗るので白文字 + 暗色背景でないと読めない)。
+       ただし軽量化 (0.78 → 0.65) して classic の柔らかな雰囲気と整合。 */
+    --theme-overlay-strong: rgba(0, 0, 0, 0.65);
+    --theme-overlay-medium: rgba(0, 0, 0, 0.45);
+    --theme-overlay-soft: rgba(0, 0, 0, 0.3);
+    --theme-on-overlay: #ffffff;
+    --theme-on-overlay-muted: rgba(255, 255, 255, 0.85);
+    /* アクセント (#4b7db8) の上は白文字でコントラスト十分 (≥4.5)。 */
+    --theme-accent-fg: #ffffff;
+    /* light テーマでは強い黒影が浮くので弱めに茶系の柔らかい影。 */
+    --theme-menu-shadow: 0 4px 12px rgba(75, 55, 34, 0.18);
+    --theme-menu-shadow-strong: 0 8px 24px rgba(75, 55, 34, 0.22);
+    /* メダル色: 明背景向きにトーン調整 (シルバーが見えない問題への対処)。 */
+    --theme-medal-gold: #b8860b;
+    --theme-medal-silver: #808080;
+    --theme-medal-bronze: #8b4513;
+    --theme-selection-bg: rgba(75, 125, 184, 0.35);
+    --theme-focus-ring: rgba(75, 125, 184, 0.55);
   }
   :global(html, body) {
     margin: 0;
@@ -187,6 +233,43 @@
   :global(select),
   :global(textarea) {
     font: inherit;
+  }
+  /* テーマ追従の選択範囲色 (Safari/WebKit/Chrome 共通)。dark/classic
+     のどちらでも自分のアクセント色で控えめに塗る。 */
+  :global(::selection) {
+    background: var(--theme-selection-bg);
+    color: var(--theme-text);
+  }
+  /* キーボードフォーカスリング。マウスクリック時 (\:focus) は出さず
+     :focus-visible (Tab 等) でのみ表示。outline:none で潰してる箇所が
+     多いので、box-shadow ベースで横断的に効かせる。 */
+  :global(:focus-visible) {
+    outline: 2px solid var(--theme-focus-ring);
+    outline-offset: 2px;
+  }
+  /* スクロールバーのテーマ追従。classic は OS デフォルトだと暗バーが
+     出てちぐはぐになる。トラックは透明、サムだけ色付け。 */
+  :global(*::-webkit-scrollbar) {
+    width: 12px;
+    height: 12px;
+  }
+  :global(*::-webkit-scrollbar-track) {
+    background: transparent;
+  }
+  :global(*::-webkit-scrollbar-thumb) {
+    background: var(--theme-border-strong);
+    border: 3px solid transparent;
+    border-radius: 12px;
+    background-clip: padding-box;
+  }
+  :global(*::-webkit-scrollbar-thumb:hover) {
+    background: var(--theme-border-focus);
+    background-clip: padding-box;
+    border: 3px solid transparent;
+  }
+  /* Firefox */
+  :global(*) {
+    scrollbar-color: var(--theme-border-strong) transparent;
   }
 
   .app {

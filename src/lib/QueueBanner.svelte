@@ -131,7 +131,7 @@
     text-transform: uppercase;
     letter-spacing: 0.5px;
     background: var(--theme-accent);
-    color: #fff;
+    color: var(--theme-accent-fg);
     padding: 1px 6px;
     border-radius: 999px;
     font-weight: 600;
@@ -170,7 +170,7 @@
   }
   .qbtn.primary {
     background: var(--theme-accent);
-    color: #fff;
+    color: var(--theme-accent-fg);
     border-color: var(--theme-accent);
   }
   .qbtn.primary:hover:not(:disabled) {

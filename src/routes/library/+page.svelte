@@ -344,7 +344,7 @@
   }
   .primary {
     background: var(--theme-accent);
-    color: #fff;
+    color: var(--theme-accent-fg);
     border: 1px solid var(--theme-accent);
     padding: 6px 12px;
     border-radius: 6px;
@@ -396,8 +396,10 @@
     top: 6px;
     right: 6px;
     z-index: 2;
-    background: rgba(20, 20, 20, 0.85);
-    color: var(--theme-danger-text);
+    /* サムネ上に重ねるので、テーマに関係なく暗いオーバレイで対比を取る。
+       文字色はオーバレイ上専用トークンで白系を維持する。 */
+    background: var(--theme-overlay-strong);
+    color: var(--theme-on-overlay);
     border: 1px solid var(--theme-danger-border);
     width: 26px;
     height: 26px;
@@ -461,8 +463,8 @@
     position: absolute;
     right: 6px;
     bottom: 6px;
-    background: rgba(0, 0, 0, 0.78);
-    color: var(--theme-text);
+    background: var(--theme-overlay-strong);
+    color: var(--theme-on-overlay);
     padding: 1px 6px;
     border-radius: 4px;
     font-size: 11px;
@@ -472,8 +474,8 @@
     position: absolute;
     left: 6px;
     bottom: 6px;
-    background: rgba(37, 99, 235, 0.85);
-    color: #fff;
+    background: var(--theme-accent);
+    color: var(--theme-accent-fg);
     padding: 1px 6px;
     border-radius: 4px;
     font-size: 10px;

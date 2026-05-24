@@ -295,7 +295,9 @@
     gap: 4px;
   }
   .dl-icon-btn {
-    background: rgba(26, 58, 38, 0.85);
+    /* サムネ右上に重なる DL ボタン。テーマ追従の success カラーで
+       (classic の白背景上では緑薄色になり違和感を低減)。 */
+    background: var(--theme-success-bg);
     color: var(--theme-success-text);
     border: 1px solid var(--theme-success-border);
     border-radius: 6px;
@@ -313,7 +315,11 @@
     cursor: wait;
   }
   .menu-btn {
-    background: rgba(0, 0, 0, 0.4);
+    /* サムネ右上に重なる NG メニューボタン。サムネが暗い前提だった
+       rgba(0,0,0,0.4) + text-soft (classic では #444) では classic で
+       「黒寄り背景 + 黒寄り文字」となり ⋯ が判読不能。サーフェス系
+       トークンに切替えて、テーマに応じて適切なコントラストを取る。 */
+    background: var(--theme-surface-2);
     color: var(--theme-text-soft);
     border: 1px solid var(--theme-border-strong);
     border-radius: 6px;
@@ -335,7 +341,7 @@
     background: var(--theme-surface-4);
     border: 1px solid var(--theme-surface-hover);
     border-radius: 8px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+    box-shadow: var(--theme-menu-shadow);
     padding: 6px;
     display: flex;
     flex-direction: column;

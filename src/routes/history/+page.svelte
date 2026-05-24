@@ -309,7 +309,9 @@
     display: flex;
     align-items: center;
     gap: 4px;
-    background: rgba(0, 0, 0, 0.7);
+    /* サムネ上の暗オーバレイ。文字色も on-overlay (白) で固定して
+       classic 時に accent-soft(暗青) で読めなくなる問題を防ぐ。 */
+    background: var(--theme-overlay-medium);
     border-radius: 0 0 4px 4px;
     padding: 2px 6px;
     height: 18px;
@@ -317,18 +319,18 @@
   .resume-bar {
     flex: 1;
     height: 3px;
-    background: var(--theme-surface-hover);
+    background: rgba(255, 255, 255, 0.25);
     border-radius: 2px;
     overflow: hidden;
   }
   .resume-bar-inner {
     height: 100%;
-    background: var(--theme-accent-soft);
+    background: var(--theme-on-overlay);
     border-radius: 2px;
   }
   .resume-time {
     font-size: 10px;
-    color: var(--theme-accent-soft);
+    color: var(--theme-on-overlay);
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
   }
@@ -389,8 +391,11 @@
     height: 24px;
     border: none;
     border-radius: 4px;
-    background: rgba(0, 0, 0, 0.5);
-    color: var(--theme-text-muted);
+    /* サムネ上に重ねる削除ボタン。テーマに関係なく暗オーバレイ +
+       白系文字でコントラストを担保 (旧: text-muted が classic で
+       灰になり半黒地にほぼ見えない問題)。 */
+    background: var(--theme-overlay-medium);
+    color: var(--theme-on-overlay-muted);
     font-size: 12px;
     cursor: pointer;
     opacity: 0;

@@ -280,7 +280,7 @@
   }
   .play-all {
     background: var(--theme-accent);
-    color: #fff;
+    color: var(--theme-accent-fg);
     border: 1px solid var(--theme-accent);
     border-radius: 6px;
     padding: 6px 14px;
@@ -374,8 +374,8 @@
     position: absolute;
     right: 6px;
     bottom: 6px;
-    background: rgba(0, 0, 0, 0.78);
-    color: var(--theme-text);
+    background: var(--theme-overlay-strong);
+    color: var(--theme-on-overlay);
     padding: 1px 6px;
     border-radius: 4px;
     font-size: 11px;
@@ -386,7 +386,7 @@
     left: 6px;
     top: 6px;
     background: var(--theme-accent);
-    color: #fff;
+    color: var(--theme-accent-fg);
     padding: 1px 8px;
     border-radius: 4px;
     font-size: 10px;

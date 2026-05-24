@@ -925,6 +925,39 @@
   .danger-btn:hover {
     background: var(--theme-danger-bg);
   }
+  /* クラシック時、ヘッダ右側のローカルバッジ・ghost/danger ボタンは
+     デフォルトのままだと白背景に薄色のテキストで「ボタンが消える」状態
+     になる。video 側 dl-btn と同じ凸凹陰影の角丸 3px ボタンへ揃える。 */
+  .page.classic .local-badge {
+    border-radius: 3px;
+    background: linear-gradient(180deg, #fffdf9 0%, #e9f0e3 100%);
+    border: 1px solid #bfd0b3;
+    color: #355f2e;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.85) inset;
+    padding: 3px 10px;
+  }
+  .page.classic .ghost-btn {
+    background: linear-gradient(180deg, #ffffff 0%, #ebe2d4 100%);
+    border: 1px solid var(--theme-border-strong);
+    color: var(--theme-text);
+    border-radius: 3px;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.85) inset;
+    padding: 3px 10px;
+  }
+  .page.classic .ghost-btn:hover:not(:disabled) {
+    background: linear-gradient(180deg, #fff8ef 0%, #e6d6c2 100%);
+  }
+  .page.classic .danger-btn {
+    background: linear-gradient(180deg, #fffafa 0%, #f6e0e0 100%);
+    border: 1px solid #d8b1b1;
+    color: #7e2020;
+    border-radius: 3px;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.85) inset;
+    padding: 3px 10px;
+  }
+  .page.classic .danger-btn:hover {
+    background: linear-gradient(180deg, #fff0f0 0%, #efc8c8 100%);
+  }
   .muted {
     color: var(--theme-text-muted);
   }
@@ -993,7 +1026,7 @@
     flex-shrink: 0;
   }
   .local-banner-online:hover {
-    background: rgba(45, 65, 100, 0.4);
+    background: var(--theme-accent-bg);
   }
   .page.classic .local-banner {
     border-radius: 3px;
@@ -1223,10 +1256,10 @@
     align-items: center;
     justify-content: center;
     gap: 10px;
-    color: #fff;
+    color: var(--theme-on-overlay);
   }
   .pip-icon {
-    color: #fff;
+    color: var(--theme-on-overlay);
     opacity: 0.85;
   }
   .pip-text {
@@ -1237,7 +1270,7 @@
   .pip-resume {
     margin-top: 4px;
     background: var(--theme-accent);
-    color: #fff;
+    color: var(--theme-on-overlay);
     border: none;
     padding: 8px 16px;
     border-radius: 8px;
@@ -1250,7 +1283,7 @@
   }
   .pip-other-title {
     font-size: 12px;
-    color: #fff;
+    color: var(--theme-on-overlay);
     opacity: 0.85;
     max-width: 80%;
     overflow: hidden;
@@ -1268,7 +1301,7 @@
     margin-top: 4px;
   }
   .pip-link {
-    color: #fff;
+    color: var(--theme-on-overlay);
     opacity: 0.9;
     font-size: 12px;
     text-decoration: underline;
@@ -1401,7 +1434,7 @@
     border: 1px solid var(--theme-accent-border);
     border-radius: 4px;
     font-size: 12px;
-    background: var(--theme-bg);
+    background: var(--theme-input-bg);
     color: var(--theme-text);
   }
   .actions-cell {
@@ -1410,7 +1443,7 @@
   }
   .snap-btn {
     background: var(--theme-accent);
-    color: #fff;
+    color: var(--theme-accent-fg);
     border: none;
     padding: 3px 10px;
     border-radius: 4px;
@@ -1477,7 +1510,7 @@
   }
   .snap-refetch-btn {
     background: var(--theme-accent);
-    color: #fff;
+    color: var(--theme-accent-fg);
     border: none;
     padding: 6px 16px;
     border-radius: 6px;
