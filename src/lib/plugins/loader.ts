@@ -38,6 +38,32 @@ const loadStates = new Map<string, { state: LoadState; error?: string }>();
  *  activate を await できるようにする (Codex #14)。 */
 const activationsInFlight = new Map<string, Promise<void>>();
 
+/** プラグインが `ctx.events.emit` で偽装できない host 予約イベント名。
+ *  これらは Rust 側 dispatcher の `emit_event` 経由 (もしくは host 内コンポーネント
+ *  からの `pluginBus.emit` 経由) でのみ発火される。
+ *
+ *  ここに載っていないと、`player.control` permission を持たないプラグインが
+ *  `ctx.events.emit('plugin:player:control', {kind:'play'})` で Player を
+ *  操作できる permission バイパスになる (Codex review r3299045281)。
+ *
+ *  test からの参照用に export しているが、プラグイン側 API ではない。 */
+export const RESERVED_HOST_EVENT_NAMES: ReadonlySet<string> = new Set([
+  'plugin:player:control',
+  // 以下は Rust dispatcher が emit する標準イベント。プラグインが偽装すると
+  // 他プラグインや host UI を欺ける (notify トーストの spoof、ダウンロード
+  // 完了/失敗のフェイク通知など) ため、こちらも host emit のみに限定する。
+  'notify:toast',
+  'download:start',
+  'download:complete',
+  'download:error',
+  // player 状態イベントは現状フロント (Player.svelte) が emit しているが、
+  // プラグインが偽装しても他プラグインを誤動作させうるため同様に予約。
+  'player:play',
+  'player:pause',
+  'player:time',
+  'player:ended',
+]);
+
 export function getLoadState(pluginId: string): { state: LoadState; error?: string } | undefined {
   return loadStates.get(pluginId);
 }
@@ -67,6 +93,18 @@ function buildContext(info: PluginInfo): PluginContext {
         return bus.on(pid, name, handler as (p: unknown) => void);
       },
       emit(name: string, payload: unknown) {
+        // 予約イベントの偽装防止: Player などホスト側コンポーネントが
+        // permission ゲート済みと信じて処理する内部イベントを、プラグインが
+        // `ctx.events.emit` で勝手に発火できると、permission モデルが破られる。
+        // 該当イベントは host (Rust dispatcher → bridge) からの emit のみ
+        // 許可する (Codex review r3299045281)。
+        if (RESERVED_HOST_EVENT_NAMES.has(name)) {
+          console.warn(
+            logTag,
+            `events.emit rejected: ${name} は host 予約イベント (Rust dispatcher のみが発火可能)`,
+          );
+          return;
+        }
         bus.emit(name, payload);
       },
     },

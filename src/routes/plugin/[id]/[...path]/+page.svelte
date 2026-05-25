@@ -88,6 +88,12 @@
   });
 
   onDestroy(() => {
+    // 未解決の renderer Promise が後から resolve しても stale 扱いになるよう、
+    // 世代を 1 つ進めてから cleanup する。これがないと unmount 後に async
+    // renderer が resolve したとき `gen === mountGeneration` が成立して
+    // `cleanup = maybeCleanup` が代入され、その cleanup が永遠に呼ばれない
+    // (listener/timer リーク; Codex review r3299045278)。
+    mountGeneration += 1;
     try {
       cleanup?.();
     } catch (e) {
