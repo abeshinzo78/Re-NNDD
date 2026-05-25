@@ -414,8 +414,8 @@ mod tests {
         let mut buf = Vec::new();
         {
             let mut writer = zip::ZipWriter::new(Cursor::new(&mut buf));
-            let opts =
-                zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+            let opts = zip::write::FileOptions::default()
+                .compression_method(zip::CompressionMethod::Stored);
             writer.start_file("manifest.json", opts).unwrap();
             std::io::Write::write_all(&mut writer, &manifest_bytes("com.example.bomb")).unwrap();
             writer.start_file("index.js", opts).unwrap();
