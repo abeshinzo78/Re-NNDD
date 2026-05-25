@@ -117,8 +117,7 @@ pub fn install_from_zip_bytes(
     //   target に rename する。final rename 失敗時は backup を target に
     //   戻して "なかったこと" にする。
     let backup = if target.exists() {
-        let bk =
-            plugins_root.join(format!("{}.bak-{}", manifest.id, std::process::id()));
+        let bk = plugins_root.join(format!("{}.bak-{}", manifest.id, std::process::id()));
         if bk.exists() {
             std::fs::remove_dir_all(&bk)?;
         }
@@ -187,11 +186,7 @@ fn safe_relative_path(file: &zip::read::ZipFile<'_>) -> Result<PathBuf, InstallE
         .enclosed_name()
         .ok_or_else(|| InstallError::UnsafePath(raw.clone()))?;
     // 念のため明示的な弾き直しも行う
-    if raw.contains("..")
-        || raw.starts_with('/')
-        || raw.starts_with('\\')
-        || raw.contains(':')
-    {
+    if raw.contains("..") || raw.starts_with('/') || raw.starts_with('\\') || raw.contains(':') {
         return Err(InstallError::UnsafePath(raw));
     }
     Ok(enclosed.to_path_buf())

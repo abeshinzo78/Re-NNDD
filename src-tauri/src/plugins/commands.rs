@@ -49,7 +49,8 @@ fn plugins_root(app: &AppHandle) -> Result<std::path::PathBuf> {
         .map_err(|e| AppError::Other(format!("app_data_dir: {e}")))?
         .join("plugins");
     if !dir.exists() {
-        std::fs::create_dir_all(&dir).map_err(|e| AppError::Other(format!("create plugins root: {e}")))?;
+        std::fs::create_dir_all(&dir)
+            .map_err(|e| AppError::Other(format!("create plugins root: {e}")))?;
     }
     Ok(dir)
 }

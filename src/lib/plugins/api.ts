@@ -27,11 +27,7 @@ export function pluginSetEnabled(id: string, enabled: boolean): Promise<void> {
   return invoke<void>('plugin_set_enabled', { id, enabled });
 }
 
-export function pluginInvoke(
-  pluginId: string,
-  action: string,
-  payload: unknown,
-): Promise<unknown> {
+export function pluginInvoke(pluginId: string, action: string, payload: unknown): Promise<unknown> {
   // Rust 側コマンド引数名は `plugin_id` (snake_case) → Tauri が JS から
   // camelCase で受け取って snake_case に変換するが、明示しておく。
   return invoke<unknown>('plugin_invoke', { pluginId, action, payload });

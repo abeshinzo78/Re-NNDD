@@ -102,12 +102,11 @@ struct NetFetchReq {
 }
 
 async fn handle_net_fetch(payload: Value) -> Result<Value, DispatchError> {
-    let req: NetFetchReq = serde_json::from_value(payload).map_err(|e| {
-        DispatchError::InvalidPayload {
+    let req: NetFetchReq =
+        serde_json::from_value(payload).map_err(|e| DispatchError::InvalidPayload {
             action: "net.fetch".into(),
             message: e.to_string(),
-        }
-    })?;
+        })?;
     if !req.url.starts_with("https://") {
         return Err(DispatchError::InvalidPayload {
             action: "net.fetch".into(),
@@ -202,8 +201,8 @@ async fn handle_library_list(
         limit: Some(limit),
     };
     let conn = library.lock().await;
-    let res = lib_query::query_videos(&conn, &q)
-        .map_err(|e| DispatchError::Upstream(e.to_string()))?;
+    let res =
+        lib_query::query_videos(&conn, &q).map_err(|e| DispatchError::Upstream(e.to_string()))?;
     let items: Vec<Value> = res
         .items
         .into_iter()
@@ -251,12 +250,11 @@ async fn handle_settings_get(
     plugin_id: &str,
     payload: Value,
 ) -> Result<Value, DispatchError> {
-    let req: SettingsGetReq = serde_json::from_value(payload).map_err(|e| {
-        DispatchError::InvalidPayload {
+    let req: SettingsGetReq =
+        serde_json::from_value(payload).map_err(|e| DispatchError::InvalidPayload {
             action: "settings.get".into(),
             message: e.to_string(),
-        }
-    })?;
+        })?;
     let prefix = plugin_settings_prefix(plugin_id);
     if !req.key.starts_with(&prefix) {
         return Err(DispatchError::PermissionDenied {
@@ -265,8 +263,8 @@ async fn handle_settings_get(
         });
     }
     let conn = library.lock().await;
-    let v = lib_settings::get(&conn, &req.key)
-        .map_err(|e| DispatchError::Upstream(e.to_string()))?;
+    let v =
+        lib_settings::get(&conn, &req.key).map_err(|e| DispatchError::Upstream(e.to_string()))?;
     Ok(match v {
         Some(s) => Value::String(s),
         None => Value::Null,
@@ -278,12 +276,11 @@ async fn handle_settings_set(
     plugin_id: &str,
     payload: Value,
 ) -> Result<Value, DispatchError> {
-    let req: SettingsSetReq = serde_json::from_value(payload).map_err(|e| {
-        DispatchError::InvalidPayload {
+    let req: SettingsSetReq =
+        serde_json::from_value(payload).map_err(|e| DispatchError::InvalidPayload {
             action: "settings.set".into(),
             message: e.to_string(),
-        }
-    })?;
+        })?;
     let prefix = plugin_settings_prefix(plugin_id);
     if !req.key.starts_with(&prefix) {
         return Err(DispatchError::PermissionDenied {
@@ -312,12 +309,11 @@ fn handle_notify_toast(
     plugin_id: &str,
     payload: Value,
 ) -> Result<Value, DispatchError> {
-    let req: NotifyToastReq = serde_json::from_value(payload).map_err(|e| {
-        DispatchError::InvalidPayload {
+    let req: NotifyToastReq =
+        serde_json::from_value(payload).map_err(|e| DispatchError::InvalidPayload {
             action: "notify.toast".into(),
             message: e.to_string(),
-        }
-    })?;
+        })?;
     let kind = req.kind.unwrap_or_else(|| "info".to_string());
     // ホストの host.ts は `nndd:plugin:event` を 1 本だけ listen している。
     // ここで独立チャンネル名を使うとフロントに届かない (Codex review #5) ため、

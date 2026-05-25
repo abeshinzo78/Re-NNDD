@@ -20,11 +20,7 @@
     type SettingDef,
     type SettingKey,
   } from '$lib/stores/settings.svelte';
-  import {
-    pluginInstallFromZip,
-    pluginListInstalled,
-    pluginUninstall,
-  } from '$lib/plugins/api';
+  import { pluginInstallFromZip, pluginListInstalled, pluginUninstall } from '$lib/plugins/api';
   import { disablePlugin, enablePlugin } from '$lib/plugins/host';
   import { pluginSettingDefs } from '$lib/plugins/registry';
   import type { PluginInfo } from '$lib/plugins/types';
@@ -409,10 +405,7 @@
                         checked={p.enabled}
                         disabled={pluginBusyId === p.pluginId}
                         onchange={(e) =>
-                          handlePluginToggle(
-                            p,
-                            (e.currentTarget as HTMLInputElement).checked,
-                          )}
+                          handlePluginToggle(p, (e.currentTarget as HTMLInputElement).checked)}
                       />
                       <span class="switch-thumb"></span>
                     </label>
@@ -454,10 +447,9 @@
           {/if}
 
           <p class="hint" style="margin-top:16px">
-            <strong>注意:</strong> プラグインはアプリと同じ権限でレンダラ realm 内で動作します。
-            信頼できる提供元のプラグインのみインストールしてください。
-            プラグイン機構を完全に停止したい場合は「高度な設定」→「プラグイン機構を有効にする」を
-            OFF にしてください (再起動で反映)。
+            <strong>注意:</strong> プラグインはアプリと同じ権限でレンダラ realm 内で動作します。 信頼できる提供元のプラグインのみインストールしてください。
+            プラグイン機構を完全に停止したい場合は「高度な設定」→「プラグイン機構を有効にする」を OFF
+            にしてください (再起動で反映)。
           </p>
         {:else}
           <div class="settings-list">

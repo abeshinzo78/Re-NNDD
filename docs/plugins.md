@@ -56,22 +56,22 @@ Windows: `%APPDATA%\in.yajuvideo.nndd-next\`)。
 
 ### 必須フィールド
 
-| フィールド | 制約 |
-| --- | --- |
-| `id` | `^[a-z0-9][a-z0-9._-]{2,63}$` 形式 (英小字数字 + `.` `_` `-` のみ、3–64 字) |
-| `name` | 1–80 字 |
-| `version` | semver (例 `0.1.0`) |
-| `entry` | `.js` または `.mjs` ファイル、`..` / `/` / `\` / `:` 不可 |
+| フィールド | 制約                                                                        |
+| ---------- | --------------------------------------------------------------------------- |
+| `id`       | `^[a-z0-9][a-z0-9._-]{2,63}$` 形式 (英小字数字 + `.` `_` `-` のみ、3–64 字) |
+| `name`     | 1–80 字                                                                     |
+| `version`  | semver (例 `0.1.0`)                                                         |
+| `entry`    | `.js` または `.mjs` ファイル、`..` / `/` / `\` / `:` 不可                   |
 
 ### 任意フィールド
 
-| フィールド | 内容 |
-| --- | --- |
-| `description` | 500 字以下 |
-| `author` | 任意文字列 |
-| `homepage` | `http://` または `https://` |
+| フィールド      | 内容                                                   |
+| --------------- | ------------------------------------------------------ |
+| `description`   | 500 字以下                                             |
+| `author`        | 任意文字列                                             |
+| `homepage`      | `http://` または `https://`                            |
 | `minAppVersion` | semver。アプリ本体のバージョン未満ならインストール拒否 |
-| `permissions` | 下表の権限名の配列。未知の名前はインストール拒否 |
+| `permissions`   | 下表の権限名の配列。未知の名前はインストール拒否       |
 
 ### 権限 (permission) 一覧
 
@@ -79,13 +79,13 @@ Windows: `%APPDATA%\in.yajuvideo.nndd-next\`)。
 に対応する権限が含まれている場合のみ受け付けられます (Rust 側 dispatcher
 で enforce)。
 
-| 権限名 | 呼べる action | 内容 |
-| --- | --- | --- |
-| `net.fetch` | `net.fetch` | https のみの HTTP fetch (`{url, method?, headers?, body?}` → `{status, headers, bodyBase64}`) |
-| `library.read` | `library.list` | ローカルライブラリの動画一覧を取得 (`{limit?, offset?}` → ページング結果) |
-| `settings.read` | `settings.get` | `plugin.<id>.*` キーの値を取得 (他キーは拒否) |
-| `settings.write` | `settings.set` | `plugin.<id>.*` キーに保存 (他キーは拒否) |
-| `notify` | `notify.toast` | フロント側プラグインイベントバスに `notify:toast` を emit する (`{message, kind?}` → `{pluginId, message, kind}`)。トーストを実 UI に出すかは購読側 (他プラグイン / 将来のアプリ標準 toast UI) の責務 |
+| 権限名           | 呼べる action  | 内容                                                                                                                                                                                                  |
+| ---------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `net.fetch`      | `net.fetch`    | https のみの HTTP fetch (`{url, method?, headers?, body?}` → `{status, headers, bodyBase64}`)                                                                                                         |
+| `library.read`   | `library.list` | ローカルライブラリの動画一覧を取得 (`{limit?, offset?}` → ページング結果)                                                                                                                             |
+| `settings.read`  | `settings.get` | `plugin.<id>.*` キーの値を取得 (他キーは拒否)                                                                                                                                                         |
+| `settings.write` | `settings.set` | `plugin.<id>.*` キーに保存 (他キーは拒否)                                                                                                                                                             |
+| `notify`         | `notify.toast` | フロント側プラグインイベントバスに `notify:toast` を emit する (`{message, kind?}` → `{pluginId, message, kind}`)。トーストを実 UI に出すかは購読側 (他プラグイン / 将来のアプリ標準 toast UI) の責務 |
 
 ## Plugin API (`activate(ctx)`)
 
@@ -122,15 +122,15 @@ ctx.log.warn(...) / ctx.log.error(...)
 
 `ctx.events.on(name, handler)` で購読できる組込みイベント:
 
-| name | payload | 発火タイミング |
-| --- | --- | --- |
-| `player:play` | `{videoId, currentTime}` | プレイヤーが実フレーム送出を開始したとき |
-| `player:pause` | `{videoId, currentTime}` | プレイヤーが一時停止 (ended ではない) |
-| `player:time` | `{videoId, currentTime}` | 200ms throttle で再生時刻更新 |
-| `player:ended` | `{videoId}` | 動画が自然終了 (loop 中は発火しない) |
-| `download:start` | `{id, videoId}` | DL キューが downloading 状態になった |
-| `download:complete` | `{id, videoId}` | DL 成功で done に遷移した |
-| `download:error` | `{id, videoId, message}` | DL 失敗 (キャンセル含む) |
+| name                | payload                  | 発火タイミング                           |
+| ------------------- | ------------------------ | ---------------------------------------- |
+| `player:play`       | `{videoId, currentTime}` | プレイヤーが実フレーム送出を開始したとき |
+| `player:pause`      | `{videoId, currentTime}` | プレイヤーが一時停止 (ended ではない)    |
+| `player:time`       | `{videoId, currentTime}` | 200ms throttle で再生時刻更新            |
+| `player:ended`      | `{videoId}`              | 動画が自然終了 (loop 中は発火しない)     |
+| `download:start`    | `{id, videoId}`          | DL キューが downloading 状態になった     |
+| `download:complete` | `{id, videoId}`          | DL 成功で done に遷移した                |
+| `download:error`    | `{id, videoId, message}` | DL 失敗 (キャンセル含む)                 |
 
 これら以外の名前は host からは emit されません。
 プラグイン同士の通信は `ctx.events.emit(name, payload)` で任意名を使って
@@ -167,27 +167,27 @@ export function deactivate() {
 
 この 2 ファイルを `sample.zip` に固めて、設定画面の「ZIP からインストール」で
 読み込み、有効化トグルをオンにすれば動作します。
-*(`/plugin/sample/main` 自体のページは付属していないので、サイドバーリンクは
+_(`/plugin/sample/main` 自体のページは付属していないので、サイドバーリンクは
 404 になります。プラグインで実 UI を描画したい場合は対応する SvelteKit
-ルートを別途用意するか、将来の追加 API を待ってください。)*
+ルートを別途用意するか、将来の追加 API を待ってください。)_
 
 ## ファイルレイアウト (ホスト側 ソース)
 
 開発・調査のために Re:NNDD 本体側のプラグインホストコードの場所を残します:
 
-| 場所 | 役割 |
-| --- | --- |
-| `src/lib/plugins/host.ts` | ブートストラップ、Rust→JS イベント橋渡し |
-| `src/lib/plugins/loader.ts` | 動的 import、`activate`/`deactivate` 呼び出し、context 構築 |
-| `src/lib/plugins/eventBus.ts` | プラグイン間 / ホスト → プラグインのイベント配信 |
-| `src/lib/plugins/registry.ts` | プラグイン寄与 (nav/settings/items/player) の reactive 保持 |
-| `src/lib/plugins/api.ts` | Rust command の TS ラッパ |
-| `src-tauri/src/plugins/manifest.rs` | manifest スキーマ + バリデーション |
-| `src-tauri/src/plugins/installer.rs` | ZIP インストーラ |
-| `src-tauri/src/plugins/registry.rs` | SQLite plugins テーブル |
-| `src-tauri/src/plugins/runtime.rs` | プロセス内キャッシュ (parking_lot::RwLock) |
-| `src-tauri/src/plugins/dispatcher.rs` | permission チェック + action 振り分け |
-| `src-tauri/src/plugins/commands.rs` | `plugin_*` Tauri commands |
+| 場所                                  | 役割                                                        |
+| ------------------------------------- | ----------------------------------------------------------- |
+| `src/lib/plugins/host.ts`             | ブートストラップ、Rust→JS イベント橋渡し                    |
+| `src/lib/plugins/loader.ts`           | 動的 import、`activate`/`deactivate` 呼び出し、context 構築 |
+| `src/lib/plugins/eventBus.ts`         | プラグイン間 / ホスト → プラグインのイベント配信            |
+| `src/lib/plugins/registry.ts`         | プラグイン寄与 (nav/settings/items/player) の reactive 保持 |
+| `src/lib/plugins/api.ts`              | Rust command の TS ラッパ                                   |
+| `src-tauri/src/plugins/manifest.rs`   | manifest スキーマ + バリデーション                          |
+| `src-tauri/src/plugins/installer.rs`  | ZIP インストーラ                                            |
+| `src-tauri/src/plugins/registry.rs`   | SQLite plugins テーブル                                     |
+| `src-tauri/src/plugins/runtime.rs`    | プロセス内キャッシュ (parking_lot::RwLock)                  |
+| `src-tauri/src/plugins/dispatcher.rs` | permission チェック + action 振り分け                       |
+| `src-tauri/src/plugins/commands.rs`   | `plugin_*` Tauri commands                                   |
 
 ## キルスイッチ
 
@@ -201,4 +201,3 @@ OFF にすると `bootstrapPluginHost()` は最初の 1 行で return し:
 
 つまりプラグイン機構導入前と **完全に同じ起動シーケンス** になります。
 回帰の疑いがあればまずこれを OFF にして再現性を確認してください。
-

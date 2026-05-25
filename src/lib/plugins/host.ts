@@ -78,9 +78,7 @@ export async function bootstrapPluginHost(): Promise<void> {
 }
 
 /** プラグインを有効化 (DB + ロード)。 */
-export async function enablePlugin(
-  info: import('./types').PluginInfo,
-): Promise<void> {
+export async function enablePlugin(info: import('./types').PluginInfo): Promise<void> {
   await pluginSetEnabled(info.pluginId, true);
   await loader.loadPlugin({ ...info, enabled: true });
 }

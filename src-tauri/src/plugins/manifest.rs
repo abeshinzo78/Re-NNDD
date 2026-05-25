@@ -34,7 +34,11 @@ pub struct PluginManifest {
     pub author: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub homepage: Option<String>,
-    #[serde(default, rename = "minAppVersion", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "minAppVersion",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub min_app_version: Option<String>,
     #[serde(default)]
     pub permissions: Vec<String>,
@@ -58,7 +62,8 @@ impl PluginManifest {
         json: &str,
         app_version: Option<&str>,
     ) -> Result<Self, ManifestError> {
-        let m: PluginManifest = serde_json::from_str(json).map_err(|e| ManifestError::Parse(e.to_string()))?;
+        let m: PluginManifest =
+            serde_json::from_str(json).map_err(|e| ManifestError::Parse(e.to_string()))?;
         m.validate(app_version)?;
         Ok(m)
     }
@@ -81,9 +86,8 @@ impl PluginManifest {
             let min_v = Version::parse(min)
                 .map_err(|e| ManifestError::Invalid(format!("minAppVersion not semver: {e}")))?;
             if let Some(app) = app_version {
-                let app_v = Version::parse(app).map_err(|e| {
-                    ManifestError::Invalid(format!("app version not semver: {e}"))
-                })?;
+                let app_v = Version::parse(app)
+                    .map_err(|e| ManifestError::Invalid(format!("app version not semver: {e}")))?;
                 if app_v < min_v {
                     return Err(ManifestError::AppTooOld {
                         app: app.to_string(),
