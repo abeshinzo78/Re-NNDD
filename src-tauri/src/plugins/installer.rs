@@ -14,6 +14,8 @@ use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use parking_lot::Mutex;
+
 use crate::plugins::manifest::{ManifestError, PluginManifest};
 
 /// プロセス内で衝突しない tmp/backup ディレクトリ名を作るためのカウンタ。
@@ -26,6 +28,13 @@ fn unique_suffix() -> String {
     let n = TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
     format!("{}-{n}", std::process::id())
 }
+
+/// インストール処理全体を直列化するグローバルロック。同一プロセス内で
+/// 並列に `install_from_zip_*` が走ると、片方の backup → rename → restore
+/// シーケンスがもう片方の作業を巻き戻して既に成功した新版を上書き
+/// する race がある (Codex review r3297638379)。ユーザ操作起点のため
+/// 性能上問題にならない範囲で全インストールを直列化する。
+static INSTALL_MUTEX: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, thiserror::Error)]
 pub enum InstallError {
@@ -67,6 +76,9 @@ pub fn install_from_zip_bytes(
     replace: bool,
     app_version: &str,
 ) -> Result<InstallResult, InstallError> {
+    // インストール全体を直列化する (concurrent replace で backup/rename が
+    // 互いを巻き戻すレースを防ぐ — Codex review r3297638379)。
+    let _guard = INSTALL_MUTEX.lock();
     let cursor = Cursor::new(zip_bytes);
     let mut archive = zip::ZipArchive::new(cursor)?;
 

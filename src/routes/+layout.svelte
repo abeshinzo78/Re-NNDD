@@ -12,8 +12,24 @@
   onMount(() => {
     installConsoleBridge();
     // プラグインホストは loadSettings 完了後に bootstrap する
-    // (キルスイッチ `plugins.enabled` を正しく読むため)。
-    void loadSettings().then(() => bootstrapPluginHost());
+    // (キルスイッチ `plugins.enabled` を正しく読むため)。loadSettings
+    // が一過性エラー (getSettings 失敗等) で reject しても plugin host
+    // を起動できなくならないよう、catch して bootstrap は必ず呼ぶ
+    // (Codex review r3297638378)。設定未ロード時の getBool は def.default
+    // にフォールバックする実装なので、キルスイッチ false ユーザは host が
+    // 動いてしまうリスクがあるが、再起動で正常化する。
+    void (async () => {
+      try {
+        await loadSettings();
+      } catch (e) {
+        console.error('[layout] loadSettings failed (continuing with defaults):', e);
+      }
+      try {
+        await bootstrapPluginHost();
+      } catch (e) {
+        console.error('[layout] bootstrapPluginHost failed:', e);
+      }
+    })();
   });
 
   const sections = [

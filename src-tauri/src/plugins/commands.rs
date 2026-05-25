@@ -157,14 +157,13 @@ pub async fn plugin_install_from_zip(
             now,
         )
         .map_err(AppError::from)?;
+        // runtime も DB ロックを保持したまま更新する。別 task の
+        // plugin_set_enabled が間に割り込んで先に runtime を書き込み、
+        // ここでそれを stale な値で上書きするレースを防ぐ
+        // (Codex review r3297638386)。
+        runtime.upsert(&install_res.manifest.id, install_res.manifest.clone(), prev);
         prev
     };
-    // in-memory にも反映 (既存行の enabled を維持)。
-    runtime.upsert(
-        &install_res.manifest.id,
-        install_res.manifest.clone(),
-        previous_enabled,
-    );
 
     // インストール直後の Info を返す。再ロード不要 (DB と一致しているはず)。
     Ok(row_to_info(
@@ -194,12 +193,16 @@ pub async fn plugin_uninstall(
     }
     // 2) in-memory runtime (DB が canonical なので順番依存無し; 落ちないので無条件)
     runtime.remove(&id);
-    // 3) ファイル削除は best-effort。失敗してもログするのみで Ok を返す。
-    //    DB が無いので次回起動から見えなくなる; 残ったディレクトリは次回 install
-    //    時に上書き対象になる (replace フラグなしでも install されないので無害)。
-    if let Err(e) = installer::uninstall(&root, &id) {
-        tracing::warn!(plugin_id = %id, error = %e, "plugin uninstall: leftover files (DB row already removed)");
-    }
+    // 3) ファイル削除。DB は既に消えているのでアプリ起動時には認識されない
+    //    が、ディレクトリが残ると同 ID の再インストール (replace=false) が
+    //    AlreadyInstalled で失敗する。ユーザにその事実を伝えるためエラーを
+    //    surface する (Codex review r3297638384)。
+    installer::uninstall(&root, &id).map_err(|e| {
+        AppError::Other(format!(
+            "DB からは削除しましたが、プラグインディレクトリの削除に失敗しました: {e}。\
+             同じプラグインを再インストールする場合は ZIP インポートで上書きを指定してください。"
+        ))
+    })?;
     Ok(())
 }
 
@@ -217,8 +220,9 @@ pub async fn plugin_set_enabled(
         if changed == 0 {
             return Err(AppError::Other(format!("plugin not found: {id}")));
         }
+        // DB ロックを保持したまま runtime も更新する (install と対称) 。
+        runtime.set_enabled(&id, enabled);
     }
-    runtime.set_enabled(&id, enabled);
     Ok(())
 }
 

@@ -244,12 +244,19 @@
     pluginBusyId = info.pluginId;
     pluginMessage = null;
     try {
-      // 無効化してからアンインストール (loaded module を確実に解除)
+      // 無効化してからアンインストール (loaded module を確実に解除)。
+      // disable が失敗した場合はここで中止する — 続行すると DB/ファイルだけ
+      // 消えて in-memory に loaded module/寄与だけが残る "幽霊" 状態に
+      // なる (Codex review r3297638380)。
       if (info.enabled) {
         try {
           await disablePlugin(info.pluginId);
         } catch (e) {
-          console.warn('disable before uninstall failed', e);
+          pluginMessage = {
+            kind: 'error',
+            text: `無効化に失敗したためアンインストールを中止しました: ${e}`,
+          };
+          return;
         }
       }
       await pluginUninstall(info.pluginId);
