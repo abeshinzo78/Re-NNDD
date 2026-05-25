@@ -17,6 +17,7 @@
   } from '$lib/stores/ngRules';
   import { fetchTagsBulk, getCachedTags } from '$lib/rankingTags';
   import RankingNgPanel from '$lib/RankingNgPanel.svelte';
+  import VideoActionMenu from '$lib/VideoActionMenu.svelte';
 
   type GenreName = keyof typeof GENRE_KEY_BY_NAME;
   type Term = 'hour' | '24h' | 'week' | 'month' | 'total';
@@ -553,6 +554,23 @@
               title="ライブラリにダウンロード"
               >{dlPending.has(item.id) ? '\u23F3' : '\u2B07'}</button
             >
+            <!-- \u30D7\u30E9\u30B0\u30A4\u30F3\u304C\u3042\u308B\u5834\u5408\u3060\u3051 \u22EF \u30DC\u30BF\u30F3\u304C\u73FE\u308C\u308B (0 \u4EF6\u306A\u3089 DOM \u3054\u3068\u7121\u3057)\u3002 -->
+            <VideoActionMenu
+              video={{
+                contentId: item.id,
+                videoId: item.id,
+                title: item.title,
+                thumbnailUrl:
+                  item.thumbnail?.url ??
+                  item.thumbnail?.listingUrl ??
+                  item.thumbnail?.middleUrl ??
+                  null,
+                lengthSeconds: item.duration ?? null,
+                viewCounter: item.count?.view ?? null,
+                source: 'ranking',
+              }}
+              compact={true}
+            />
           </div>
         </li>
       {/each}

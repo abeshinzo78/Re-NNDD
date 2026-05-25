@@ -78,12 +78,15 @@ pub fn run() {
             if let Err(e) = std::fs::create_dir_all(&plugins_dir) {
                 tracing::warn!(error = %e, "could not create plugins dir");
             }
-            {
-                let conn = library.blocking_lock();
-                if let Err(e) = plugin_runtime.reload_from_db(&conn) {
-                    tracing::error!(error = %e, "plugin runtime initial load failed");
-                }
-            }
+            // 前回プロセスが install/uninstall 中にクラッシュした場合に残る
+            // `<id>.tmp-<pid>-<n>` / `<id>.bak-<pid>-<n>` のゴミディレクトリを
+            // best-effort で掃除する。これを放置すると、ディスク容量を圧迫し、
+            // 次回 install 時の tmp 名衝突 → 古いゴミの remove_dir_all で
+            // 巻き戻し race の原因にもなる。失敗はログのみ (続行可能)。
+            crate::plugins::installer::cleanup_stale_dirs(&plugins_dir);
+            // ランタイム初期ロード。DB を真値として PluginEntry を populate する。
+            // 内部で warn ログを出すので戻り値はない。
+            crate::plugins::bootstrap_blocking(&plugin_runtime, &library);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

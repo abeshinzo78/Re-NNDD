@@ -13,9 +13,12 @@
   import {
     SETTING_DEFS,
     get,
+    getRawSetting,
     isLoaded,
     loadSettings,
+    resetRawSetting,
     resetSetting,
+    setRawSetting,
     setSetting,
     type SettingDef,
     type SettingKey,
@@ -316,6 +319,25 @@
     return await pluginInstallFromZip(path, replace);
   }
 
+  // ========= プラグイン設定 (raw key 経由) =========
+  // 値はプラグイン側 ctx.settings.get/set と同じ `settings` テーブルに保存される。
+  // ホスト UI からの編集は permission チェック不要 (ユーザ操作起点) のため、
+  // dispatcher 経由ではなく raw API で直接保存する。
+  async function handlePluginSettingChange(key: string, value: string) {
+    try {
+      await setRawSetting(key, value);
+    } catch (e) {
+      pluginMessage = { kind: 'error', text: `プラグイン設定の保存失敗: ${e}` };
+    }
+  }
+  async function handlePluginSettingReset(key: string) {
+    try {
+      await resetRawSetting(key);
+    } catch (e) {
+      pluginMessage = { kind: 'error', text: `プラグイン設定のリセット失敗: ${e}` };
+    }
+  }
+
   function defsForSection(id: string) {
     return [...SETTING_DEFS].filter((d) => d.section === id).sort((a, b) => a.order - b.order);
   }
@@ -430,22 +452,89 @@
             </ul>
           {/if}
 
-          <!-- プラグインが register した設定項目 (有効プラグインのみ表示される) -->
+          <!-- プラグインが register した設定項目 (有効プラグインのみ表示される)。
+               bool/number/select/text 各 kind に対応する編集 UI を提供し、
+               `plugin:<id>:` 名前空間の settings テーブルに直接永続化する。
+               プラグイン側で `ctx.settings.get(key)` で読むと同じ値が読める。 -->
           {#if pluginSettingDefs().length > 0}
             <div class="plugin-settings" style="margin-top:16px">
               <h4 class="hint" style="margin:0 0 8px">プラグインが追加した設定</h4>
               <div class="settings-list">
                 {#each pluginSettingDefs() as pdef (pdef.key)}
-                  <div class="setting-row">
+                  {@const raw = getRawSetting(pdef.key)}
+                  {@const hasValue = raw !== undefined}
+                  <div class="setting-row" class:overridden={hasValue}>
                     <div class="setting-label">
                       <label for={`pset-${pdef.key}`}>{pdef.label}</label>
                       {#if pdef.description}<div class="hint">{pdef.description}</div>{/if}
                       <div class="hint"><code>{pdef.key}</code></div>
                     </div>
-                    <div class="setting-control hint">
-                      <!-- MVP: 実値の get/set はプラグイン側 ctx.settings.get/set 経由。
-                         ここでは項目の存在告知のみ。次バージョンで編集 UI を追加予定。 -->
-                      <span>kind: {pdef.kind}</span>
+                    <div class="setting-control">
+                      {#if pdef.kind === 'bool'}
+                        {@const cur = hasValue ? raw === 'true' : !!pdef.default}
+                        <label class="switch">
+                          <input
+                            id={`pset-${pdef.key}`}
+                            type="checkbox"
+                            checked={cur}
+                            onchange={(e) =>
+                              handlePluginSettingChange(
+                                pdef.key,
+                                (e.currentTarget as HTMLInputElement).checked ? 'true' : 'false',
+                              )}
+                          />
+                          <span class="switch-thumb"></span>
+                        </label>
+                      {:else if pdef.kind === 'number'}
+                        {@const curRaw = hasValue ? raw : String(pdef.default ?? 0)}
+                        <input
+                          id={`pset-${pdef.key}`}
+                          type="number"
+                          min={pdef.min}
+                          max={pdef.max}
+                          step={pdef.step}
+                          value={curRaw}
+                          onchange={(e) => {
+                            const v = Number((e.currentTarget as HTMLInputElement).value);
+                            if (Number.isFinite(v)) handlePluginSettingChange(pdef.key, String(v));
+                          }}
+                        />
+                      {:else if pdef.kind === 'select' && pdef.options}
+                        {@const curStr = hasValue ? raw! : String(pdef.default ?? '')}
+                        <select
+                          id={`pset-${pdef.key}`}
+                          value={curStr}
+                          onchange={(e) =>
+                            handlePluginSettingChange(
+                              pdef.key,
+                              (e.currentTarget as HTMLSelectElement).value,
+                            )}
+                        >
+                          {#each pdef.options as opt (opt.value)}
+                            <option value={opt.value}>{opt.label}</option>
+                          {/each}
+                        </select>
+                      {:else}
+                        {@const curStr = hasValue ? raw! : String(pdef.default ?? '')}
+                        <input
+                          id={`pset-${pdef.key}`}
+                          type="text"
+                          value={curStr}
+                          onchange={(e) =>
+                            handlePluginSettingChange(
+                              pdef.key,
+                              (e.currentTarget as HTMLInputElement).value,
+                            )}
+                        />
+                      {/if}
+                      {#if hasValue}
+                        <button
+                          type="button"
+                          class="reset-btn"
+                          title="既定値に戻す"
+                          onclick={() => handlePluginSettingReset(pdef.key)}>↺</button
+                        >
+                      {/if}
                     </div>
                   </div>
                 {/each}

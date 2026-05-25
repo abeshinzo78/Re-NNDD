@@ -13,6 +13,7 @@
   import { readSavedMuted, readSavedVolume, saveMuted, saveVolume } from './volumePersistence';
   import * as pluginBus from '$lib/plugins/eventBus';
   import { pluginPlayerActions } from '$lib/plugins/registry';
+  import { clearPlayerState, updatePlayerState } from '$lib/plugins/playerState.svelte';
 
   type Props = {
     /** HLS playlist URL（ストリーミング用）。`localSrc` を渡すならこちらは空文字でよい */
@@ -968,9 +969,71 @@
 
   onMount(() => {
     document.addEventListener('webkitfullscreenchange', onFullscreenChange);
+    // プラグイン: player.command (Rust dispatcher 経由) を受け取ってプレイヤー
+    // を操作する。compact (PiP) インスタンスでは ignore (重複操作を避ける)。
+    // owner は host 固有。複数インスタンス mount 時には個別 owner で分離する。
+    const PLAYER_BUS_OWNER = compact ? '__host_player_compact__' : '__host_player_main__';
+    const offControl = pluginBus.on(PLAYER_BUS_OWNER, 'plugin:player:control', (payload) => {
+      if (compact) return; // PiP は受け付けない (ページ側 Player が hosts)
+      const p = payload as { kind?: string; value?: number | null } | null;
+      if (!p || typeof p.kind !== 'string') return;
+      try {
+        switch (p.kind) {
+          case 'play':
+            if (video) void video.play().catch(() => undefined);
+            return;
+          case 'pause':
+            video?.pause();
+            return;
+          case 'toggle':
+            togglePlay();
+            return;
+          case 'seek':
+            if (typeof p.value === 'number' && Number.isFinite(p.value)) {
+              seekTo(p.value);
+            }
+            return;
+          case 'setRate':
+            if (typeof p.value === 'number' && Number.isFinite(p.value) && video) {
+              video.playbackRate = Math.max(0.25, Math.min(4, p.value));
+            }
+            return;
+          case 'setVolume':
+            if (typeof p.value === 'number' && Number.isFinite(p.value)) {
+              setVolume(Math.max(0, Math.min(1, p.value)));
+            }
+            return;
+          case 'toggleMute':
+            toggleMute();
+            return;
+        }
+      } catch (e) {
+        console.error('[plugin] player.command handler failed:', e);
+      }
+    });
     return () => {
       document.removeEventListener('webkitfullscreenchange', onFullscreenChange);
+      offControl();
+      // PiP は state を持たないので main のときだけ clear。
+      if (!compact) clearPlayerState();
     };
+  });
+
+  // プラグインから観測可能な状態スナップショットを同期更新する。
+  // ここは Svelte の $effect でリアクティブに反映 — `videoId`/再生時刻/音量/
+  // 一時停止/速度/ミュートが変わったら都度書き込む。compact では state を
+  // 上書きしない (main が真値; PiP は一時的なミラー)。
+  $effect(() => {
+    if (compact) return;
+    updatePlayerState({
+      videoId: videoId ?? null,
+      currentTime,
+      duration,
+      paused,
+      volume,
+      muted,
+      playbackRate,
+    });
   });
 
   // ショートカット登録は $effect に分離し、pluginPlayerActions() の変化を

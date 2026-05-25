@@ -12,12 +12,18 @@ use serde::{Deserialize, Serialize};
 
 /// プラグインに付与可能な権限の正式名一覧。
 /// `permissions[]` にこれ以外の文字列があれば install 段階で拒否する。
+///
+/// 新権限を追加するときは `crate::plugins::dispatcher` 内の
+/// `required_permission` (action → permission マップ) にも追記する。
+/// `permission_map_is_consistent` テストが両者の整合性を回帰防止する。
 pub const ALLOWED_PERMISSIONS: &[&str] = &[
     "net.fetch",
     "library.read",
     "settings.read",
     "settings.write",
     "notify",
+    "player.control", // `player.command` で再生/一時停止/シーク等を操作する
+    "commands",       // `ctx.commands.register` でコマンドパレットに項目を追加
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

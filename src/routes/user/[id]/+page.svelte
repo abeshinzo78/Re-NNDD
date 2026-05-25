@@ -13,6 +13,7 @@
   } from '$lib/api';
   import { formatDate, formatDuration, formatNumber, videoUrl } from '$lib/format';
   import { setQueue, itemHref, type PlaybackQueueItem } from '$lib/stores/playbackQueue';
+  import VideoActionMenu from '$lib/VideoActionMenu.svelte';
 
   let userId = $derived(page.params.id ?? '');
   let kind = $derived<'user' | 'channel'>(
@@ -369,6 +370,20 @@
                 <span class="dot">·</span>
                 <span>マイリスト {formatNumber(item.mylistCounter)}</span>
               </div>
+            </div>
+            <div class="plugin-menu-pos">
+              <VideoActionMenu
+                video={{
+                  contentId: item.contentId,
+                  videoId: item.contentId,
+                  title: item.title,
+                  thumbnailUrl: item.thumbnailUrl ?? null,
+                  lengthSeconds: item.lengthSeconds ?? null,
+                  viewCounter: item.viewCounter ?? null,
+                  source: 'user-page',
+                }}
+                compact={true}
+              />
             </div>
           </li>
         {/each}
@@ -739,6 +754,7 @@
     gap: 8px;
   }
   .hit {
+    position: relative;
     display: grid;
     grid-template-columns: 160px 1fr;
     gap: 12px;
@@ -746,6 +762,12 @@
     background: var(--theme-surface-2);
     border: 1px solid var(--theme-border);
     border-radius: 8px;
+  }
+  /* プラグインアクションメニューはカード右上に重ねる (寄与 0 件なら描画されない)。 */
+  .plugin-menu-pos {
+    position: absolute;
+    top: 6px;
+    right: 6px;
   }
   .hit.compact {
     grid-template-columns: 120px 1fr;

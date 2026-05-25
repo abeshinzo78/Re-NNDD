@@ -29,6 +29,11 @@ export default ts.config(
     languageOptions: {
       parserOptions: { parser: ts.parser },
     },
+    rules: {
+      // `.svelte.ts` モジュールから `goto()` を呼ぶケース (コマンドパレット等) は
+      // 通常の string href で十分。`.svelte` 本体と同じく off にする。
+      'svelte/no-navigation-without-resolve': 'off',
+    },
   },
   {
     ignores: ['build/', '.svelte-kit/', 'dist/', 'src-tauri/target/', 'target/'],

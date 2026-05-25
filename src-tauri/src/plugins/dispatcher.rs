@@ -50,9 +50,13 @@ fn required_permission(action: &str) -> Option<&'static str> {
     match action {
         "net.fetch" => Some("net.fetch"),
         "library.list" => Some("library.read"),
+        "library.get" => Some("library.read"),
+        "library.search" => Some("library.read"),
+        "library.stats" => Some("library.read"),
         "settings.get" => Some("settings.read"),
         "settings.set" => Some("settings.write"),
         "notify.toast" => Some("notify"),
+        "player.command" => Some("player.control"),
         _ => None,
     }
 }
@@ -82,9 +86,13 @@ pub async fn dispatch(
     match action {
         "net.fetch" => handle_net_fetch(payload).await,
         "library.list" => handle_library_list(library, payload).await,
+        "library.get" => handle_library_get(library, payload).await,
+        "library.search" => handle_library_search(library, payload).await,
+        "library.stats" => handle_library_stats(library).await,
         "settings.get" => handle_settings_get(library, plugin_id, payload).await,
         "settings.set" => handle_settings_set(library, plugin_id, payload).await,
         "notify.toast" => handle_notify_toast(app, plugin_id, payload),
+        "player.command" => handle_player_command(app, plugin_id, payload),
         _ => Err(DispatchError::UnknownAction(action.to_string())),
     }
 }
@@ -161,8 +169,11 @@ async fn handle_net_fetch(payload: Value) -> Result<Value, DispatchError> {
         "GET" => reqwest::Method::GET,
         "POST" => reqwest::Method::POST,
         "PUT" => reqwest::Method::PUT,
+        "PATCH" => reqwest::Method::PATCH,
         "DELETE" => reqwest::Method::DELETE,
         "HEAD" => reqwest::Method::HEAD,
+        // OPTIONS / CONNECT / TRACE は SSRF/CSRF 観点で意図的に拒否。
+        // 一般的な REST 用途 (GET/POST/PUT/PATCH/DELETE/HEAD) はカバーする。
         other => {
             return Err(DispatchError::InvalidPayload {
                 action: "net.fetch".into(),
@@ -455,6 +466,235 @@ async fn handle_settings_set(
     Ok(Value::Null)
 }
 
+// ------------------ library.get / library.search / library.stats ------------------
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LibraryGetReq {
+    video_id: String,
+}
+
+/// ニコニコの動画 ID 互換: 英数 + `.` `_` `-`、1..=64 文字。
+/// SQL inject 余地を残さない (library.list と同じ閉じた charset)。
+fn validate_video_id(s: &str) -> Result<(), DispatchError> {
+    if s.is_empty() || s.len() > 64 {
+        return Err(DispatchError::InvalidPayload {
+            action: "library.get".into(),
+            message: "videoId must be 1..=64 chars".into(),
+        });
+    }
+    if !s
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-')
+    {
+        return Err(DispatchError::InvalidPayload {
+            action: "library.get".into(),
+            message: "videoId contains invalid chars".into(),
+        });
+    }
+    Ok(())
+}
+
+async fn handle_library_get(
+    library: &Arc<LibraryHandle>,
+    payload: Value,
+) -> Result<Value, DispatchError> {
+    let req: LibraryGetReq =
+        serde_json::from_value(payload).map_err(|e| DispatchError::InvalidPayload {
+            action: "library.get".into(),
+            message: e.to_string(),
+        })?;
+    validate_video_id(&req.video_id)?;
+    // PK 直接 lookup。以前は LibraryQuery の `q` (title/tag/comments FTS) で
+    // 検索していたが、`q` は ID にはマッチしないので、ID が title 等に
+    // 含まれない動画では存在しても null を返してしまう契約違反があった
+    // (Codex review r3298977860)。専用の `get_video_by_id` を query.rs に
+    // 追加して使う。
+    let conn = library.lock().await;
+    let v = lib_query::get_video_by_id(&conn, &req.video_id)
+        .map_err(|e| DispatchError::Upstream(e.to_string()))?;
+    Ok(match v {
+        Some(v) => json!({
+            "videoId": v.id,
+            "title": v.title,
+            "durationSec": v.duration_sec,
+            "postedAt": v.posted_at,
+            "downloadedAt": v.downloaded_at,
+            "uploaderId": v.uploader_id,
+            "uploaderName": v.uploader_name,
+            "thumbnailUrl": v.thumbnail_url,
+            "tags": v.tags,
+        }),
+        None => Value::Null,
+    })
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LibrarySearchReq {
+    /// 部分一致クエリ。title / tag の FTS が走る。
+    #[serde(default)]
+    q: Option<String>,
+    #[serde(default)]
+    tags: Option<Vec<String>>,
+    #[serde(default)]
+    uploader_id: Option<String>,
+    #[serde(default)]
+    limit: Option<i64>,
+    #[serde(default)]
+    offset: Option<i64>,
+}
+
+async fn handle_library_search(
+    library: &Arc<LibraryHandle>,
+    payload: Value,
+) -> Result<Value, DispatchError> {
+    let req: LibrarySearchReq = if payload.is_null() {
+        LibrarySearchReq {
+            q: None,
+            tags: None,
+            uploader_id: None,
+            limit: None,
+            offset: None,
+        }
+    } else {
+        serde_json::from_value(payload).map_err(|e| DispatchError::InvalidPayload {
+            action: "library.search".into(),
+            message: e.to_string(),
+        })?
+    };
+    let limit = req.limit.unwrap_or(50).clamp(1, 200) as u32;
+    let offset = req.offset.unwrap_or(0).clamp(0, u32::MAX as i64) as u32;
+    // tag の AND 結合は library.list と同じく LibraryQuery.tags を使う。
+    let q = LibraryQuery {
+        q: req.q,
+        tags: req.tags,
+        tags_any: None,
+        uploader_id: req.uploader_id,
+        min_duration: None,
+        max_duration: None,
+        resolution: None,
+        is_short: None,
+        sort_by: Some("downloaded_at".into()),
+        sort_order: Some("desc".into()),
+        offset: Some(offset),
+        limit: Some(limit),
+    };
+    let conn = library.lock().await;
+    let res =
+        lib_query::query_videos(&conn, &q).map_err(|e| DispatchError::Upstream(e.to_string()))?;
+    let items: Vec<Value> = res
+        .items
+        .into_iter()
+        .map(|v| {
+            json!({
+                "videoId": v.id,
+                "title": v.title,
+                "durationSec": v.duration_sec,
+                "postedAt": v.posted_at,
+                "downloadedAt": v.downloaded_at,
+                "uploaderId": v.uploader_id,
+                "uploaderName": v.uploader_name,
+                "thumbnailUrl": v.thumbnail_url,
+                "tags": v.tags,
+            })
+        })
+        .collect();
+    Ok(json!({
+        "items": items,
+        "totalCount": res.total_count,
+        "offset": res.offset,
+        "limit": res.limit,
+    }))
+}
+
+async fn handle_library_stats(library: &Arc<LibraryHandle>) -> Result<Value, DispatchError> {
+    let conn = library.lock().await;
+    let stats = lib_query::get_stats(&conn).map_err(|e| DispatchError::Upstream(e.to_string()))?;
+    // 軽量集計のみ exposeする。top_tags / resolution_distribution は plugin に
+    // 渡しても情報過多なので、本数・時間・コメ数・投稿者数だけに絞る。
+    // (詳細が要るプラグインは library.search でフィルタすれば足りる。)
+    Ok(json!({
+        "totalVideos": stats.total_videos,
+        "totalDurationSec": stats.total_duration_sec,
+        "totalComments": stats.total_comments,
+        "uniqueUploaders": stats.unique_uploaders,
+        "uniqueTags": stats.unique_tags,
+    }))
+}
+
+// ------------------ player.command ------------------
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PlayerCommandReq {
+    /// 'play' | 'pause' | 'toggle' | 'seek' | 'setRate' | 'setVolume' | 'toggleMute'
+    kind: String,
+    /// seek の場合は target seconds、setRate/setVolume の場合は target value
+    #[serde(default)]
+    value: Option<f64>,
+}
+
+/// `PlayerCommandReq` の中身を検証する純粋関数。テストから直接呼べるよう
+/// `handle_player_command` から切り出してある。
+fn validate_player_command(req: &PlayerCommandReq) -> Result<(), DispatchError> {
+    let known = matches!(
+        req.kind.as_str(),
+        "play" | "pause" | "toggle" | "seek" | "setRate" | "setVolume" | "toggleMute"
+    );
+    if !known {
+        return Err(DispatchError::InvalidPayload {
+            action: "player.command".into(),
+            message: format!("unknown kind: {}", req.kind),
+        });
+    }
+    // 数値が要る kind は value を要求し、不要な kind は無視する。
+    let needs_value = matches!(req.kind.as_str(), "seek" | "setRate" | "setVolume");
+    if needs_value && req.value.is_none() {
+        return Err(DispatchError::InvalidPayload {
+            action: "player.command".into(),
+            message: format!("kind={} requires `value`", req.kind),
+        });
+    }
+    if let Some(v) = req.value {
+        if !v.is_finite() {
+            return Err(DispatchError::InvalidPayload {
+                action: "player.command".into(),
+                message: "value must be finite".into(),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// プラグインからの player 操作要求を Rust→Frontend イベントとして配信する。
+/// Player.svelte が `plugin:player:control` を listen して実操作する。
+fn handle_player_command(
+    app: &AppHandle,
+    plugin_id: &str,
+    payload: Value,
+) -> Result<Value, DispatchError> {
+    let req: PlayerCommandReq =
+        serde_json::from_value(payload).map_err(|e| DispatchError::InvalidPayload {
+            action: "player.command".into(),
+            message: e.to_string(),
+        })?;
+    validate_player_command(&req)?;
+    // フロント側プラグインイベントバスに `plugin:player:control` として配信。
+    // notify.toast と同様、共通の `nndd:plugin:event` envelope 経由で送る
+    // (専用チャンネル名を使うと host.ts が listen 対象外になる)。
+    crate::plugins::emit_event(
+        app,
+        "plugin:player:control",
+        json!({
+            "pluginId": plugin_id,
+            "kind": req.kind,
+            "value": req.value,
+        }),
+    );
+    Ok(Value::Null)
+}
+
 // ------------------ notify.toast ------------------
 
 #[derive(Deserialize)]
@@ -518,12 +758,19 @@ mod tests {
         for action in &[
             "net.fetch",
             "library.list",
+            "library.get",
+            "library.search",
+            "library.stats",
             "settings.get",
             "settings.set",
             "notify.toast",
+            "player.command",
         ] {
             let perm = required_permission(action).unwrap();
-            assert!(allowed.contains(perm), "{perm} not in ALLOWED_PERMISSIONS");
+            assert!(
+                allowed.contains(perm),
+                "action {action} requires {perm} which is not in ALLOWED_PERMISSIONS"
+            );
         }
     }
 
@@ -661,10 +908,94 @@ mod tests {
 
     #[tokio::test]
     async fn net_fetch_rejects_unknown_method() {
-        let err = handle_net_fetch(json!({"url": "https://example.com", "method": "PATCH"}))
+        // OPTIONS / TRACE / CONNECT は CSRF/SSRF 観点で意図的に拒否。
+        let err = handle_net_fetch(json!({"url": "https://example.com", "method": "OPTIONS"}))
             .await
             .unwrap_err();
         assert!(matches!(err, DispatchError::InvalidPayload { .. }));
+    }
+
+    #[test]
+    fn validate_video_id_charset() {
+        // ニコニコ動画 ID 互換の charset (英数 + . _ -) 範囲のみ通る。
+        assert!(validate_video_id("sm12345").is_ok());
+        assert!(validate_video_id("so-1.2_3").is_ok());
+        // 異常系
+        assert!(validate_video_id("").is_err());
+        assert!(validate_video_id(&"x".repeat(65)).is_err());
+        assert!(validate_video_id("sm 12345").is_err()); // 空白
+        assert!(validate_video_id("../etc/passwd").is_err());
+        assert!(validate_video_id("sm12345'OR1=1").is_err());
+        assert!(validate_video_id("日本語").is_err());
+    }
+
+    #[test]
+    fn validate_player_command_rejects_unknown_kind() {
+        let req = PlayerCommandReq {
+            kind: "evil".into(),
+            value: None,
+        };
+        let err = validate_player_command(&req).unwrap_err();
+        assert!(matches!(
+            err,
+            DispatchError::InvalidPayload { message, .. } if message.contains("unknown kind")
+        ));
+    }
+
+    #[test]
+    fn validate_player_command_known_kinds_pass() {
+        for kind in &["play", "pause", "toggle", "toggleMute"] {
+            let req = PlayerCommandReq {
+                kind: (*kind).into(),
+                value: None,
+            };
+            assert!(
+                validate_player_command(&req).is_ok(),
+                "kind={kind} should pass"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_player_command_requires_value_for_numeric_kinds() {
+        for kind in &["seek", "setRate", "setVolume"] {
+            let req = PlayerCommandReq {
+                kind: (*kind).into(),
+                value: None,
+            };
+            assert!(
+                matches!(
+                    validate_player_command(&req),
+                    Err(DispatchError::InvalidPayload { .. })
+                ),
+                "kind={kind} without value should be rejected"
+            );
+            let req2 = PlayerCommandReq {
+                kind: (*kind).into(),
+                value: Some(1.5),
+            };
+            assert!(validate_player_command(&req2).is_ok());
+        }
+    }
+
+    #[test]
+    fn validate_player_command_rejects_nan_inf() {
+        let req_nan = PlayerCommandReq {
+            kind: "seek".into(),
+            value: Some(f64::NAN),
+        };
+        assert!(matches!(
+            validate_player_command(&req_nan),
+            Err(DispatchError::InvalidPayload { .. })
+        ));
+        let req_inf = PlayerCommandReq {
+            kind: "seek".into(),
+            value: Some(f64::INFINITY),
+        };
+        assert!(matches!(
+            validate_player_command(&req_inf),
+            Err(DispatchError::InvalidPayload { .. })
+        ));
     }
 
     #[tokio::test]

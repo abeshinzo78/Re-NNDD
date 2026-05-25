@@ -259,6 +259,14 @@ pub async fn plugin_set_enabled(
                  (manifest が壊れている可能性があります)。修復するにはアプリを再起動してください。"
             )));
         }
+        // ロールバック用の **元の enabled 値** を DB から取得しておく
+        // (no-op set のケース = 既に enabled と同値だった場合、`!enabled`
+        // で復元すると状態が反転してしまう問題への対処)。
+        // ここで `prev_enabled` を取得できなかった (= row 消失) ケースは
+        // 続く set_enabled の changed=0 で検出する。
+        let prev_enabled: Option<bool> = registry::get(&conn, &id)
+            .map(|opt| opt.map(|r| r.enabled))
+            .map_err(AppError::from)?;
         let changed = registry::set_enabled(&conn, &id, enabled, now).map_err(AppError::from)?;
         if changed == 0 {
             return Err(AppError::Other(format!("plugin not found: {id}")));
@@ -267,11 +275,12 @@ pub async fn plugin_set_enabled(
         // 並列に remove された万一のレースに備えて結果をチェックし、その場合は
         // DB をロールバックして divergence を残さない。
         if !runtime.set_enabled(&id, enabled) {
-            // ベストエフォートでロールバック (元の enabled 値は失われている
-            // ので !enabled で復元 — 多くのケースで正しいが、no-op set だった
-            // ケースでは結果として状態が反転する可能性あり。それでも leave-as-is
-            // よりは divergence を縮小できる)。
-            let _ = registry::set_enabled(&conn, &id, !enabled, now);
+            // 取得済みの prev_enabled で復元する。取れていなかった場合のみ
+            // フォールバックで !enabled (これは ON↔OFF のトグル前提なので
+            // no-op set 時は反転するが、prev_enabled が取れない時点で row 消失
+            // を意味するので影響は小さい)。
+            let restore = prev_enabled.unwrap_or(!enabled);
+            let _ = registry::set_enabled(&conn, &id, restore, now);
             return Err(AppError::Other(format!(
                 "plugin {id} の runtime 更新中に entry が消えました (race)。状態を復元します。"
             )));

@@ -21,7 +21,7 @@ pub mod runtime;
 pub use dispatcher::{dispatch, DispatchError};
 pub use installer::{install_from_zip_path, uninstall, InstallError, InstallResult};
 pub use manifest::{PluginManifest, ALLOWED_PERMISSIONS};
-pub use runtime::{bootstrap, PluginEntry, PluginRuntime};
+pub use runtime::{bootstrap_blocking, PluginEntry, PluginRuntime};
 
 /// Rust → Frontend のプラグインイベントを emit するヘルパ。
 ///

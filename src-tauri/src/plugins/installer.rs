@@ -136,8 +136,13 @@ pub fn install_from_zip_bytes(
     //   や IO エラーが出ても、既存のプラグインは無傷で残る (Codex review #3)。
     //   tmp / backup には pid + プロセス内カウンタ由来の unique サフィックス
     //   を付け、同 plugin id への並列 install が互いの作業領域を踏まないようにする。
+    //
+    //   セパレータに `~` を使うのは、`is_valid_plugin_id` の charset
+    //   (`[a-z0-9._-]`) には含まれないため、起動時の `cleanup_stale_dirs` が
+    //   この命名と衝突する正規プラグイン id が存在しえないことを保証する
+    //   (Codex review r3299045269)。
     let suffix = unique_suffix();
-    let tmp = plugins_root.join(format!("{}.tmp-{}", manifest.id, suffix));
+    let tmp = plugins_root.join(format!("{}.tmp~{}", manifest.id, suffix));
     if tmp.exists() {
         std::fs::remove_dir_all(&tmp)?;
     }
@@ -190,7 +195,7 @@ pub fn install_from_zip_bytes(
     //   target に rename する。final rename 失敗時は backup を target に
     //   戻して "なかったこと" にする。
     let backup = if target.exists() {
-        let bk = plugins_root.join(format!("{}.bak-{}", manifest.id, suffix));
+        let bk = plugins_root.join(format!("{}.bak~{}", manifest.id, suffix));
         if bk.exists() {
             std::fs::remove_dir_all(&bk)?;
         }
@@ -223,6 +228,97 @@ pub fn install_from_zip_bytes(
         manifest,
         installed_at: target,
     })
+}
+
+/// 起動時に `<plugins_root>` 直下の `<id>.tmp~<pid>-<n>` /
+/// `<id>.bak~<pid>-<n>` ディレクトリを **ベストエフォート** で削除する。
+/// 前回プロセスが install/uninstall 中にクラッシュした場合、これらの中間
+/// ディレクトリは残留してディスクを圧迫し、次回 install での tmp 衝突
+/// (= 古いゴミの remove_dir_all) の race 原因にもなる。
+///
+/// プラグイン本体ディレクトリ (`<id>`) は **絶対に消さない**。判定は
+/// installer が生成する命名規約に **完全一致** したアンカー付きパターンで行う:
+///
+///   `^.+\.(tmp|bak)~\d+-\d+$`
+///
+/// セパレータに `~` を使うのは、`is_valid_plugin_id` の charset
+/// (`[a-z0-9._-]`) に `~` が含まれないため、`foo.tmp~1-2` のような
+/// 「正規 plugin id だが stale 命名と衝突する」名前が存在しえないことを
+/// 保証するため (Codex review r3299045269)。`.tmp-` / `.bak-` 命名は使わない。
+///
+/// 失敗は warn ログに留めて続行。
+pub fn cleanup_stale_dirs(plugins_root: &Path) {
+    let read_dir = match std::fs::read_dir(plugins_root) {
+        Ok(rd) => rd,
+        Err(e) => {
+            tracing::warn!(error = %e, "plugins cleanup: read_dir failed");
+            return;
+        }
+    };
+    let mut removed = 0usize;
+    for entry in read_dir.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if !is_stale_dir_name(&name) {
+            continue;
+        }
+        let path = entry.path();
+        match std::fs::remove_dir_all(&path) {
+            Ok(()) => {
+                removed += 1;
+                tracing::info!(path = %path.display(), "plugins cleanup: removed stale dir");
+            }
+            Err(e) => {
+                tracing::warn!(path = %path.display(), error = %e, "plugins cleanup: remove failed");
+            }
+        }
+    }
+    if removed > 0 {
+        tracing::info!(removed, "plugins cleanup completed");
+    }
+}
+
+/// `<base>.tmp~<pid>-<counter>` / `<base>.bak~<pid>-<counter>` の **完全一致**
+/// パターン判定。`base` (プラグイン id 部) には少なくとも 1 文字、
+/// `<pid>` / `<counter>` には 1 桁以上の 10 進数を要求する。
+///
+/// セパレータ `~` は `is_valid_plugin_id` の charset 外なので、
+/// 正規プラグイン id がこのパターンに偶然一致することはない。
+fn is_stale_dir_name(name: &str) -> bool {
+    // 末尾から `-<digits>$` を剥がす。手書き parser で regex 依存を増やさない
+    // (zip-bomb 防止と同じく依存最小化方針)。
+    fn strip_digit_run(s: &str) -> Option<&str> {
+        let trim_end = s.trim_end_matches(|c: char| c.is_ascii_digit());
+        if trim_end.len() == s.len() {
+            return None; // 末尾が数字でない = digit run なし
+        }
+        Some(trim_end)
+    }
+    // suffix の counter
+    let s = match strip_digit_run(name) {
+        Some(s) => s,
+        None => return false,
+    };
+    // counter の手前は '-'
+    let s = match s.strip_suffix('-') {
+        Some(s) => s,
+        None => return false,
+    };
+    // pid
+    let s = match strip_digit_run(s) {
+        Some(s) => s,
+        None => return false,
+    };
+    // pid の手前は `.tmp~` or `.bak~` (セパレータが `~` であることが鍵)
+    let base = if let Some(b) = s.strip_suffix(".tmp~") {
+        b
+    } else if let Some(b) = s.strip_suffix(".bak~") {
+        b
+    } else {
+        return false;
+    };
+    // base 部 (= plugin id) は非空。空 base は installer が生成しないので除外。
+    !base.is_empty()
 }
 
 pub fn uninstall(plugins_root: &Path, plugin_id: &str) -> Result<(), InstallError> {
@@ -412,11 +508,11 @@ mod tests {
         let r2 = install_from_zip_bytes(tmp.path(), &v2, true, "0.1.0").unwrap();
         let written_v2 = std::fs::read_to_string(r2.installed_at.join("index.js")).unwrap();
         assert_eq!(written_v2, "export const v = 2;");
-        // backup ディレクトリは片付いている
+        // backup ディレクトリは片付いている (セパレータは `~`)
         let leftovers: Vec<_> = std::fs::read_dir(tmp.path())
             .unwrap()
             .filter_map(|e| e.ok().map(|e| e.file_name().to_string_lossy().into_owned()))
-            .filter(|n| n.contains(".bak-") || n.contains(".tmp-"))
+            .filter(|n| n.contains(".bak~") || n.contains(".tmp~"))
             .collect();
         assert!(leftovers.is_empty(), "leftover dirs: {leftovers:?}");
     }
@@ -439,6 +535,92 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let err = uninstall(tmp.path(), "../etc").unwrap_err();
         matches!(err, InstallError::UnsafePath(_));
+    }
+
+    #[test]
+    fn cleanup_removes_tmp_and_bak_only() {
+        // 起動時 cleanup が `<id>.(tmp|bak)~<pid>-<n>$` のみを消し、本体
+        // ディレクトリは残すことを確認 (前回 crash 後の orphan ディレクトリ
+        // 対策の回帰防止)。
+        let tmp = TempDir::new().unwrap();
+        std::fs::create_dir_all(tmp.path().join("com.example.live")).unwrap();
+        std::fs::create_dir_all(tmp.path().join("com.example.live.tmp~12345-0")).unwrap();
+        std::fs::create_dir_all(tmp.path().join("com.example.live.bak~12345-1")).unwrap();
+        // ID 自体に "tmp" が含まれていても、anchor 付きパターンには該当しない。
+        std::fs::create_dir_all(tmp.path().join("tmpid")).unwrap();
+        // 「`.bak-` を含むが `~` 区切りではない正規プラグイン id」は残る。
+        std::fs::create_dir_all(tmp.path().join("com.example.bak-feature")).unwrap();
+        std::fs::create_dir_all(tmp.path().join("com.tmp-helper.real")).unwrap();
+        // Codex r3299045269 回帰防止: plugin id charset 内の `-` 区切りで
+        // `foo.tmp-1-2` のような名前は **valid plugin id** として install
+        // 可能。stale パターンと衝突しないよう `~` 区切りに変えたので、
+        // この dir は cleanup の対象にならない。
+        std::fs::create_dir_all(tmp.path().join("foo.tmp-1-2")).unwrap();
+        std::fs::create_dir_all(tmp.path().join("a.bak-9-99")).unwrap();
+        // 末尾の counter が数字でない → 削除対象外。
+        std::fs::create_dir_all(tmp.path().join("com.example.live.tmp~12345-xyz")).unwrap();
+        cleanup_stale_dirs(tmp.path());
+        let names: std::collections::HashSet<String> = std::fs::read_dir(tmp.path())
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        assert!(names.contains("com.example.live"), "live dir must survive");
+        assert!(
+            names.contains("tmpid"),
+            "id with 'tmp' substring must survive"
+        );
+        assert!(
+            names.contains("com.example.bak-feature"),
+            "id with '.bak-feature' must survive"
+        );
+        assert!(
+            names.contains("com.tmp-helper.real"),
+            "id with '.tmp-' inside must survive"
+        );
+        assert!(
+            names.contains("foo.tmp-1-2"),
+            "valid plugin id `foo.tmp-1-2` must survive (Codex r3299045269 regression guard)"
+        );
+        assert!(
+            names.contains("a.bak-9-99"),
+            "valid plugin id `a.bak-9-99` must survive (Codex r3299045269 regression guard)"
+        );
+        assert!(
+            names.contains("com.example.live.tmp~12345-xyz"),
+            "non-numeric counter suffix must not be treated as stale"
+        );
+        assert!(!names.contains("com.example.live.tmp~12345-0"));
+        assert!(!names.contains("com.example.live.bak~12345-1"));
+    }
+
+    #[test]
+    fn is_stale_dir_name_anchored() {
+        // 正規パターン (削除対象)
+        assert!(is_stale_dir_name("a.tmp~1-0"));
+        assert!(is_stale_dir_name("a.bak~12345-99"));
+        assert!(is_stale_dir_name("com.example.x.tmp~1-2"));
+        // 削除しないもの
+        assert!(!is_stale_dir_name("a.tmp~1")); // counter なし
+        assert!(!is_stale_dir_name("a.tmp~-1")); // pid 空
+        assert!(!is_stale_dir_name(".tmp~1-2")); // base 空
+        assert!(!is_stale_dir_name("a.tmp~a-1")); // pid 非数字
+        assert!(!is_stale_dir_name("a.bak~1-x")); // counter 非数字
+                                                  // valid plugin id だが `-` 区切り → stale ではない (id charset 内)
+        assert!(!is_stale_dir_name("a.tmp-1-2"));
+        assert!(!is_stale_dir_name("a.bak-1-2"));
+        assert!(!is_stale_dir_name("foo.tmp-99-0"));
+        assert!(!is_stale_dir_name("com.example.bak-feature"));
+        assert!(!is_stale_dir_name("regular.plugin"));
+    }
+
+    #[test]
+    fn cleanup_missing_root_does_not_panic() {
+        // root が存在しない (= app_data_dir が未作成) ケースも noop で返る。
+        let tmp = TempDir::new().unwrap();
+        let nonexistent = tmp.path().join("nope");
+        cleanup_stale_dirs(&nonexistent);
+        // 例外なしで戻ればよい (削除対象なし)。
     }
 
     #[test]

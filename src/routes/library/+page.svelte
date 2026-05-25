@@ -12,6 +12,7 @@
   import { formatDuration, formatNumber } from '$lib/format';
   import { setQueue, itemHref, type PlaybackQueueItem } from '$lib/stores/playbackQueue';
   import { createSmartPlaylist } from '$lib/stores/smartPlaylists';
+  import VideoActionMenu from '$lib/VideoActionMenu.svelte';
 
   let items = $state<LibraryVideoItem[]>([]);
   let loading = $state(true);
@@ -266,6 +267,20 @@
             title="ライブラリから完全削除"
             onclick={(e) => onDelete(item, e)}>{deleting === item.id ? '…' : '×'}</button
           >
+          <div class="plugin-menu-wrap">
+            <VideoActionMenu
+              video={{
+                contentId: item.id,
+                videoId: item.id,
+                title: item.title,
+                thumbnailUrl: thumbSrc(item),
+                lengthSeconds: item.durationSec ?? null,
+                viewCounter: item.viewCount ?? null,
+                source: 'library',
+              }}
+              compact={true}
+            />
+          </div>
         </div>
       {/each}
     </div>
@@ -420,6 +435,19 @@
   .del-btn:disabled {
     opacity: 0.5;
     cursor: wait;
+  }
+  /* プラグインアクションメニューはサムネ右下に。寄与 0 件のとき VideoActionMenu
+     自体が何もレンダリングしないので、この div も空のままで邪魔にならない。 */
+  .plugin-menu-wrap {
+    position: absolute;
+    bottom: 6px;
+    right: 6px;
+    z-index: 2;
+    opacity: 0;
+    transition: opacity 0.1s;
+  }
+  .card-wrap:hover .plugin-menu-wrap {
+    opacity: 1;
   }
   .card {
     display: block;

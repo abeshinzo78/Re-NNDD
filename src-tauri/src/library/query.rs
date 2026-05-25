@@ -2,7 +2,7 @@
 //!
 //! All read-only. Write operations stay in [`super::videos`].
 
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
 use crate::error::LibraryError;
@@ -453,6 +453,59 @@ pub fn list_all_tags(conn: &Connection) -> Result<Vec<String>, LibraryError> {
         .query_map([], |row| row.get::<_, String>(0))?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(tags)
+}
+
+/// 動画 ID で 1 件取得する。プラグインの `library.get` action 用。
+/// 存在しない / video_path が無い (= まだローカルに DL されていない) 行は
+/// `None` を返す。
+pub fn get_video_by_id(
+    conn: &Connection,
+    id: &str,
+) -> Result<Option<LibraryVideoRow>, LibraryError> {
+    let mut row: Option<LibraryVideoRow> = conn
+        .query_row(
+            "SELECT v.id, v.title, v.description, v.uploader_id, v.uploader_name, \
+                    v.uploader_type, v.category, v.duration_sec, v.posted_at, v.view_count, \
+                    v.comment_count, v.mylist_count, v.thumbnail_url, v.video_path, v.resolution, \
+                    v.downloaded_at, v.play_count, v.last_played_at, v.is_short \
+             FROM videos v \
+             WHERE v.id = ?1 AND v.video_path IS NOT NULL",
+            rusqlite::params![id],
+            |r| {
+                Ok(LibraryVideoRow {
+                    id: r.get(0)?,
+                    title: r.get(1)?,
+                    description: r.get(2)?,
+                    uploader_id: r.get(3)?,
+                    uploader_name: r.get(4)?,
+                    uploader_type: r.get(5)?,
+                    category: r.get(6)?,
+                    duration_sec: r.get(7)?,
+                    posted_at: r.get(8)?,
+                    view_count: r.get(9)?,
+                    comment_count: r.get(10)?,
+                    mylist_count: r.get(11)?,
+                    thumbnail_url: r.get(12)?,
+                    video_path: r.get(13)?,
+                    resolution: r.get(14)?,
+                    downloaded_at: r.get(15)?,
+                    play_count: r.get::<_, Option<i64>>(16)?.unwrap_or(0),
+                    last_played_at: r.get(17)?,
+                    tags: Vec::new(),
+                    local_thumbnail_path: None,
+                    is_short: r.get::<_, i64>(18)? != 0,
+                })
+            },
+        )
+        .optional()?;
+    if let Some(ref mut v) = row {
+        let mut stmt = conn.prepare("SELECT name FROM tags WHERE video_id = ?1 ORDER BY name")?;
+        let tags: Vec<String> = stmt
+            .query_map(rusqlite::params![v.id], |r| r.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        v.tags = tags;
+    }
+    Ok(row)
 }
 
 /// Fetch all distinct resolutions in the library.

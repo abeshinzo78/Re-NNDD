@@ -1,0 +1,10 @@
+{
+  "id": "com.example.hello-world",
+  "name": "Hello World",
+  "version": "0.1.0",
+  "entry": "index.js",
+  "description": "Re:NNDD プラグイン機構の最小サンプル。挨拶トースト + コマンドパレット項目 + 動画カードメニューを 1 個ずつ追加します。",
+  "author": "Re:NNDD",
+  "homepage": "https://github.com/kongyo2/re-nndd",
+  "permissions": ["notify", "commands"]
+}

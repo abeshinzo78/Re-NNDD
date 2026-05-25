@@ -8,6 +8,7 @@
     type HistorySource,
   } from '$lib/stores/history';
   import { formatDuration } from '$lib/format';
+  import VideoActionMenu from '$lib/VideoActionMenu.svelte';
 
   let history = $state<HistoryItem[]>([]);
   let filter = $state<'all' | HistorySource>('all');
@@ -185,6 +186,19 @@
             title="この履歴を削除"
             aria-label="削除">✕</button
           >
+          <VideoActionMenu
+            video={{
+              contentId: item.videoId,
+              videoId: item.videoId,
+              title: item.title,
+              thumbnailUrl: item.thumbnailUrl ?? null,
+              lengthSeconds: item.duration ?? null,
+              source: 'history',
+              historySource: item.source,
+              playedAt: item.playedAt,
+            }}
+            compact={true}
+          />
         </li>
       {/each}
     </ul>

@@ -1,0 +1,10 @@
+{
+  "id": "com.example.play-stats",
+  "name": "Play Stats",
+  "version": "0.1.0",
+  "entry": "index.js",
+  "description": "再生時間を動画ごとに集計し、ダッシュボードで一覧表示するプラグイン。設定値で「ダッシュボードに表示する上位件数」を変更できます。",
+  "author": "Re:NNDD",
+  "homepage": "https://github.com/kongyo2/re-nndd",
+  "permissions": ["settings.read", "settings.write", "notify", "commands"]
+}

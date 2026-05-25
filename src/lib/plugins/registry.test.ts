@@ -8,11 +8,19 @@ beforeEach(() => {
 
 describe('plugin registry', () => {
   it('starts empty', () => {
-    expect(reg._counts()).toEqual({ nav: 0, settings: 0, items: 0, player: 0 });
+    expect(reg._counts()).toEqual({
+      nav: 0,
+      settings: 0,
+      items: 0,
+      player: 0,
+      commands: 0,
+      pages: 0,
+    });
     expect(reg.pluginNavEntries()).toEqual([]);
     expect(reg.pluginSettingDefs()).toEqual([]);
     expect(reg.pluginItemActions()).toEqual([]);
     expect(reg.pluginPlayerActions()).toEqual([]);
+    expect(reg.pluginCommands()).toEqual([]);
   });
 
   it('addNav adds an entry keyed by plugin id', () => {

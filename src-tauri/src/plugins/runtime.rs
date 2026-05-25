@@ -96,9 +96,12 @@ impl PluginRuntime {
     }
 }
 
-/// 起動時に呼ぶヘルパ。LibraryHandle から接続を取って `reload_from_db`。
-pub async fn bootstrap(runtime: &Arc<PluginRuntime>, library: &Arc<LibraryHandle>) {
-    let conn = library.lock().await;
+/// 起動時に呼ぶ同期版ヘルパ。`lib.rs::setup` は sync クロージャから呼ばれる
+/// (tokio runtime を await できない) ため、`LibraryHandle::blocking_lock`
+/// 経由で DB 接続を取得する。失敗は warn のみで起動を止めない (プラグイン
+/// なしの通常動作にフォールバック)。
+pub fn bootstrap_blocking(runtime: &Arc<PluginRuntime>, library: &Arc<LibraryHandle>) {
+    let conn = library.blocking_lock();
     if let Err(e) = runtime.reload_from_db(&conn) {
         tracing::error!(error = %e, "plugin runtime initial load failed");
     }

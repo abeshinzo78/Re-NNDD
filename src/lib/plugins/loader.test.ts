@@ -39,6 +39,35 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
+describe('RESERVED_HOST_EVENT_NAMES', () => {
+  it('contains the player.control event used by Player.svelte', () => {
+    // この event を block しないと permission バイパスが成立する
+    // (Codex r3299045281 回帰防止)。
+    expect(loader.RESERVED_HOST_EVENT_NAMES.has('plugin:player:control')).toBe(true);
+  });
+
+  it('contains all standard host-emitted events to prevent plugin spoofing', () => {
+    for (const name of [
+      'notify:toast',
+      'download:start',
+      'download:complete',
+      'download:error',
+      'player:play',
+      'player:pause',
+      'player:time',
+      'player:ended',
+    ]) {
+      expect(loader.RESERVED_HOST_EVENT_NAMES.has(name)).toBe(true);
+    }
+  });
+
+  it('does not include arbitrary plugin namespaces', () => {
+    // プラグイン同士の通信 (`custom:foo` 等) は引き続き emit 可能。
+    expect(loader.RESERVED_HOST_EVENT_NAMES.has('custom:my-event')).toBe(false);
+    expect(loader.RESERVED_HOST_EVENT_NAMES.has('plugin:my-data')).toBe(false);
+  });
+});
+
 describe('loader.loadPlugin', () => {
   it('records failed state when dynamic import rejects', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);

@@ -5,6 +5,8 @@
   import { installConsoleBridge } from '$lib/consoleBridge';
   import { getStr, loadSettings } from '$lib/stores/settings.svelte';
   import MiniPlayer from '$lib/player/MiniPlayer.svelte';
+  import Toast from '$lib/Toast.svelte';
+  import CommandPalette from '$lib/CommandPalette.svelte';
   import { bootstrapPluginHost } from '$lib/plugins/host';
   import { pluginNavEntries } from '$lib/plugins/registry';
 
@@ -107,6 +109,10 @@
 </div>
 
 <MiniPlayer />
+<!-- プラグイン機構の共通 UI。Toast はプラグイン無効時も 0 件で出ない。
+     CommandPalette は Ctrl/⌘+K で開く。 -->
+<Toast />
+<CommandPalette />
 
 <style>
   :global(html) {

@@ -383,3 +383,41 @@ export function get(key: SettingKey): unknown {
   // cache 自体が $state なのでアクセスすればトラックされる
   return parseValue(defOf(key)!, cache[key]);
 }
+
+// ----- プラグイン設定用の Raw アクセサ -----
+//
+// プラグインが `ctx.settings.register({key: 'plugin:<id>:foo', ...})` で
+// 登録した設定項目を、設定画面の組込み UI から編集できるようにするための
+// 低レベル API。`SettingKey` 制約をバイパスするので呼び出し元の責務は
+// 「キーが安全な名前空間 (plugin:<id>:*) であること」の確認。
+//
+// `SETTING_DEFS` 由来のキー (例: 'playback.autoplay') は通常 `getBool` 系
+// 経由でアクセスするべきだが、ここを通すのも禁止していない (互換性のため)。
+
+/** 生キーで値を取得。未登録なら undefined。値は文字列のまま。 */
+export function getRawSetting(key: string): string | undefined {
+  // cache に直アクセス。reactive 追跡したいなら `get` を見ること。
+  // SETTING_DEFS 制約に縛られない汎用 getter。
+  return cache[key];
+}
+
+/** 生キーで値を保存。in-memory + DB 両方に書く。 */
+export async function setRawSetting(key: string, value: string): Promise<void> {
+  cache[key] = value;
+  await setSettingRaw(key, value);
+  // theme は SETTING_DEFS 由来のキーなので localStorage 同期もここで拾う。
+  if (key === LS_THEME_KEY) syncThemeToLocalStorage(value);
+}
+
+/** 生キーで値を削除 (default に戻す)。 */
+export async function resetRawSetting(key: string): Promise<void> {
+  delete cache[key];
+  await deleteSettingRaw(key);
+  if (key === LS_THEME_KEY) syncThemeToLocalStorage(null);
+}
+
+/** 現在 cache されている設定キーの一覧 (= DB に書き込みのあったキー)。
+ *  プラグイン設定の編集 UI が「未設定なら default を表示」を判定するときに使う。 */
+export function listRawSettingKeys(): string[] {
+  return Object.keys(cache);
+}
