@@ -202,17 +202,3 @@ OFF にすると `bootstrapPluginHost()` は最初の 1 行で return し:
 つまりプラグイン機構導入前と **完全に同じ起動シーケンス** になります。
 回帰の疑いがあればまずこれを OFF にして再現性を確認してください。
 
-## 既知の制限 (deferred)
-
-以下は MVP 範囲外です。将来追加予定:
-
-- URL / GitHub からの直接インストール
-- 署名検証 (Ed25519 manifest signing)
-- iframe / Web Worker 隔離
-- ホットリロード
-- プラグインマーケットプレイス
-- `library.write` 系 permission (削除・編集)
-- ダウンロード進捗の細かい emit (`download:progress`)
-- ライブラリ追加/削除イベント (`library:videoAdded`/`Removed`)
-- プラグインが追加した SettingDef 値の組込み UI 編集 (現状は plugin 側で
-  自前 UI を出すか、`ctx.settings.set` で書き換える運用)
