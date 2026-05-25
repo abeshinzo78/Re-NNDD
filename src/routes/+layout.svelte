@@ -1,6 +1,7 @@
 <script lang="ts">
   import { page } from '$app/state';
   import { onMount } from 'svelte';
+  import { SvelteSet } from 'svelte/reactivity';
   import { installConsoleBridge } from '$lib/consoleBridge';
   import { getStr, loadSettings } from '$lib/stores/settings.svelte';
   import MiniPlayer from '$lib/player/MiniPlayer.svelte';
@@ -11,18 +12,17 @@
 
   onMount(() => {
     installConsoleBridge();
-    // プラグインホストは loadSettings 完了後に bootstrap する
-    // (キルスイッチ `plugins.enabled` を正しく読むため)。loadSettings
-    // が一過性エラー (getSettings 失敗等) で reject しても plugin host
-    // を起動できなくならないよう、catch して bootstrap は必ず呼ぶ
-    // (Codex review r3297638378)。設定未ロード時の getBool は def.default
-    // にフォールバックする実装なので、キルスイッチ false ユーザは host が
-    // 動いてしまうリスクがあるが、再起動で正常化する。
+    // プラグインホストの bootstrap は loadSettings 成功後にのみ走らせる
+    // (Codex review r3297741199: loadSettings 失敗時に default の
+    // `plugins.enabled=true` で fall back されると、ユーザが OFF にしていた
+    // セッションでもプラグインが load されキルスイッチが破られる)。
+    // 失敗時は fail-closed — プラグインを一切ロードしない。
     void (async () => {
       try {
         await loadSettings();
       } catch (e) {
-        console.error('[layout] loadSettings failed (continuing with defaults):', e);
+        console.error('[layout] loadSettings failed — plugin host not started (fail-closed):', e);
+        return;
       }
       try {
         await bootstrapPluginHost();
@@ -46,8 +46,25 @@
 
   // プラグイン寄与ナビは built-in の後ろに append。プラグイン未インストール
   // 時は pluginNavEntries() が [] を返すので、DOM はプラグイン機構導入前と
-  // 完全同一になる。
-  let allSections = $derived([...sections, ...pluginNavEntries()]);
+  // 完全同一になる。href 重複は keyed each の collision を引き起こすので
+  // 線形 dedup する (Codex review r3297741222)。先勝ち (built-in 優先)。
+  let allSections = $derived.by(() => {
+    // .svelte ファイル内の `new Set` は svelte/prefer-svelte-reactivity が
+    // SvelteSet を要求するため、ローカルな derived 内でも SvelteSet を使う。
+    const seen = new SvelteSet(sections.map((s) => s.href));
+    const out = [...sections];
+    for (const entry of pluginNavEntries()) {
+      if (seen.has(entry.href)) {
+        console.warn(
+          `[plugin nav] href ${entry.href} はすでに登録されています。重複エントリは無視します。`,
+        );
+        continue;
+      }
+      seen.add(entry.href);
+      out.push(entry);
+    }
+    return out;
+  });
 
   let canGoBack = $derived(
     page.url.pathname !== '/' &&

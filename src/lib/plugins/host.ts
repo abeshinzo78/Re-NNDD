@@ -77,10 +77,24 @@ export async function bootstrapPluginHost(): Promise<void> {
   }
 }
 
-/** プラグインを有効化 (DB + ロード)。 */
+/** プラグインを有効化 (DB + ロード)。
+ *  loader.loadPlugin は内部で全例外を catch して "failed" 状態として記録する
+ *  だけなので、呼出側の UI が「有効化成功」と誤認しないよう、ここで失敗を
+ *  検出して DB enable を rollback したうえで throw する
+ *  (Codex review r3297741213)。 */
 export async function enablePlugin(info: import('./types').PluginInfo): Promise<void> {
   await pluginSetEnabled(info.pluginId, true);
   await loader.loadPlugin({ ...info, enabled: true });
+  const state = loader.getLoadState(info.pluginId);
+  if (state?.state === 'failed') {
+    // DB を元に戻す。次回起動時に再度 auto-load されてしまうのを防ぐ。
+    try {
+      await pluginSetEnabled(info.pluginId, false);
+    } catch (e) {
+      console.error(`[plugin] enable rollback failed for ${info.pluginId}:`, e);
+    }
+    throw new Error(`プラグインの読み込みに失敗しました: ${state.error ?? 'unknown error'}`);
+  }
 }
 
 /** プラグインを無効化 (DB 永続化 → アンロード)。

@@ -52,7 +52,15 @@ pub enum InstallError {
     UnsafePath(String),
     #[error("declared entry {entry:?} not present in zip")]
     EntryMissing { entry: String },
+    #[error("size limit exceeded ({reason})")]
+    SizeLimit { reason: String },
 }
+
+// 解凍時のサイズガード (Codex review r3297741207: zip-bomb DoS 防止)。
+// MVP プラグインの想定 (manifest + index.js + 軽量 assets) を大きく超える
+// 値を上限とする。1 エントリ 50 MiB / 合計 200 MiB。
+const MAX_ENTRY_BYTES: u64 = 50 * 1024 * 1024;
+const MAX_TOTAL_BYTES: u64 = 200 * 1024 * 1024;
 
 #[derive(Debug)]
 pub struct InstallResult {
@@ -120,6 +128,7 @@ pub fn install_from_zip_bytes(
     std::fs::create_dir_all(&tmp)?;
 
     let extract_result: Result<(), InstallError> = (|| {
+        let mut total_bytes: u64 = 0;
         for i in 0..archive.len() {
             let mut file = archive.by_index(i)?;
             let safe = safe_relative_path(&file)?;
@@ -132,7 +141,26 @@ pub fn install_from_zip_bytes(
                 std::fs::create_dir_all(parent)?;
             }
             let mut out = std::fs::File::create(&out_path)?;
-            std::io::copy(&mut file, &mut out)?;
+            // 各エントリの展開を MAX_ENTRY_BYTES + 1 で打ち切り、超過したら拒否
+            // する。zip の "圧縮率は高いが原寸は巨大" な zip-bomb を防ぐ。
+            // 合計サイズも MAX_TOTAL_BYTES で打ち切る。
+            let mut limited = std::io::Read::take(file.by_ref(), MAX_ENTRY_BYTES + 1);
+            let copied = std::io::copy(&mut limited, &mut out)?;
+            if copied > MAX_ENTRY_BYTES {
+                return Err(InstallError::SizeLimit {
+                    reason: format!(
+                        "entry {} exceeded {} bytes",
+                        safe.display(),
+                        MAX_ENTRY_BYTES
+                    ),
+                });
+            }
+            total_bytes = total_bytes.saturating_add(copied);
+            if total_bytes > MAX_TOTAL_BYTES {
+                return Err(InstallError::SizeLimit {
+                    reason: format!("total extracted size exceeded {} bytes", MAX_TOTAL_BYTES),
+                });
+            }
         }
         Ok(())
     })();
@@ -375,5 +403,47 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let err = uninstall(tmp.path(), "../etc").unwrap_err();
         matches!(err, InstallError::UnsafePath(_));
+    }
+
+    #[test]
+    fn per_entry_size_limit_rejects_oversized_entry() {
+        // zip-bomb 風: 1 エントリが MAX_ENTRY_BYTES (50 MiB) を超えるケース。
+        // ここでは Stored (無圧縮) で大きいデータを入れて確認する
+        // (Codex review r3297741207)。
+        let tmp = TempDir::new().unwrap();
+        let mut buf = Vec::new();
+        {
+            let mut writer = zip::ZipWriter::new(Cursor::new(&mut buf));
+            let opts =
+                zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+            writer.start_file("manifest.json", opts).unwrap();
+            std::io::Write::write_all(&mut writer, &manifest_bytes("com.example.bomb")).unwrap();
+            writer.start_file("index.js", opts).unwrap();
+            std::io::Write::write_all(&mut writer, b"export const x = 1;").unwrap();
+            // 大きい無圧縮エントリ (アサート可能なサイズに留めるが MAX_ENTRY_BYTES 超え)
+            writer.start_file("big.bin", opts).unwrap();
+            // 50 MiB + 1 byte 書き込む
+            let chunk = vec![0u8; 1024 * 1024]; // 1 MiB
+            for _ in 0..50 {
+                std::io::Write::write_all(&mut writer, &chunk).unwrap();
+            }
+            std::io::Write::write_all(&mut writer, b"X").unwrap();
+            writer.finish().unwrap();
+        }
+        let err = install_from_zip_bytes(tmp.path(), &buf, false, "0.1.0").unwrap_err();
+        assert!(
+            matches!(err, InstallError::SizeLimit { .. }),
+            "expected SizeLimit, got {err:?}"
+        );
+        // 失敗時の cleanup: 部分展開 tmp が残らない
+        let leftovers: Vec<_> = std::fs::read_dir(tmp.path())
+            .unwrap()
+            .filter_map(|e| e.ok().map(|e| e.file_name().to_string_lossy().into_owned()))
+            .filter(|n| n.contains(".tmp-") || n == "com.example.bomb")
+            .collect();
+        assert!(
+            leftovers.is_empty(),
+            "leftover dirs after rejection: {leftovers:?}"
+        );
     }
 }
