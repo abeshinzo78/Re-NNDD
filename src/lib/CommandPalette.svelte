@@ -15,7 +15,7 @@
     openPalette,
     rankCommands,
     type CommandEntry,
-  } from '$lib/commandPalette.svelte';
+  } from '$lib/commandPaletteStore.svelte';
   import { showToast } from '$lib/toastStore.svelte';
 
   let query = $state('');

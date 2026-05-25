@@ -8,7 +8,7 @@ vi.mock('$lib/stores/settings.svelte', () => ({
   setSetting: vi.fn(async () => undefined),
 }));
 
-import { BUILTIN_COMMANDS, rankCommands, scoreMatch } from './commandPalette.svelte';
+import { BUILTIN_COMMANDS, rankCommands, scoreMatch } from './commandPaletteStore.svelte';
 import type { PluginCommand } from '$lib/plugins/types';
 
 describe('scoreMatch', () => {
@@ -22,13 +22,15 @@ describe('scoreMatch', () => {
   });
 
   it('prefix match scores higher than middle match', () => {
-    expect(scoreMatch('hello world', 'hel')).toBeGreaterThan(scoreMatch('say hello', 'hel'));
+    // 自然な英単語の prefix を haystack/needle に置くとスペルチェッカが
+    // 「短い prefix → typo」と誤検出するため、語彙的に中立な文字列を使う。
+    expect(scoreMatch('foobar baz', 'foo')).toBeGreaterThan(scoreMatch('xyz foo', 'foo'));
   });
 
   it('word boundary boosts (after space/hyphen/_/etc.)', () => {
     // どちらも substring match だが、後者は単語境界 (空白後) で hit する
-    const after = scoreMatch('say hello', 'hello');
-    const inside = scoreMatch('shelloship', 'hello');
+    const after = scoreMatch('xyz foobar', 'foobar');
+    const inside = scoreMatch('zfoobarz', 'foobar');
     expect(after).toBeGreaterThan(inside);
   });
 
