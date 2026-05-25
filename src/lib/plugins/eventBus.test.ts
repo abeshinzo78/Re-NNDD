@@ -96,4 +96,26 @@ describe('plugin eventBus', () => {
     bus.emit('evt', null);
     expect(h).toHaveBeenCalledTimes(2);
   });
+
+  it('stale off() does NOT wipe a replacement bucket at the same name', () => {
+    // Codex #12 回帰防止: 旧 bucket への参照を握った off クロージャが、
+    // bucket 削除 → 別 owner が新 bucket 作成 のあとで誤って新 bucket を
+    // 削除する race を防ぐ。
+    const hA = vi.fn();
+    const hB = vi.fn();
+    const offA = bus.on('plug.a', 'evt', hA);
+    // plug.a の全 listener を解除 → bucket は空になり 'evt' から削除される
+    bus.offAllByOwner('plug.a');
+    expect(bus._handlerCount()).toBe(0);
+    // 別 owner が新しく登録 → 'evt' に新 bucket 生成
+    bus.on('plug.b', 'evt', hB);
+    expect(bus._handlerCount()).toBe(1);
+    // ここで stale な offA が走っても、新 bucket (= plug.b の登録) を消しては
+    // いけない。
+    offA();
+    expect(bus._handlerCount()).toBe(1);
+    bus.emit('evt', null);
+    expect(hB).toHaveBeenCalledOnce();
+    expect(hA).not.toHaveBeenCalled();
+  });
 });

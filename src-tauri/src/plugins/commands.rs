@@ -139,30 +139,48 @@ pub async fn plugin_install_from_zip(
     let manifest_json = serde_json::to_string(&install_res.manifest)
         .map_err(|e| AppError::Other(format!("serialize manifest: {e}")))?;
     let now = now_unix_secs();
-    let previous_enabled = {
+    let db_result = {
         let conn = library.lock().await;
         // 上書き (replace=true) の場合は既存行の enabled フラグを保持したい。
         // registry::upsert の SQL は ON CONFLICT 時に enabled を触らないので
         // DB 側は既存値が残るが、in-memory runtime と返値 PluginInfo は
         // ここで明示的に保持しないと split-brain になる (Codex review #1)。
         let prev = registry::get(&conn, &install_res.manifest.id)
-            .map_err(AppError::from)?
-            .map(|r| r.enabled)
-            .unwrap_or(false);
-        registry::upsert(
-            &conn,
-            &install_res.manifest.id,
-            &install_res.manifest.version,
-            &manifest_json,
-            now,
-        )
-        .map_err(AppError::from)?;
-        // runtime も DB ロックを保持したまま更新する。別 task の
-        // plugin_set_enabled が間に割り込んで先に runtime を書き込み、
-        // ここでそれを stale な値で上書きするレースを防ぐ
-        // (Codex review r3297638386)。
-        runtime.upsert(&install_res.manifest.id, install_res.manifest.clone(), prev);
-        prev
+            .map(|opt| opt.map(|r| r.enabled).unwrap_or(false));
+        let upserted = prev.and_then(|p| {
+            registry::upsert(
+                &conn,
+                &install_res.manifest.id,
+                &install_res.manifest.version,
+                &manifest_json,
+                now,
+            )
+            .map(|_| p)
+        });
+        if let Ok(p) = &upserted {
+            // runtime も DB ロックを保持したまま更新する。別 task の
+            // plugin_set_enabled が間に割り込んで先に runtime を書き込み、
+            // ここでそれを stale な値で上書きするレースを防ぐ
+            // (Codex review r3297638386)。
+            runtime.upsert(&install_res.manifest.id, install_res.manifest.clone(), *p);
+        }
+        upserted
+    };
+    let previous_enabled = match db_result {
+        Ok(p) => p,
+        Err(e) => {
+            // DB upsert 失敗。展開済みディレクトリを残すと次回 install が
+            // AlreadyInstalled で詰まる (Codex review r3297741222 関連: orphan dir
+            // 問題)。ベストエフォートでクリーンアップしてからエラーを返す。
+            if let Err(rm_err) = installer::uninstall(&root, &install_res.manifest.id) {
+                tracing::warn!(
+                    plugin_id = %install_res.manifest.id,
+                    error = %rm_err,
+                    "rollback after DB upsert failure: removing extracted dir failed"
+                );
+            }
+            return Err(AppError::from(e));
+        }
     };
 
     // インストール直後の Info を返す。再ロード不要 (DB と一致しているはず)。
@@ -221,7 +239,15 @@ pub async fn plugin_set_enabled(
             return Err(AppError::Other(format!("plugin not found: {id}")));
         }
         // DB ロックを保持したまま runtime も更新する (install と対称) 。
-        runtime.set_enabled(&id, enabled);
+        // runtime cache に entry が無いと set_enabled は silent no-op になり
+        // DB↔runtime split-brain (DB enabled / runtime UnknownPlugin) が
+        // 発生する (Codex #11)。cache miss はエラーとして surface する。
+        if !runtime.set_enabled(&id, enabled) {
+            return Err(AppError::Other(format!(
+                "plugin {id} は DB に存在しますが runtime キャッシュにありません \
+                 (manifest が壊れている可能性があります)。修復するにはアプリを再起動してください。"
+            )));
+        }
     }
     Ok(())
 }

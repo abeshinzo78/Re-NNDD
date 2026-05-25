@@ -49,7 +49,11 @@ export function emit(name: string, payload: unknown): void {
 
 /** ハンドラを登録。返値の関数を呼ぶと off できる。
  *  `owner` は plugin id を渡す (一括解除用)。
- *  同じ `(owner, handler)` の組での再登録は no-op (既存 entry を返す)。 */
+ *  同じ `(owner, handler)` の組での再登録は no-op (既存 entry を返す)。
+ *  返り値の off クロージャは bucket 参照を **キャプチャしない** — 削除時に
+ *  必ず最新の bucket を name で再 lookup する。これにより、間に
+ *  offAllByOwner + 別 owner の on で bucket が作り直された後でも、古い
+ *  off が新 bucket を誤って消すこと (Codex #12) を防ぐ。 */
 export function on(owner: string, name: string, handler: AnyHandler): () => void {
   const b = bucketOf(name);
   // Set でも entry object が毎回新規だと重複登録になるので、(owner, handler)
@@ -57,17 +61,20 @@ export function on(owner: string, name: string, handler: AnyHandler): () => void
   // 高々数件想定なので線形でよい。
   for (const existing of b) {
     if (existing.owner === owner && existing.handler === handler) {
-      return () => {
-        b.delete(existing);
-        if (b.size === 0) buckets.delete(name);
-      };
+      return makeOff(name, existing);
     }
   }
   const entry: Entry = { owner, handler };
   b.add(entry);
+  return makeOff(name, entry);
+}
+
+function makeOff(name: string, entry: Entry): () => void {
   return () => {
-    b.delete(entry);
-    if (b.size === 0) buckets.delete(name);
+    const current = buckets.get(name);
+    if (!current) return;
+    current.delete(entry);
+    if (current.size === 0) buckets.delete(name);
   };
 }
 

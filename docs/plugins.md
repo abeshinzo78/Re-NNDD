@@ -83,8 +83,8 @@ Windows: `%APPDATA%\in.yajuvideo.nndd-next\`)。
 | ---------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `net.fetch`      | `net.fetch`    | https のみの HTTP fetch (`{url, method?, headers?, body?}` → `{status, headers, bodyBase64}`)                                                                                                         |
 | `library.read`   | `library.list` | ローカルライブラリの動画一覧を取得 (`{limit?, offset?}` → ページング結果)                                                                                                                             |
-| `settings.read`  | `settings.get` | `plugin.<id>.*` キーの値を取得 (他キーは拒否)                                                                                                                                                         |
-| `settings.write` | `settings.set` | `plugin.<id>.*` キーに保存 (他キーは拒否)                                                                                                                                                             |
+| `settings.read`  | `settings.get` | `plugin:<id>:*` キーの値を取得 (他キーは拒否)                                                                                                                                                         |
+| `settings.write` | `settings.set` | `plugin:<id>:*` キーに保存 (他キーは拒否)                                                                                                                                                             |
 | `notify`         | `notify.toast` | フロント側プラグインイベントバスに `notify:toast` を emit する (`{message, kind?}` → `{pluginId, message, kind}`)。トーストを実 UI に出すかは購読側 (他プラグイン / 将来のアプリ標準 toast UI) の責務 |
 
 ## Plugin API (`activate(ctx)`)
@@ -99,7 +99,7 @@ ctx.events.on(name, fn)  // name のイベントを購読。返値の関数で o
 ctx.events.emit(name, p) // 任意名のイベントを emit (ホストが標準で listen はしない)
 
 ctx.settings.register({key, label, kind, default, ...})
-  // 設定画面の「プラグイン」セクションに項目を登録 (key は plugin.<id>.* 必須)
+  // 設定画面の「プラグイン」セクションに項目を登録 (key は plugin:<id>:* 必須)
 ctx.settings.get(key)    // 値を取得 (Promise)
 ctx.settings.set(key, v) // 値を保存 (Promise) ※ v は文字列に変換される
 
@@ -122,15 +122,16 @@ ctx.log.warn(...) / ctx.log.error(...)
 
 `ctx.events.on(name, handler)` で購読できる組込みイベント:
 
-| name                | payload                  | 発火タイミング                           |
-| ------------------- | ------------------------ | ---------------------------------------- |
-| `player:play`       | `{videoId, currentTime}` | プレイヤーが実フレーム送出を開始したとき |
-| `player:pause`      | `{videoId, currentTime}` | プレイヤーが一時停止 (ended ではない)    |
-| `player:time`       | `{videoId, currentTime}` | 200ms throttle で再生時刻更新            |
-| `player:ended`      | `{videoId}`              | 動画が自然終了 (loop 中は発火しない)     |
-| `download:start`    | `{id, videoId}`          | DL キューが downloading 状態になった     |
-| `download:complete` | `{id, videoId}`          | DL 成功で done に遷移した                |
-| `download:error`    | `{id, videoId, message}` | DL 失敗 (キャンセル含む)                 |
+| name                | payload                     | 発火タイミング                                                  |
+| ------------------- | --------------------------- | --------------------------------------------------------------- |
+| `player:play`       | `{videoId, currentTime}`    | プレイヤーが実フレーム送出を開始したとき                        |
+| `player:pause`      | `{videoId, currentTime}`    | プレイヤーが一時停止 (ended ではない)                           |
+| `player:time`       | `{videoId, currentTime}`    | 200ms throttle で再生時刻更新                                   |
+| `player:ended`      | `{videoId}`                 | 動画が自然終了 (loop 中は発火しない)                            |
+| `notify:toast`      | `{pluginId, message, kind}` | 別のプラグイン (または自分自身) が `ctx.invoke('notify.toast')` |
+| `download:start`    | `{id, videoId}`             | DL キューが downloading 状態になった                            |
+| `download:complete` | `{id, videoId}`             | DL 成功で done に遷移した                                       |
+| `download:error`    | `{id, videoId, message}`    | DL 失敗 (キャンセル含む)                                        |
 
 これら以外の名前は host からは emit されません。
 プラグイン同士の通信は `ctx.events.emit(name, payload)` で任意名を使って

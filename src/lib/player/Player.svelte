@@ -874,8 +874,14 @@
     paused = video.paused;
     if (video.paused) {
       showControls();
-      // プラグイン: 一時停止 (再生開始は onPlaying 側で emit する)
-      pluginBus.emit('player:pause', { videoId, currentTime: video.currentTime });
+      // プラグイン: 一時停止 (再生開始は onPlaying 側で emit する)。
+      // 自然終了 (video.ended=true) のときは HTMLMediaElement 仕様で
+      // pause が ended 直前に出るが、ここで emit すると plugin が
+      // "ユーザ pause" と "自然終了" を区別できなくなる
+      // (Codex #15: docs/plugins.md は ended と排他と明記)。
+      if (!video.ended) {
+        pluginBus.emit('player:pause', { videoId, currentTime: video.currentTime });
+      }
     }
     syncAudioPlayState();
     // 再生開始 = 一過性 error は無視

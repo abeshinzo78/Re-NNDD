@@ -6,9 +6,11 @@
 //! - action に対する required permission を **明示マップ** で管理する
 //!   (prefix split による誤判定を避ける)
 //! - `permissions[]` に含まれない action は permission denied
-//! - `settings.get/set` は key 先頭が `plugin.<id>.` でない場合も拒否
+//! - `settings.get/set` は key 先頭が `plugin:<id>:` でない場合も拒否
 
+use std::net::IpAddr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use serde::Deserialize;
@@ -107,10 +109,27 @@ async fn handle_net_fetch(payload: Value) -> Result<Value, DispatchError> {
             action: "net.fetch".into(),
             message: e.to_string(),
         })?;
-    if !req.url.starts_with("https://") {
+    // ----- URL/host バリデーション (SSRF 防御) -----
+    let parsed = url::Url::parse(&req.url).map_err(|e| DispatchError::InvalidPayload {
+        action: "net.fetch".into(),
+        message: format!("url parse: {e}"),
+    })?;
+    if parsed.scheme() != "https" {
         return Err(DispatchError::InvalidPayload {
             action: "net.fetch".into(),
-            message: "url must start with https://".into(),
+            message: "url must use https scheme".into(),
+        });
+    }
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| DispatchError::InvalidPayload {
+            action: "net.fetch".into(),
+            message: "url has no host".into(),
+        })?;
+    if let Some(reason) = host_is_disallowed(host) {
+        return Err(DispatchError::InvalidPayload {
+            action: "net.fetch".into(),
+            message: format!("host blocked by SSRF guard ({reason})"),
         });
     }
     let method = req.method.as_deref().unwrap_or("GET").to_uppercase();
@@ -127,13 +146,26 @@ async fn handle_net_fetch(payload: Value) -> Result<Value, DispatchError> {
             })
         }
     };
+    // ----- reqwest クライアント (timeout + redirect なし + UA 固定) -----
     let client = reqwest::Client::builder()
         .user_agent("Re-NNDD-plugin/0.1")
+        .timeout(NET_FETCH_TIMEOUT)
+        .connect_timeout(NET_FETCH_CONNECT_TIMEOUT)
+        // redirect を自動追従させると次ホップで SSRF ガードを迂回されるため
+        // 拒否。プラグインが必要なら 3xx を見て手動で再 fetch する設計。
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| DispatchError::Upstream(format!("reqwest build: {e}")))?;
-    let mut builder = client.request(method, &req.url);
+    let mut builder = client.request(method, parsed.as_str());
+    // ----- ヘッダはホワイトリスト方式で受け付ける -----
     if let Some(h) = req.headers {
         for (k, v) in h {
+            if !is_safe_request_header(&k) {
+                return Err(DispatchError::InvalidPayload {
+                    action: "net.fetch".into(),
+                    message: format!("disallowed header: {k}"),
+                });
+            }
             builder = builder.header(k, v);
         }
     }
@@ -151,16 +183,107 @@ async fn handle_net_fetch(payload: Value) -> Result<Value, DispatchError> {
             headers.insert(k.as_str().to_string(), Value::String(s.to_string()));
         }
     }
-    let bytes = resp
-        .bytes()
-        .await
-        .map_err(|e| DispatchError::Upstream(format!("read body: {e}")))?;
-    let body_b64 = BASE64.encode(&bytes);
+    // ----- body は chunked で読みつつ累積サイズを上限でガード -----
+    let mut resp = resp;
+    let mut acc: Vec<u8> = Vec::new();
+    loop {
+        match resp.chunk().await {
+            Ok(Some(chunk)) => {
+                if acc.len() + chunk.len() > NET_FETCH_MAX_BODY_BYTES {
+                    return Err(DispatchError::Upstream(format!(
+                        "response body exceeded {} bytes",
+                        NET_FETCH_MAX_BODY_BYTES
+                    )));
+                }
+                acc.extend_from_slice(&chunk);
+            }
+            Ok(None) => break,
+            Err(e) => return Err(DispatchError::Upstream(format!("read body: {e}"))),
+        }
+    }
+    let body_b64 = BASE64.encode(&acc);
     Ok(json!({
         "status": status,
         "headers": Value::Object(headers),
         "bodyBase64": body_b64
     }))
+}
+
+// ----- net.fetch ガード ヘルパ -----
+
+const NET_FETCH_TIMEOUT: Duration = Duration::from_secs(30);
+const NET_FETCH_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+/// レスポンス body の累積サイズ上限 (10 MiB)。これを超えた時点で stream を
+/// 打ち切る。zip インストーラの 50/200 MiB に比して厳しめなのは、メモリ
+/// 上にまるごと base64 化して返すための保守的な値。
+const NET_FETCH_MAX_BODY_BYTES: usize = 10 * 1024 * 1024;
+
+/// host が SSRF 危険レンジに該当するなら拒否理由を返す。`None` 通過。
+/// IP literal だけでなく文字列 "localhost" 等もここで弾く。
+/// 注: DNS 解決後に private IP に着地するケース (DNS rebinding) は
+/// reqwest 内部の解決を取れないため完全には防げない — best-effort。
+fn host_is_disallowed(host: &str) -> Option<&'static str> {
+    let lowered = host.to_ascii_lowercase();
+    // 名前ベース blocklist
+    let blocked_names = ["localhost"];
+    if blocked_names.iter().any(|b| &lowered == b) {
+        return Some("localhost literal");
+    }
+    if lowered.ends_with(".localhost") || lowered.ends_with(".local") {
+        return Some("local TLD");
+    }
+    // IP literal の解析: URL ホストは IPv6 だと `[::1]` 表記。url crate は
+    // 既に `[]` を剥がした文字列で host_str を返してくれる。
+    if let Ok(ip) = lowered.parse::<IpAddr>() {
+        if ip_is_private(ip) {
+            return Some("private/loopback IP");
+        }
+    }
+    None
+}
+
+fn ip_is_private(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => {
+            // is_global は unstable なので手書きで判定する。
+            v4.is_loopback()       // 127.0.0.0/8
+                || v4.is_private()     // 10/8, 172.16/12, 192.168/16
+                || v4.is_link_local()  // 169.254/16
+                || v4.is_broadcast()
+                || v4.is_unspecified() // 0.0.0.0
+                || v4.is_documentation()
+                || v4.octets()[0] == 100 && (v4.octets()[1] & 0xC0) == 0x40 // 100.64/10 (CGNAT)
+        }
+        IpAddr::V6(v6) => {
+            // 主要な private/loopback レンジを手書きで判定
+            v6.is_loopback()     // ::1
+                || v6.is_unspecified() // ::
+                || (v6.segments()[0] & 0xfe00) == 0xfc00 // fc00::/7 (ULA)
+                || (v6.segments()[0] & 0xffc0) == 0xfe80 // fe80::/10 (link-local)
+                // IPv4-mapped IPv6 (::ffff:0:0/96) を IPv4 として解析し直す
+                || v6.to_ipv4_mapped().map(|v4| ip_is_private(IpAddr::V4(v4))).unwrap_or(false)
+        }
+    }
+}
+
+/// プラグインが指定可能なリクエストヘッダのホワイトリスト。
+/// 値による spoofing リスクのある framing / 認証系は弾く。
+fn is_safe_request_header(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "accept"
+            | "accept-language"
+            | "accept-encoding"
+            | "cache-control"
+            | "content-type"
+            | "if-match"
+            | "if-none-match"
+            | "if-modified-since"
+            | "if-unmodified-since"
+            | "user-agent"
+            | "range"
+            | "referer"
+    )
 }
 
 // ------------------ library.list ------------------
@@ -185,7 +308,10 @@ async fn handle_library_list(
         })?
     };
     let limit = req.limit.unwrap_or(50).clamp(1, 200) as u32;
-    let offset = req.offset.unwrap_or(0).max(0) as u32;
+    // offset は i64 → u32。`as u32` だけだと巨大値で wrap-around するので
+    // 範囲を u32::MAX に clamp してから cast (lower-severity だが
+    // pagination 無限ループ防止)。
+    let offset = req.offset.unwrap_or(0).clamp(0, u32::MAX as i64) as u32;
     let q = LibraryQuery {
         q: None,
         tags: None,
@@ -241,8 +367,13 @@ struct SettingsSetReq {
     value: String,
 }
 
+/// プラグイン固有 settings キーの prefix。
+/// 区切りを `:` にすることで、plugin_id 自体に `.` が含まれていても
+/// 「他プラグインの prefix の dot-prefix になる」攻撃を防ぐ。plugin_id の
+/// charset は `[a-z0-9._-]` なので `:` は確実に分離記号として効く
+/// (PR レビュー: r3297346764 の cross-plugin access 問題)。
 fn plugin_settings_prefix(plugin_id: &str) -> String {
-    format!("plugin.{plugin_id}.")
+    format!("plugin:{plugin_id}:")
 }
 
 async fn handle_settings_get(
@@ -398,18 +529,96 @@ mod tests {
         handle_settings_set(
             &library,
             "com.example.test",
-            json!({"key": "plugin.com.example.test.k", "value": "v"}),
+            json!({"key": "plugin:com.example.test:k", "value": "v"}),
         )
         .await
         .unwrap();
         let got = handle_settings_get(
             &library,
             "com.example.test",
-            json!({"key": "plugin.com.example.test.k"}),
+            json!({"key": "plugin:com.example.test:k"}),
         )
         .await
         .unwrap();
         assert_eq!(got, Value::String("v".into()));
+    }
+
+    #[tokio::test]
+    async fn settings_dot_prefix_cross_plugin_access_blocked() {
+        // plugin id "a" が plugin id "a.b" のキー "plugin:a.b:secret" を
+        // 触れないことを確認 (Codex #1: dot-prefix で他プラグインの空間に
+        // 侵入できる問題の回帰防止)。
+        let library = mk_library();
+        let err = handle_settings_get(&library, "a", json!({"key": "plugin:a.b:secret"}))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, DispatchError::PermissionDenied { .. }));
+        let err = handle_settings_set(
+            &library,
+            "a",
+            json!({"key": "plugin:a.b:secret", "value": "x"}),
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(err, DispatchError::PermissionDenied { .. }));
+    }
+
+    #[test]
+    fn host_blocklist_blocks_loopback_and_private_v4() {
+        assert!(host_is_disallowed("127.0.0.1").is_some());
+        assert!(host_is_disallowed("10.0.0.1").is_some());
+        assert!(host_is_disallowed("172.16.0.1").is_some());
+        assert!(host_is_disallowed("172.31.0.1").is_some());
+        assert!(host_is_disallowed("192.168.1.1").is_some());
+        assert!(host_is_disallowed("169.254.169.254").is_some());
+        assert!(host_is_disallowed("0.0.0.0").is_some());
+        assert!(host_is_disallowed("100.64.0.1").is_some());
+        assert!(host_is_disallowed("localhost").is_some());
+        assert!(host_is_disallowed("foo.localhost").is_some());
+        assert!(host_is_disallowed("bar.local").is_some());
+        // 通常の public host は通る
+        assert!(host_is_disallowed("api.example.com").is_none());
+        assert!(host_is_disallowed("8.8.8.8").is_none());
+    }
+
+    #[test]
+    fn host_blocklist_blocks_loopback_and_ula_v6() {
+        assert!(host_is_disallowed("::1").is_some());
+        assert!(host_is_disallowed("::").is_some());
+        assert!(host_is_disallowed("fc00::1").is_some());
+        assert!(host_is_disallowed("fd00::1").is_some());
+        assert!(host_is_disallowed("fe80::1").is_some());
+        // IPv4-mapped private は IPv4 として再検査されて弾かれる
+        assert!(host_is_disallowed("::ffff:127.0.0.1").is_some());
+        // 通常の IPv6 (Google DNS) は通る
+        assert!(host_is_disallowed("2001:4860:4860::8888").is_none());
+    }
+
+    #[test]
+    fn safe_request_header_allowlist_basics() {
+        assert!(is_safe_request_header("Accept"));
+        assert!(is_safe_request_header("content-type"));
+        assert!(is_safe_request_header("User-Agent"));
+        // 認証 / framing は拒否
+        assert!(!is_safe_request_header("Host"));
+        assert!(!is_safe_request_header("Authorization"));
+        assert!(!is_safe_request_header("Cookie"));
+        assert!(!is_safe_request_header("Content-Length"));
+        assert!(!is_safe_request_header("X-Forwarded-For"));
+    }
+
+    #[tokio::test]
+    async fn net_fetch_blocks_private_host() {
+        let err = handle_net_fetch(json!({"url": "https://127.0.0.1/"}))
+            .await
+            .unwrap_err();
+        // 期待: InvalidPayload(message に SSRF guard 関連の語)
+        let matched = matches!(
+            &err,
+            DispatchError::InvalidPayload { message, .. }
+                if message.contains("SSRF") || message.contains("blocked")
+        );
+        assert!(matched, "expected SSRF guard InvalidPayload, got {err:?}");
     }
 
     #[tokio::test]

@@ -71,18 +71,20 @@ export type PluginPlayerAction = {
 
 /** ホストが emit する標準イベントの payload 型マップ。
  *  プラグインは `ctx.events.emit('custom:foo', payload)` で任意のイベントも
- *  emit できる (型はゆるく unknown)。 */
+ *  emit できる (型はゆるく unknown)。
+ *  注: ここに載っているイベントのみ host が実際に emit する。設計途上で
+ *  declared だが emit していなかった download:progress / library:* は型
+ *  からも削除した (Codex 別件: dead-event 型と実装の乖離)。 */
 export type StandardPluginEventMap = {
   'player:play': { videoId: string; currentTime: number };
   'player:pause': { videoId: string; currentTime: number };
   'player:time': { videoId: string; currentTime: number };
   'player:ended': { videoId: string };
   'download:start': { id: number; videoId: string };
-  'download:progress': { id: number; videoId: string; pct: number };
   'download:complete': { id: number; videoId: string };
   'download:error': { id: number; videoId: string; message: string };
-  'library:videoAdded': { videoId: string };
-  'library:videoRemoved': { videoId: string };
+  /** dispatcher の notify.toast から発火される (`{pluginId, message, kind}`)。 */
+  'notify:toast': { pluginId: string; message: string; kind: string };
 };
 
 /** プラグインに渡す context。`activate(ctx)` で受け取る。 */

@@ -42,9 +42,16 @@ impl PluginRuntime {
             .insert(id.to_string(), PluginEntry { manifest, enabled });
     }
 
-    pub fn set_enabled(&self, id: &str, enabled: bool) {
+    /// `id` が runtime cache に存在しないと silent no-op になり DB と乖離する
+    /// (Codex #11) ため、true/false を返して呼出側に判定させる。
+    /// 戻値 true = 反映済み、false = cache miss (DB に存在しても runtime に
+    /// 入っていない壊れた manifest 等)。
+    pub fn set_enabled(&self, id: &str, enabled: bool) -> bool {
         if let Some(entry) = self.inner.write().get_mut(id) {
             entry.enabled = enabled;
+            true
+        } else {
+            false
         }
     }
 
@@ -124,10 +131,16 @@ mod tests {
         let got = r.get("a").unwrap();
         assert!(got.enabled);
         assert_eq!(got.manifest.id, "a");
-        r.set_enabled("a", false);
+        assert!(r.set_enabled("a", false));
         assert!(!r.get("a").unwrap().enabled);
         r.remove("a");
         assert!(r.get("a").is_none());
+    }
+
+    #[test]
+    fn set_enabled_returns_false_on_cache_miss() {
+        let r = PluginRuntime::default();
+        assert!(!r.set_enabled("missing", true));
     }
 
     #[test]

@@ -68,12 +68,28 @@ pub struct InstallResult {
     pub installed_at: PathBuf,
 }
 
+/// ZIP ファイル全体の上限 (MAX_TOTAL_BYTES と同値)。`tokio::fs::read` で
+/// 全バイトを slurp する前に metadata() でサイズチェックを行い、巨大ファイル
+/// による OOM を防ぐ (Codex review r3297741207 関連)。
+const MAX_ZIP_FILE_BYTES: u64 = MAX_TOTAL_BYTES;
+
 pub async fn install_from_zip_path(
     plugins_root: &Path,
     zip_path: &Path,
     replace: bool,
     app_version: &str,
 ) -> Result<InstallResult, InstallError> {
+    // 全バイトをメモリに展開する前にファイルサイズで上限チェックする。
+    let meta = tokio::fs::metadata(zip_path).await?;
+    if meta.len() > MAX_ZIP_FILE_BYTES {
+        return Err(InstallError::SizeLimit {
+            reason: format!(
+                "zip file size {} exceeds limit {}",
+                meta.len(),
+                MAX_ZIP_FILE_BYTES
+            ),
+        });
+    }
     let bytes = tokio::fs::read(zip_path).await?;
     install_from_zip_bytes(plugins_root, &bytes, replace, app_version)
 }
@@ -213,6 +229,11 @@ pub fn uninstall(plugins_root: &Path, plugin_id: &str) -> Result<(), InstallErro
     if !crate::plugins::manifest::is_valid_plugin_id(plugin_id) {
         return Err(InstallError::UnsafePath(plugin_id.to_string()));
     }
+    // 同一プラグインへの install と直列化する。install と uninstall が
+    // 同時に走ると、install の rename(tmp → target) 直後に
+    // uninstall が target を削除し、runtime cache が指すディレクトリが
+    // 消える race がある (Codex review r3297535062 関連 + Codex #7)。
+    let _guard = INSTALL_MUTEX.lock();
     let target = plugins_root.join(plugin_id);
     if target.exists() {
         std::fs::remove_dir_all(&target)?;

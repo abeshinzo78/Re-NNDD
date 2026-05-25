@@ -24,6 +24,24 @@ type RustEventEnvelope = {
   payload: unknown;
 };
 
+/** Rust → JS プラグインイベント橋渡しを idempotent に attach する。
+ *  bootstrap 経路だけでなく enable/disable 経路からも呼ばれる: 初回 bootstrap
+ *  で listen() が拒否された場合でも、後続の操作タイミングで再試行できる
+ *  (Codex #10)。失敗しても throw しない (catch して console.error にとどめる)。 */
+async function ensureEventBridge(): Promise<void> {
+  if (bridgeUnlisten) return;
+  try {
+    bridgeUnlisten = await listen<RustEventEnvelope>('nndd:plugin:event', (ev) => {
+      const env = ev.payload;
+      if (env && typeof env === 'object' && typeof env.name === 'string') {
+        bus.emit(env.name, env.payload);
+      }
+    });
+  } catch (e) {
+    console.error('[plugin] failed to attach event bridge:', e);
+  }
+}
+
 /** 起動時に呼ぶ。多重呼び出しは安全 (idempotent)。
  *  初期リスト取得が失敗した場合は bootstrap 済みフラグを立てず、後続の
  *  retry を許可する (Codex review #4: 一過性エラーでセッション中ずっと
@@ -38,20 +56,7 @@ export async function bootstrapPluginHost(): Promise<void> {
       return;
     }
 
-    // Rust → JS のプラグインイベント橋渡しは 1 度だけ張る (リトライで多重
-    // listen にならないよう、bridgeUnlisten がある場合は skip)。
-    if (!bridgeUnlisten) {
-      try {
-        bridgeUnlisten = await listen<RustEventEnvelope>('nndd:plugin:event', (ev) => {
-          const env = ev.payload;
-          if (env && typeof env === 'object' && typeof env.name === 'string') {
-            bus.emit(env.name, env.payload);
-          }
-        });
-      } catch (e) {
-        console.error('[plugin] failed to attach event bridge:', e);
-      }
-    }
+    await ensureEventBridge();
 
     let installed: Awaited<ReturnType<typeof pluginListInstalled>>;
     try {
@@ -83,6 +88,15 @@ export async function bootstrapPluginHost(): Promise<void> {
  *  検出して DB enable を rollback したうえで throw する
  *  (Codex review r3297741213)。 */
 export async function enablePlugin(info: import('./types').PluginInfo): Promise<void> {
+  // キルスイッチが OFF のときは plugin code を 1 byte も実行させない
+  // (Codex #2: bootstrap 経路でしかチェックしていなかった抜け穴)。
+  if (!getBool('plugins.enabled')) {
+    throw new Error(
+      'プラグイン機構が無効化されています (設定 → 高度な設定 → プラグイン機構を有効にする)。',
+    );
+  }
+  // 既存セッションでイベント橋が attach できなかった可能性をリトライ。
+  await ensureEventBridge();
   await pluginSetEnabled(info.pluginId, true);
   await loader.loadPlugin({ ...info, enabled: true });
   const state = loader.getLoadState(info.pluginId);
@@ -104,6 +118,8 @@ export async function enablePlugin(info: import('./types').PluginInfo): Promise<
  *  ので、呼出側 (settings UI) は plugin の状態が変わっていないことを前提に
  *  リトライできる。 */
 export async function disablePlugin(pluginId: string): Promise<void> {
+  // 橋が attach できていない可能性をリトライ (Codex #10)。
+  await ensureEventBridge();
   await pluginSetEnabled(pluginId, false);
   await loader.unloadPlugin(pluginId);
 }
