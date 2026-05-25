@@ -36,6 +36,11 @@ pub const MIGRATIONS: &[Migration] = &[
         name: "ss_shorts",
         sql: include_str!("schema/m004_ss_shorts.sql"),
     },
+    Migration {
+        version: 5,
+        name: "plugins",
+        sql: include_str!("schema/m005_plugins.sql"),
+    },
 ];
 
 /// Apply pending migrations. Idempotent — safe to call on every startup.
@@ -148,6 +153,7 @@ mod tests {
             "ng_rules",
             "download_queue",
             "settings",
+            "plugins",
             "schema_version",
         ];
         for name in names {

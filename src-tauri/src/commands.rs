@@ -1468,6 +1468,13 @@ pub async fn start_download(
         item.video_id
     };
 
+    // プラグイン: ダウンロード開始通知 (listener 0 で no-op)。
+    crate::plugins::emit_event(
+        &app,
+        "download:start",
+        serde_json::json!({ "id": id, "videoId": video_id }),
+    );
+
     let (cancel_tx, cancel_rx) = watch::channel(false);
     tasks.insert(id, cancel_tx);
 
@@ -1494,8 +1501,23 @@ pub async fn start_download(
         let conn = library.lock().await;
         match result {
             Ok(()) => {
-                if let Err(e) = queue::mark_status(&conn, id, "done") {
-                    tracing::error!(error = %e, queue_id = id, "failed to mark done");
+                // mark_status が失敗した場合は plugins に download:complete を
+                // 送らない (Codex #5 P2: キュー行が done に永続化されていない
+                // のに完了通知だけが届くと、プラグインの内部状態が DB と乖離)。
+                let mark_ok = match queue::mark_status(&conn, id, "done") {
+                    Ok(_) => true,
+                    Err(e) => {
+                        tracing::error!(error = %e, queue_id = id, "failed to mark done");
+                        false
+                    }
+                };
+                drop(conn);
+                if mark_ok {
+                    crate::plugins::emit_event(
+                        &app_for_task,
+                        "download:complete",
+                        serde_json::json!({ "id": id, "videoId": video_id }),
+                    );
                 }
             }
             Err(e) => {
@@ -1509,6 +1531,13 @@ pub async fn start_download(
                 if let Err(e2) = queue::mark_error(&conn, id, &msg) {
                     tracing::error!(error = %e2, queue_id = id, "failed to mark error");
                 }
+                drop(conn);
+                // プラグイン: ダウンロード失敗通知
+                crate::plugins::emit_event(
+                    &app_for_task,
+                    "download:error",
+                    serde_json::json!({ "id": id, "videoId": video_id, "message": msg }),
+                );
             }
         }
         tasks.remove(id);

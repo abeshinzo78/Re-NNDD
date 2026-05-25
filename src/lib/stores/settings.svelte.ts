@@ -225,6 +225,18 @@ export const SETTING_DEFS = [
     ],
     order: 10,
   },
+  // プラグイン機構のマスターキルスイッチ。OFF にすると bootstrapPluginHost()
+  // が即 return し、有効化されているプラグインも一切ロードされない (=
+  // プラグイン機構導入前と完全に同一の挙動になる)。再起動不要 (次回起動から効く)。
+  {
+    key: 'plugins.enabled',
+    label: 'プラグイン機構を有効にする',
+    description: 'OFF にするとインストール済みプラグインも一切ロードされない (再起動で反映)',
+    section: 'advanced',
+    default: true,
+    kind: 'bool',
+    order: 90,
+  },
 ] as const satisfies readonly SettingDef<unknown>[];
 
 export type SettingKey = (typeof SETTING_DEFS)[number]['key'];

@@ -4,6 +4,7 @@ pub mod downloader;
 pub mod error;
 pub mod library;
 pub mod local_server;
+pub mod plugins;
 
 use std::sync::Arc;
 
@@ -13,6 +14,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilte
 use crate::api::auth::SessionStore;
 use crate::library::db::LibraryHandle;
 use crate::local_server::LocalServer;
+use crate::plugins::runtime::PluginRuntime;
 
 fn init_tracing() {
     // Default verbosity: app + web bridge at debug, everything else at info.
@@ -31,10 +33,14 @@ pub fn run() {
 
     let session = Arc::new(SessionStore::default());
 
+    let plugin_runtime: Arc<PluginRuntime> = Arc::new(PluginRuntime::default());
+
     if let Err(err) = tauri::Builder::default()
         .manage(Arc::clone(&session))
         .manage(commands::DownloadTasks::default())
+        .manage(Arc::clone(&plugin_runtime))
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(move |app| {
             // app_data_dir() は実行プロファイル（dev/prod）と OS で
             // 自動的に切り替わるので、ここで一度だけ解決して library.db を
@@ -54,7 +60,7 @@ pub fn run() {
                 session.load_from_db(&conn);
             }
 
-            app.manage(library);
+            app.manage(Arc::clone(&library));
 
             // ローカル HTTP サーバを起動（DL 済み動画の Range 配信用）
             let videos_root = data_dir.join("videos");
@@ -62,6 +68,22 @@ pub fn run() {
             let port =
                 local_server::start(videos_root).map_err(|e| format!("local server start: {e}"))?;
             app.manage(LocalServer { port });
+
+            // プラグインランタイムを DB から **同期的に** 初期ロードする。
+            // 起動直後に呼ばれる plugin_invoke が runtime 未 populate を見て
+            // UnknownPlugin/Disabled エラーを返すレースを防ぐため、Tauri が
+            // invoke を受け付け始める前にここで完了させる。失敗してもアプリ
+            // 起動は止めない (プラグイン無しで通常起動を継続)。
+            let plugins_dir = data_dir.join("plugins");
+            if let Err(e) = std::fs::create_dir_all(&plugins_dir) {
+                tracing::warn!(error = %e, "could not create plugins dir");
+            }
+            {
+                let conn = library.blocking_lock();
+                if let Err(e) = plugin_runtime.reload_from_db(&conn) {
+                    tracing::error!(error = %e, "plugin runtime initial load failed");
+                }
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -126,6 +148,13 @@ pub fn run() {
             commands::search_short_ranking,
             commands::fetch_video_html,
             commands::fetch_related_videos,
+            // ----- プラグイン (フロント拡張機能) -----
+            plugins::commands::plugin_list_installed,
+            plugins::commands::plugin_get_manifest,
+            plugins::commands::plugin_install_from_zip,
+            plugins::commands::plugin_uninstall,
+            plugins::commands::plugin_set_enabled,
+            plugins::commands::plugin_invoke,
         ])
         .run(tauri::generate_context!())
     {

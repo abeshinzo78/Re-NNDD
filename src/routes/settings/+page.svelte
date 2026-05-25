@@ -20,6 +20,11 @@
     type SettingDef,
     type SettingKey,
   } from '$lib/stores/settings.svelte';
+  import { pluginInstallFromZip, pluginListInstalled, pluginUninstall } from '$lib/plugins/api';
+  import { disablePlugin, enablePlugin } from '$lib/plugins/host';
+  import { pluginSettingDefs } from '$lib/plugins/registry';
+  import type { PluginInfo } from '$lib/plugins/types';
+  import { open as openDialog } from '@tauri-apps/plugin-dialog';
 
   // ========= アカウント =========
   let loggedIn = $state(false);
@@ -57,6 +62,7 @@
     await loadSettings();
     void refresh();
     void refreshAppInfo();
+    void refreshPlugins();
   });
 
   function summarizeLogin(result: LoginResult): { kind: 'ok' | 'warn' | 'error'; text: string } {
@@ -192,7 +198,123 @@
     { id: 'library', label: 'ライブラリ', description: 'DL 済み一覧の表示' },
     { id: 'appearance', label: '外観' },
     { id: 'advanced', label: '高度な設定' },
+    { id: 'plugins', label: 'プラグイン', description: 'インストール済みプラグインの管理' },
   ];
+
+  // ========= プラグイン管理 =========
+  let plugins = $state<PluginInfo[]>([]);
+  let pluginsLoaded = $state(false);
+  let pluginBusyId = $state<string | null>(null);
+  let pluginMessage = $state<{ kind: 'ok' | 'warn' | 'error'; text: string } | null>(null);
+
+  async function refreshPlugins() {
+    try {
+      plugins = await pluginListInstalled();
+      pluginsLoaded = true;
+    } catch (e) {
+      pluginMessage = { kind: 'error', text: `プラグイン一覧の取得失敗: ${e}` };
+    }
+  }
+
+  async function handlePluginToggle(info: PluginInfo, next: boolean) {
+    pluginBusyId = info.pluginId;
+    pluginMessage = null;
+    try {
+      if (next) {
+        await enablePlugin(info);
+      } else {
+        await disablePlugin(info.pluginId);
+      }
+      await refreshPlugins();
+      pluginMessage = {
+        kind: 'ok',
+        text: next
+          ? `${info.name} を有効化しました (リロードで反映されることがあります)`
+          : `${info.name} を無効化しました`,
+      };
+    } catch (e) {
+      pluginMessage = { kind: 'error', text: `操作失敗: ${e}` };
+    } finally {
+      pluginBusyId = null;
+    }
+  }
+
+  async function handlePluginUninstall(info: PluginInfo) {
+    if (!confirm(`プラグイン「${info.name}」をアンインストールします。よろしいですか?`)) return;
+    pluginBusyId = info.pluginId;
+    pluginMessage = null;
+    try {
+      // 無効化してからアンインストール (loaded module を確実に解除)。
+      // disable が失敗した場合はここで中止する — 続行すると DB/ファイルだけ
+      // 消えて in-memory に loaded module/寄与だけが残る "幽霊" 状態に
+      // なる (Codex review r3297638380)。
+      if (info.enabled) {
+        try {
+          await disablePlugin(info.pluginId);
+        } catch (e) {
+          pluginMessage = {
+            kind: 'error',
+            text: `無効化に失敗したためアンインストールを中止しました: ${e}`,
+          };
+          return;
+        }
+      }
+      await pluginUninstall(info.pluginId);
+      await refreshPlugins();
+      pluginMessage = { kind: 'ok', text: `${info.name} をアンインストールしました` };
+    } catch (e) {
+      pluginMessage = { kind: 'error', text: `アンインストール失敗: ${e}` };
+    } finally {
+      pluginBusyId = null;
+    }
+  }
+
+  async function handlePluginInstallZip() {
+    pluginMessage = null;
+    try {
+      const selected = await openDialog({
+        multiple: false,
+        directory: false,
+        filters: [{ name: 'Plugin ZIP', extensions: ['zip'] }],
+      });
+      if (!selected || Array.isArray(selected)) return;
+      const installed = await tryInstall(selected, false);
+      pluginMessage = {
+        kind: 'ok',
+        text: `${installed.name} (${installed.version}) をインストールしました。設定の「有効化」をオンにすると次回ロードされます。`,
+      };
+      await refreshPlugins();
+    } catch (e) {
+      const msg = String(e);
+      if (msg.includes('already installed')) {
+        // 同 ID が既に存在 → 上書き確認
+        if (confirm('同じ ID のプラグインが既にインストールされています。上書きしますか?')) {
+          try {
+            const selected = await openDialog({
+              multiple: false,
+              directory: false,
+              filters: [{ name: 'Plugin ZIP', extensions: ['zip'] }],
+            });
+            if (!selected || Array.isArray(selected)) return;
+            const installed = await tryInstall(selected, true);
+            pluginMessage = {
+              kind: 'ok',
+              text: `${installed.name} を上書きインストールしました`,
+            };
+            await refreshPlugins();
+          } catch (e2) {
+            pluginMessage = { kind: 'error', text: `上書き失敗: ${e2}` };
+          }
+        }
+      } else {
+        pluginMessage = { kind: 'error', text: `インストール失敗: ${e}` };
+      }
+    }
+  }
+
+  async function tryInstall(path: string, replace: boolean): Promise<PluginInfo> {
+    return await pluginInstallFromZip(path, replace);
+  }
 
   function defsForSection(id: string) {
     return [...SETTING_DEFS].filter((d) => d.section === id).sort((a, b) => a.order - b.order);
@@ -236,73 +358,175 @@
           <h3>{section.label}</h3>
           {#if section.description}<p class="hint">{section.description}</p>{/if}
         </header>
-        <div class="settings-list">
-          {#each defsForSection(section.id) as def_raw (def_raw.key)}
-            {@const def = def_raw as SettingDef<unknown>}
-            {@const k = def.key as SettingKey}
-            {@const cur = get(k)}
-            <div class="setting-row" class:overridden={isOverridden(def)}>
-              <div class="setting-label">
-                <label for={`set-${def.key}`}>{def.label}</label>
-                {#if def.description}<div class="hint">{def.description}</div>{/if}
-              </div>
-              <div class="setting-control">
-                {#if def.kind === 'bool'}
-                  <label class="switch">
-                    <input
-                      id={`set-${def.key}`}
-                      type="checkbox"
-                      checked={cur as boolean}
-                      onchange={(e) =>
-                        onSettingChange(k, (e.currentTarget as HTMLInputElement).checked)}
-                    />
-                    <span class="switch-thumb"></span>
-                  </label>
-                {:else if def.kind === 'number'}
-                  <input
-                    id={`set-${def.key}`}
-                    type="number"
-                    min={def.min}
-                    max={def.max}
-                    step={def.step}
-                    value={cur as number}
-                    onchange={(e) => {
-                      const v = Number((e.currentTarget as HTMLInputElement).value);
-                      if (Number.isFinite(v)) onSettingChange(k, v);
-                    }}
-                  />
-                {:else if def.kind === 'select' && def.options}
-                  <select
-                    id={`set-${def.key}`}
-                    value={String(cur)}
-                    onchange={(e) =>
-                      onSettingChange(k, (e.currentTarget as HTMLSelectElement).value)}
-                  >
-                    {#each def.options as opt (opt.value)}
-                      <option value={opt.value}>{opt.label}</option>
-                    {/each}
-                  </select>
-                {:else}
-                  <input
-                    id={`set-${def.key}`}
-                    type="text"
-                    value={String(cur)}
-                    onchange={(e) =>
-                      onSettingChange(k, (e.currentTarget as HTMLInputElement).value)}
-                  />
-                {/if}
-                {#if isOverridden(def)}
-                  <button
-                    type="button"
-                    class="reset-btn"
-                    title="既定値に戻す"
-                    onclick={() => onSettingReset(k)}>↺</button
-                  >
-                {/if}
+        {#if section.id === 'plugins'}
+          <!-- ===== プラグイン管理 (custom render) ===== -->
+          {#if pluginMessage}
+            <div class="msg {pluginMessage.kind}" style="margin-bottom:12px">
+              {pluginMessage.text}
+            </div>
+          {/if}
+          <div class="plugin-toolbar">
+            <button type="button" class="primary" onclick={handlePluginInstallZip}>
+              ZIP からインストール
+            </button>
+            <button type="button" class="link" onclick={refreshPlugins}>再読み込み</button>
+          </div>
+
+          {#if !pluginsLoaded}
+            <p class="muted">プラグイン一覧を読み込み中…</p>
+          {:else if plugins.length === 0}
+            <p class="muted">インストール済みプラグインはありません。</p>
+          {:else}
+            <ul class="plugin-list">
+              {#each plugins as p (p.pluginId)}
+                <li class="plugin-row" class:enabled={p.enabled}>
+                  <div class="plugin-main">
+                    <div class="plugin-name">
+                      {p.name}
+                      <span class="plugin-version">v{p.version}</span>
+                    </div>
+                    <div class="plugin-id"><code>{p.pluginId}</code></div>
+                    {#if p.description}<div class="plugin-desc hint">{p.description}</div>{/if}
+                    {#if p.permissions.length > 0}
+                      <div class="plugin-perms">
+                        {#each p.permissions as perm (perm)}
+                          <span class="perm-chip">{perm}</span>
+                        {/each}
+                      </div>
+                    {/if}
+                    {#if p.author || p.homepage}
+                      <div class="plugin-meta hint">
+                        {#if p.author}<span>{p.author}</span>{/if}
+                        {#if p.homepage}
+                          <a href={p.homepage} target="_blank" rel="noreferrer noopener"
+                            >{p.homepage}</a
+                          >
+                        {/if}
+                      </div>
+                    {/if}
+                  </div>
+                  <div class="plugin-actions">
+                    <label class="switch" title={p.enabled ? '無効化' : '有効化'}>
+                      <input
+                        type="checkbox"
+                        checked={p.enabled}
+                        disabled={pluginBusyId === p.pluginId}
+                        onchange={(e) =>
+                          handlePluginToggle(p, (e.currentTarget as HTMLInputElement).checked)}
+                      />
+                      <span class="switch-thumb"></span>
+                    </label>
+                    <button
+                      type="button"
+                      class="link danger"
+                      disabled={pluginBusyId === p.pluginId}
+                      onclick={() => handlePluginUninstall(p)}
+                    >
+                      アンインストール
+                    </button>
+                  </div>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+
+          <!-- プラグインが register した設定項目 (有効プラグインのみ表示される) -->
+          {#if pluginSettingDefs().length > 0}
+            <div class="plugin-settings" style="margin-top:16px">
+              <h4 class="hint" style="margin:0 0 8px">プラグインが追加した設定</h4>
+              <div class="settings-list">
+                {#each pluginSettingDefs() as pdef (pdef.key)}
+                  <div class="setting-row">
+                    <div class="setting-label">
+                      <label for={`pset-${pdef.key}`}>{pdef.label}</label>
+                      {#if pdef.description}<div class="hint">{pdef.description}</div>{/if}
+                      <div class="hint"><code>{pdef.key}</code></div>
+                    </div>
+                    <div class="setting-control hint">
+                      <!-- MVP: 実値の get/set はプラグイン側 ctx.settings.get/set 経由。
+                         ここでは項目の存在告知のみ。次バージョンで編集 UI を追加予定。 -->
+                      <span>kind: {pdef.kind}</span>
+                    </div>
+                  </div>
+                {/each}
               </div>
             </div>
-          {/each}
-        </div>
+          {/if}
+
+          <p class="hint" style="margin-top:16px">
+            <strong>注意:</strong> プラグインはアプリと同じ権限でレンダラ realm 内で動作します。 信頼できる提供元のプラグインのみインストールしてください。
+            プラグイン機構を完全に停止したい場合は「高度な設定」→「プラグイン機構を有効にする」を OFF
+            にしてください (再起動で反映)。
+          </p>
+        {:else}
+          <div class="settings-list">
+            {#each defsForSection(section.id) as def_raw (def_raw.key)}
+              {@const def = def_raw as SettingDef<unknown>}
+              {@const k = def.key as SettingKey}
+              {@const cur = get(k)}
+              <div class="setting-row" class:overridden={isOverridden(def)}>
+                <div class="setting-label">
+                  <label for={`set-${def.key}`}>{def.label}</label>
+                  {#if def.description}<div class="hint">{def.description}</div>{/if}
+                </div>
+                <div class="setting-control">
+                  {#if def.kind === 'bool'}
+                    <label class="switch">
+                      <input
+                        id={`set-${def.key}`}
+                        type="checkbox"
+                        checked={cur as boolean}
+                        onchange={(e) =>
+                          onSettingChange(k, (e.currentTarget as HTMLInputElement).checked)}
+                      />
+                      <span class="switch-thumb"></span>
+                    </label>
+                  {:else if def.kind === 'number'}
+                    <input
+                      id={`set-${def.key}`}
+                      type="number"
+                      min={def.min}
+                      max={def.max}
+                      step={def.step}
+                      value={cur as number}
+                      onchange={(e) => {
+                        const v = Number((e.currentTarget as HTMLInputElement).value);
+                        if (Number.isFinite(v)) onSettingChange(k, v);
+                      }}
+                    />
+                  {:else if def.kind === 'select' && def.options}
+                    <select
+                      id={`set-${def.key}`}
+                      value={String(cur)}
+                      onchange={(e) =>
+                        onSettingChange(k, (e.currentTarget as HTMLSelectElement).value)}
+                    >
+                      {#each def.options as opt (opt.value)}
+                        <option value={opt.value}>{opt.label}</option>
+                      {/each}
+                    </select>
+                  {:else}
+                    <input
+                      id={`set-${def.key}`}
+                      type="text"
+                      value={String(cur)}
+                      onchange={(e) =>
+                        onSettingChange(k, (e.currentTarget as HTMLInputElement).value)}
+                    />
+                  {/if}
+                  {#if isOverridden(def)}
+                    <button
+                      type="button"
+                      class="reset-btn"
+                      title="既定値に戻す"
+                      onclick={() => onSettingReset(k)}>↺</button
+                    >
+                  {/if}
+                </div>
+              </div>
+            {/each}
+          </div>
+        {/if}
       </div>
     {/each}
   {/if}
@@ -752,5 +976,82 @@
     border-radius: 3px;
     padding: 0 4px;
     font-size: 12px;
+  }
+  /* ===== プラグイン管理 (section.id === 'plugins') ===== */
+  .plugin-toolbar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+  .plugin-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .plugin-row {
+    display: flex;
+    gap: 12px;
+    padding: 12px;
+    border: 1px solid var(--theme-border);
+    border-radius: 8px;
+    background: var(--theme-surface-3);
+  }
+  .plugin-row.enabled {
+    border-color: var(--theme-success-border);
+  }
+  .plugin-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .plugin-name {
+    font-weight: 600;
+    color: var(--theme-text);
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+  .plugin-version {
+    font-size: 12px;
+    color: var(--theme-text-muted);
+    font-weight: 400;
+  }
+  .plugin-id {
+    font-size: 12px;
+    color: var(--theme-text-muted);
+  }
+  .plugin-desc {
+    font-size: 13px;
+  }
+  .plugin-perms {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 4px;
+  }
+  .perm-chip {
+    background: var(--theme-chip-bg);
+    color: var(--theme-chip-text);
+    border-radius: 999px;
+    font-size: 11px;
+    padding: 2px 8px;
+  }
+  .plugin-meta {
+    display: flex;
+    gap: 8px;
+    font-size: 12px;
+  }
+  .plugin-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+    flex-shrink: 0;
   }
 </style>

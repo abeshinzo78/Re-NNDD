@@ -21,6 +21,12 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-shell = "2"
+tauri-plugin-dialog = "2"
+
+# Plugin host: ZIP インストーラ / minAppVersion semver チェック。
+# どちらも MIT/Apache-2.0 で deny.toml 既存の許可リストに収まる。
+zip = { version = "0.6", default-features = false, features = ["deflate"] }
+semver = "1"
 
 # Async / runtime
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "fs", "io-util", "process"] }

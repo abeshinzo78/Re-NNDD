@@ -1,15 +1,35 @@
 <script lang="ts">
   import { page } from '$app/state';
   import { onMount } from 'svelte';
+  import { SvelteSet } from 'svelte/reactivity';
   import { installConsoleBridge } from '$lib/consoleBridge';
   import { getStr, loadSettings } from '$lib/stores/settings.svelte';
   import MiniPlayer from '$lib/player/MiniPlayer.svelte';
+  import { bootstrapPluginHost } from '$lib/plugins/host';
+  import { pluginNavEntries } from '$lib/plugins/registry';
 
   let { children } = $props();
 
   onMount(() => {
     installConsoleBridge();
-    void loadSettings();
+    // プラグインホストの bootstrap は loadSettings 成功後にのみ走らせる
+    // (Codex review r3297741199: loadSettings 失敗時に default の
+    // `plugins.enabled=true` で fall back されると、ユーザが OFF にしていた
+    // セッションでもプラグインが load されキルスイッチが破られる)。
+    // 失敗時は fail-closed — プラグインを一切ロードしない。
+    void (async () => {
+      try {
+        await loadSettings();
+      } catch (e) {
+        console.error('[layout] loadSettings failed — plugin host not started (fail-closed):', e);
+        return;
+      }
+      try {
+        await bootstrapPluginHost();
+      } catch (e) {
+        console.error('[layout] bootstrapPluginHost failed:', e);
+      }
+    })();
   });
 
   const sections = [
@@ -23,6 +43,28 @@
     { href: '/ng', label: 'NG' },
     { href: '/settings', label: '設定' },
   ];
+
+  // プラグイン寄与ナビは built-in の後ろに append。プラグイン未インストール
+  // 時は pluginNavEntries() が [] を返すので、DOM はプラグイン機構導入前と
+  // 完全同一になる。href 重複は keyed each の collision を引き起こすので
+  // 線形 dedup する (Codex review r3297741222)。先勝ち (built-in 優先)。
+  let allSections = $derived.by(() => {
+    // .svelte ファイル内の `new Set` は svelte/prefer-svelte-reactivity が
+    // SvelteSet を要求するため、ローカルな derived 内でも SvelteSet を使う。
+    const seen = new SvelteSet(sections.map((s) => s.href));
+    const out = [...sections];
+    for (const entry of pluginNavEntries()) {
+      if (seen.has(entry.href)) {
+        console.warn(
+          `[plugin nav] href ${entry.href} はすでに登録されています。重複エントリは無視します。`,
+        );
+        continue;
+      }
+      seen.add(entry.href);
+      out.push(entry);
+    }
+    return out;
+  });
 
   let canGoBack = $derived(
     page.url.pathname !== '/' &&
@@ -52,7 +94,7 @@
       <button class="back-btn" onclick={() => history.back()}>← 戻る</button>
     {/if}
     <nav>
-      {#each sections as section (section.href)}
+      {#each allSections as section (section.href)}
         <a class="nav-item" class:active={page.url.pathname === section.href} href={section.href}
           >{section.label}</a
         >
