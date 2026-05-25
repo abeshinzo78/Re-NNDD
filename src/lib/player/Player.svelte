@@ -11,6 +11,8 @@
   import { extractOnlineFrame, extractVideoFrame } from '$lib/api';
   import { getBool, getNum } from '$lib/stores/settings.svelte';
   import { readSavedMuted, readSavedVolume, saveMuted, saveVolume } from './volumePersistence';
+  import * as pluginBus from '$lib/plugins/eventBus';
+  import { pluginPlayerActions } from '$lib/plugins/registry';
 
   type Props = {
     /** HLS playlist URL（ストリーミング用）。`localSrc` を渡すならこちらは空文字でよい */
@@ -772,6 +774,8 @@
       paused = true;
       showControls();
       onEndedExternal?.();
+      // プラグイン: 動画自然終了 (loop 中は除く)
+      pluginBus.emit('player:ended', { videoId });
     }
   }
 
@@ -786,6 +790,8 @@
     lastTimeUpdateTs = now;
     currentTime = video.currentTime;
     onTime?.(video.currentTime);
+    // プラグイン: 再生時刻更新 (既存 200ms スロットルに乗る)
+    pluginBus.emit('player:time', { videoId, currentTime: video.currentTime });
     maybeCorrectDrift();
     if (
       abLoop.enabled &&
@@ -858,11 +864,19 @@
       audioHandoffSignaled = true;
       onReadyForAudio?.();
     }
+    // プラグイン: 再生開始
+    if (video) {
+      pluginBus.emit('player:play', { videoId, currentTime: video.currentTime });
+    }
   }
   function onPlayState() {
     if (!video) return;
     paused = video.paused;
-    if (video.paused) showControls();
+    if (video.paused) {
+      showControls();
+      // プラグイン: 一時停止 (再生開始は onPlaying 側で emit する)
+      pluginBus.emit('player:pause', { videoId, currentTime: video.currentTime });
+    }
     syncAudioPlayState();
     // 再生開始 = 一過性 error は無視
     if (!video.paused) {
@@ -954,6 +968,12 @@
     // 別途登録する。
     let unbindShortcuts: (() => void) | null = null;
     if (!compact) {
+      // プラグインの key 要求を Record<key, handler> に畳む。組込みショートカット
+      // 優先 (shortcuts.ts 側 switch の default 節で検証) なので、安全に append できる。
+      const pluginKeys: Record<string, () => void> = {};
+      for (const a of pluginPlayerActions()) {
+        if (a.key) pluginKeys[a.key] = () => void a.handler();
+      }
       const actions: PlayerActions = {
         togglePlay,
         seekDelta,
@@ -967,6 +987,7 @@
         volumeDelta: (d) => setVolume((video?.volume ?? volume) + d),
         frameStep,
         togglePip: onTogglePip ? () => onTogglePip?.() : undefined,
+        pluginKeys: Object.keys(pluginKeys).length > 0 ? pluginKeys : undefined,
       };
       unbindShortcuts = bindShortcuts(window, actions);
     }
@@ -1138,6 +1159,7 @@
         onFullscreen={toggleFullscreen}
         onQuality={setQuality}
         onTogglePip={() => onTogglePip?.()}
+        pluginActions={pluginPlayerActions()}
       />
     </div>
   {/if}

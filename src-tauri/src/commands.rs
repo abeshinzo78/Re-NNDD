@@ -1468,6 +1468,13 @@ pub async fn start_download(
         item.video_id
     };
 
+    // プラグイン: ダウンロード開始通知 (listener 0 で no-op)。
+    crate::plugins::emit_event(
+        &app,
+        "download:start",
+        serde_json::json!({ "id": id, "videoId": video_id }),
+    );
+
     let (cancel_tx, cancel_rx) = watch::channel(false);
     tasks.insert(id, cancel_tx);
 
@@ -1497,6 +1504,13 @@ pub async fn start_download(
                 if let Err(e) = queue::mark_status(&conn, id, "done") {
                     tracing::error!(error = %e, queue_id = id, "failed to mark done");
                 }
+                drop(conn);
+                // プラグイン: ダウンロード完了通知
+                crate::plugins::emit_event(
+                    &app_for_task,
+                    "download:complete",
+                    serde_json::json!({ "id": id, "videoId": video_id }),
+                );
             }
             Err(e) => {
                 let msg = e.to_string();
@@ -1509,6 +1523,13 @@ pub async fn start_download(
                 if let Err(e2) = queue::mark_error(&conn, id, &msg) {
                     tracing::error!(error = %e2, queue_id = id, "failed to mark error");
                 }
+                drop(conn);
+                // プラグイン: ダウンロード失敗通知
+                crate::plugins::emit_event(
+                    &app_for_task,
+                    "download:error",
+                    serde_json::json!({ "id": id, "videoId": video_id, "message": msg }),
+                );
             }
         }
         tasks.remove(id);

@@ -4,6 +4,7 @@
   import { formatDate, formatDuration, formatNumber, videoUrl } from '$lib/format';
   import { addNgRule, type NgTargetType } from '$lib/stores/ngRules';
   import { quickDownload } from '$lib/quickDownload';
+  import { pluginItemActions } from '$lib/plugins/registry';
 
   type Props = {
     hit: SearchHit;
@@ -23,6 +24,20 @@
   let toastTimer: ReturnType<typeof setTimeout> | null = null;
 
   let tagsList = $derived(hit.tags ? hit.tags.split(/\s+/).filter(Boolean) : []);
+  // プラグインが addAction で寄与したメニュー項目。appliesTo を満たすもののみ
+  // 描画する。プラグイン寄与 0 件のとき [] になり、DOM は導入前と同一。
+  let pluginActionsForHit = $derived(
+    pluginItemActions().filter((a) => (a.appliesTo ? a.appliesTo(hit) : true)),
+  );
+  async function runPluginAction(action: ReturnType<typeof pluginItemActions>[number]) {
+    try {
+      await action.handler(hit);
+    } catch (e) {
+      console.error('[plugin item action] threw:', e);
+      showToast('プラグイン処理でエラー');
+    }
+    menuOpen = false;
+  }
   let uploaderPattern = $derived(
     hit.userId != null
       ? `user/${hit.userId}`
@@ -188,6 +203,14 @@
           {#each tagsList.slice(0, 8) as tag (tag)}
             <button type="button" class="tag-row" onclick={() => ng('tag', tag, `タグ「${tag}」`)}>
               # {tag}
+            </button>
+          {/each}
+        {/if}
+        {#if pluginActionsForHit.length > 0}
+          <div class="menu-sep">プラグイン</div>
+          {#each pluginActionsForHit as action, i (i)}
+            <button type="button" onclick={() => runPluginAction(action)}>
+              {action.label}
             </button>
           {/each}
         {/if}

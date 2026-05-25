@@ -15,6 +15,10 @@ export type PlayerActions = {
   volumeDelta: (delta: number) => void;
   frameStep: (forward: boolean) => void;
   togglePip?: () => void;
+  /** プラグインが要求したキーバインド (key → handler)。組込みショートカット
+   *  にマッチしないキーのみ評価する (組込み優先 = プラグインで上書き不可)。
+   *  未指定 / 空オブジェクトなら何も評価しない (= 既存挙動と同じ)。 */
+  pluginKeys?: Record<string, () => void>;
 };
 
 export function bindShortcuts(target: HTMLElement | Window, a: PlayerActions): () => void {
@@ -101,6 +105,19 @@ export function bindShortcuts(target: HTMLElement | Window, a: PlayerActions): (
       default:
         if (/^[0-9]$/.test(event.key)) {
           a.jumpToFraction(Number(event.key) / 10);
+          return;
+        }
+        // プラグイン提供のキーバインド (組込みショートカットに当たらなかった場合のみ)。
+        // 大文字小文字は呼び出し側が自由に登録できるよう、入力 key そのまま検索。
+        if (a.pluginKeys) {
+          const handler = a.pluginKeys[event.key];
+          if (handler) {
+            try {
+              handler();
+            } catch (err) {
+              console.error('[plugin shortcut] threw:', err);
+            }
+          }
         }
     }
   }

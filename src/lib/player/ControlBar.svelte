@@ -3,6 +3,7 @@
   import { SvelteSet } from 'svelte/reactivity';
   import { formatDuration } from '$lib/format';
   import type { Level } from 'hls.js';
+  import type { PluginPlayerAction } from '$lib/plugins/types';
 
   type Props = {
     video: HTMLVideoElement | null;
@@ -38,6 +39,9 @@
     showPip?: boolean;
     /** PiP が現在 ON か (ボタンの active 表示) */
     pipActive?: boolean;
+    /** プラグインが寄与したコントロールボタン (右端に追加表示)。
+     *  デフォルト [] なので、寄与 0 件のとき DOM は導入前と完全同一。 */
+    pluginActions?: PluginPlayerAction[];
   };
 
   let {
@@ -72,7 +76,16 @@
     onTogglePip,
     showPip = false,
     pipActive = false,
+    pluginActions = [],
   }: Props = $props();
+
+  async function runPluginAction(action: PluginPlayerAction) {
+    try {
+      await action.handler();
+    } catch (e) {
+      console.error('[plugin player action] threw:', e);
+    }
+  }
 
   const speeds = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
 
@@ -340,6 +353,18 @@
       <span class="btn-icon classic-only" aria-hidden="true">↻</span>
       <span class="text-label">ループ</span>
     </button>
+    {#each pluginActions as action, i (i)}
+      <button
+        type="button"
+        class="btn plugin-action-btn"
+        title={action.label}
+        aria-label={action.label}
+        onclick={() => runPluginAction(action)}
+      >
+        {#if action.icon}<span class="btn-icon" aria-hidden="true">{action.icon}</span>{/if}
+        <span class="text-label">{action.label}</span>
+      </button>
+    {/each}
   </div>
 </div>
 

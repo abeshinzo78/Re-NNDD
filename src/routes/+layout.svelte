@@ -4,12 +4,16 @@
   import { installConsoleBridge } from '$lib/consoleBridge';
   import { getStr, loadSettings } from '$lib/stores/settings.svelte';
   import MiniPlayer from '$lib/player/MiniPlayer.svelte';
+  import { bootstrapPluginHost } from '$lib/plugins/host';
+  import { pluginNavEntries } from '$lib/plugins/registry';
 
   let { children } = $props();
 
   onMount(() => {
     installConsoleBridge();
-    void loadSettings();
+    // プラグインホストは loadSettings 完了後に bootstrap する
+    // (キルスイッチ `plugins.enabled` を正しく読むため)。
+    void loadSettings().then(() => bootstrapPluginHost());
   });
 
   const sections = [
@@ -23,6 +27,11 @@
     { href: '/ng', label: 'NG' },
     { href: '/settings', label: '設定' },
   ];
+
+  // プラグイン寄与ナビは built-in の後ろに append。プラグイン未インストール
+  // 時は pluginNavEntries() が [] を返すので、DOM はプラグイン機構導入前と
+  // 完全同一になる。
+  let allSections = $derived([...sections, ...pluginNavEntries()]);
 
   let canGoBack = $derived(
     page.url.pathname !== '/' &&
@@ -52,7 +61,7 @@
       <button class="back-btn" onclick={() => history.back()}>← 戻る</button>
     {/if}
     <nav>
-      {#each sections as section (section.href)}
+      {#each allSections as section (section.href)}
         <a class="nav-item" class:active={page.url.pathname === section.href} href={section.href}
           >{section.label}</a
         >
