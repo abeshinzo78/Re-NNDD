@@ -127,7 +127,7 @@ impl PluginManifest {
     }
 }
 
-/// id は ^[a-z0-9][a-z0-9._-]{2,63}$ 相当 (長さ 3..=64)。
+/// id は `^[a-z0-9][a-z0-9._-]{2,63}$` 相当 (長さ 3..=64)。
 /// regex をモジュール static に握らずに手書きでチェックすることで
 /// clippy の OnceLock unwrap_used 警告を回避し、依存も減らす。
 pub fn is_valid_plugin_id(s: &str) -> bool {
