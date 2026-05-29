@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use reqwest::header;
+use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 use tokio::sync::watch;
@@ -2544,6 +2545,273 @@ pub async fn refetch_video_comments(
         "refetched video comments"
     );
     Ok(snapshot_id)
+}
+
+// =================== コメント焼き込みエクスポート (Phase 1.9) ===================
+
+/// 焼き込みエクスポートのオプション。すべて省略可。
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BurnInOptions {
+    /// 使用するスナップショット。省略時は最新。
+    pub snapshot_id: Option<i64>,
+    /// フォント倍率 (既定 1.0)。
+    pub font_scale: Option<f64>,
+    /// 不透明度 0..1 (既定 1.0)。
+    pub opacity: Option<f64>,
+    /// 流れるコメントの横断秒数 (既定 4.0)。
+    pub scroll_duration_sec: Option<f64>,
+    /// 固定コメントの表示秒数 (既定 3.0)。
+    pub fixed_duration_sec: Option<f64>,
+    /// libass のフォント名 (既定 sans-serif)。
+    pub font_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BurnInResult {
+    /// 生成された MP4 の絶対パス。
+    pub output_path: String,
+    pub comment_count: usize,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// `"1280x720"` → `(1280, 720)`。
+fn parse_resolution(s: &str) -> Option<(u32, u32)> {
+    let (w, h) = s.split_once('x')?;
+    Some((w.trim().parse().ok()?, h.trim().parse().ok()?))
+}
+
+/// DL 済み動画のコメントを字幕として焼き込んだ MP4 を `exports/` 配下へ書き出す。
+/// 進捗は `burnin:progress` イベント (`{ videoId, percent }`) で通知する。
+#[tauri::command]
+pub async fn export_video_with_comments(
+    video_id: String,
+    options: Option<BurnInOptions>,
+    library: State<'_, Arc<LibraryHandle>>,
+    app: tauri::AppHandle,
+) -> Result<BurnInResult> {
+    use crate::downloader::comment_ass::{generate_ass, AssOptions, BurnInComment};
+    use tauri::{Emitter, Manager};
+
+    validate_video_id(&video_id)?;
+    let options = options.unwrap_or_default();
+
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| AppError::Other(format!("app_data_dir: {e}")))?;
+
+    // --- DB から動画メタ + 対象スナップショットのコメントを取り出す ---
+    // (ffmpeg は重いので、ロックはここだけで握って早めに手放す)
+    let (video_rel_path, resolution, duration_sec, snapshot_id, comments) = {
+        let conn = library.lock().await;
+
+        let row = conn
+            .query_row(
+                "SELECT video_path, resolution, duration_sec FROM videos WHERE id = ?1",
+                rusqlite::params![video_id],
+                |row| {
+                    Ok((
+                        row.get::<_, Option<String>>(0)?,
+                        row.get::<_, Option<String>>(1)?,
+                        row.get::<_, i64>(2)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(|e| AppError::Other(format!("query video: {e}")))?;
+        let Some((Some(video_rel_path), resolution, duration_sec)) = row else {
+            return Err(AppError::Other("動画がダウンロードされていません".into()));
+        };
+
+        let snap_id: Option<i64> = if let Some(sid) = options.snapshot_id {
+            Some(sid)
+        } else {
+            conn.query_row(
+                "SELECT id FROM comment_snapshots WHERE video_id = ?1 \
+                 ORDER BY taken_at DESC, id DESC LIMIT 1",
+                rusqlite::params![video_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| AppError::Other(format!("query snapshot: {e}")))?
+        };
+        let Some(snap_id) = snap_id else {
+            return Err(AppError::Other("スナップショットがありません".into()));
+        };
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT vpos_ms, content, mail, is_owner \
+                 FROM comments WHERE snapshot_id = ?1 ORDER BY vpos_ms ASC",
+            )
+            .map_err(|e| AppError::Other(format!("prepare comments: {e}")))?;
+        let comments: Vec<BurnInComment> = stmt
+            .query_map(rusqlite::params![snap_id], |r| {
+                let mail: Option<String> = r.get(2)?;
+                let commands: Vec<String> = mail
+                    .unwrap_or_default()
+                    .split_whitespace()
+                    .map(|s| s.to_string())
+                    .collect();
+                Ok(BurnInComment {
+                    vpos_ms: r.get(0)?,
+                    content: r.get(1)?,
+                    commands,
+                    is_owner: r.get::<_, i64>(3)? != 0,
+                })
+            })
+            .map_err(|e| AppError::Other(format!("query comments: {e}")))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        (video_rel_path, resolution, duration_sec, snap_id, comments)
+    };
+
+    if comments.is_empty() {
+        return Err(AppError::Other("焼き込むコメントがありません".into()));
+    }
+
+    let abs_video = app_data_dir.join(&video_rel_path);
+    if !abs_video.exists() {
+        return Err(AppError::Other(format!(
+            "動画ファイルが見つかりません: {}",
+            abs_video.display()
+        )));
+    }
+    // 別ファイル音声 (audio.mp4) があれば多重化する。
+    let audio_path = app_data_dir
+        .join("videos")
+        .join(&video_id)
+        .join("audio.mp4");
+    let audio = if audio_path.exists() {
+        Some(audio_path)
+    } else {
+        None
+    };
+
+    // --- 解像度・長さの決定 (DB 優先、欠けていれば ffmpeg でプローブ) ---
+    let mut width = resolution
+        .as_deref()
+        .and_then(parse_resolution)
+        .map(|d| d.0);
+    let mut height = resolution
+        .as_deref()
+        .and_then(parse_resolution)
+        .map(|d| d.1);
+    let mut duration = if duration_sec > 0 {
+        duration_sec as f64
+    } else {
+        0.0
+    };
+    if width.is_none() || height.is_none() || duration <= 0.0 {
+        if let Some(info) = crate::downloader::ffmpeg::probe_video(Some(&app), &abs_video).await {
+            width.get_or_insert(info.width);
+            height.get_or_insert(info.height);
+            if duration <= 0.0 {
+                duration = info.duration_sec;
+            }
+        }
+    }
+    let (Some(width), Some(height)) = (width, height) else {
+        return Err(AppError::Other("動画の解像度を判定できませんでした".into()));
+    };
+
+    // --- ASS 生成 ---
+    let ass_opts = AssOptions {
+        width,
+        height,
+        duration_sec: duration,
+        font_scale: options.font_scale.unwrap_or(1.0).clamp(0.3, 4.0),
+        opacity: options.opacity.unwrap_or(1.0).clamp(0.0, 1.0),
+        scroll_duration_sec: options.scroll_duration_sec.unwrap_or(4.0).clamp(0.5, 20.0),
+        fixed_duration_sec: options.fixed_duration_sec.unwrap_or(3.0).clamp(0.5, 20.0),
+        font_name: options
+            .font_name
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| "sans-serif".to_string()),
+    };
+    let comment_count = comments.len();
+    let ass = generate_ass(&comments, &ass_opts);
+
+    // --- 出力先 (cleanup_storage が触らない exports/ 配下) ---
+    let exports_dir = app_data_dir.join("exports");
+    tokio::fs::create_dir_all(&exports_dir)
+        .await
+        .map_err(|e| AppError::Other(format!("create exports dir: {e}")))?;
+    let stamp = crate::library::now_unix_secs();
+    let ass_path = exports_dir.join(format!(".{video_id}_{snapshot_id}_{stamp}.ass"));
+    let output_path = exports_dir.join(format!("{video_id}_{snapshot_id}_{stamp}.mp4"));
+    tokio::fs::write(&ass_path, ass.as_bytes())
+        .await
+        .map_err(|e| AppError::Other(format!("write ass: {e}")))?;
+
+    // --- 焼き込み (進捗を 1% 刻みで間引いて通知) ---
+    let app_for_progress = app.clone();
+    let video_id_for_progress = video_id.clone();
+    let mut last_emitted = -1.0_f64;
+    let _ = app.emit(
+        "burnin:progress",
+        serde_json::json!({ "videoId": video_id, "percent": 0.0 }),
+    );
+    let outcome = crate::downloader::ffmpeg::burn_in_comments(
+        Some(&app),
+        &abs_video,
+        audio.as_deref(),
+        &ass_path,
+        &output_path,
+        duration,
+        |percent| {
+            if percent - last_emitted >= 0.01 || percent >= 1.0 {
+                last_emitted = percent;
+                let _ = app_for_progress.emit(
+                    "burnin:progress",
+                    serde_json::json!({
+                        "videoId": video_id_for_progress,
+                        "percent": percent,
+                    }),
+                );
+            }
+        },
+    )
+    .await;
+
+    // 一時 ASS は成否に関わらず片付ける。
+    let _ = tokio::fs::remove_file(&ass_path).await;
+
+    match outcome {
+        Ok(crate::downloader::ffmpeg::MuxOutcome::Success) => {
+            tracing::info!(
+                video_id = %video_id,
+                snapshot_id,
+                comments = comment_count,
+                output = %output_path.display(),
+                "comment burn-in export complete"
+            );
+            Ok(BurnInResult {
+                output_path: output_path.to_string_lossy().into_owned(),
+                comment_count,
+                width,
+                height,
+            })
+        }
+        Ok(crate::downloader::ffmpeg::MuxOutcome::FfmpegNotFound) => Err(AppError::Other(
+            "ffmpeg が見つかりません。インストールしてから再実行してください。".into(),
+        )),
+        Ok(crate::downloader::ffmpeg::MuxOutcome::FfmpegFailed { stderr }) => {
+            let _ = tokio::fs::remove_file(&output_path).await;
+            Err(AppError::Other(format!(
+                "ffmpeg 失敗:\n{}",
+                stderr.lines().take(20).collect::<Vec<_>>().join("\n")
+            )))
+        }
+        Err(e) => {
+            let _ = tokio::fs::remove_file(&output_path).await;
+            Err(e.into())
+        }
+    }
 }
 
 // =================== ライブラリ検索・整列・集計 ===================

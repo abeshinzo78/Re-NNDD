@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type { PlaybackPayload, PlayerComment } from './player/types';
 
 export type SearchTarget = 'title' | 'description' | 'tags' | 'tagsExact';
@@ -568,6 +569,54 @@ export async function refetchVideoComments(videoId: string): Promise<number> {
 
 export async function remuxLocalVideo(videoId: string): Promise<string> {
   return invoke<string>('remux_local_video', { videoId });
+}
+
+// =================== コメント焼き込みエクスポート (Phase 1.9) ===================
+
+export type BurnInOptions = {
+  /** 使用するスナップショット。省略時は最新。 */
+  snapshotId?: number | null;
+  /** フォント倍率 (既定 1.0)。 */
+  fontScale?: number;
+  /** 不透明度 0..1 (既定 1.0)。 */
+  opacity?: number;
+  /** 流れるコメントの横断秒数 (既定 4.0)。 */
+  scrollDurationSec?: number;
+  /** 固定コメントの表示秒数 (既定 3.0)。 */
+  fixedDurationSec?: number;
+  /** libass のフォント名 (既定 sans-serif)。 */
+  fontName?: string;
+};
+
+export type BurnInResult = {
+  /** 生成された MP4 の絶対パス。 */
+  outputPath: string;
+  commentCount: number;
+  width: number;
+  height: number;
+};
+
+export type BurnInProgress = {
+  videoId: string;
+  percent: number;
+};
+
+/** DL 済み動画へコメントを焼き込んだ MP4 を `exports/` 配下へ書き出す。 */
+export async function exportVideoWithComments(
+  videoId: string,
+  options?: BurnInOptions,
+): Promise<BurnInResult> {
+  return invoke<BurnInResult>('export_video_with_comments', {
+    videoId,
+    options: options ?? null,
+  });
+}
+
+/** 焼き込み進捗 (`burnin:progress`) を購読する。戻り値の関数で解除。 */
+export async function listenBurnInProgress(
+  handler: (p: BurnInProgress) => void,
+): Promise<UnlistenFn> {
+  return listen<BurnInProgress>('burnin:progress', (e) => handler(e.payload));
 }
 
 /**

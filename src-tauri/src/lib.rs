@@ -119,6 +119,7 @@ pub fn run() {
             commands::delete_comment_snapshot,
             commands::update_snapshot_note,
             commands::refetch_video_comments,
+            commands::export_video_with_comments,
             commands::query_library_videos,
             commands::get_library_stats,
             commands::list_library_tags,

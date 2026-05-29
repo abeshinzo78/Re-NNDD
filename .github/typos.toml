@@ -39,3 +39,11 @@ mdat = "mdat"
 seeked = "seeked"
 Seeked = "Seeked"
 onseeked = "onseeked"
+# niconico コメントの位置コマンド「上」。コメント焼き込みで使う。
+# typos は "use"/"due" を提案するがニコニコ仕様語なので変更不可。
+ue = "ue"
+Ue = "Ue"
+UE = "UE"
+# ASS (Advanced SubStation Alpha) 字幕フォーマットのフィールド名。
+# `PrimaryColour` 等は英国式綴りが仕様で必須。
+Colour = "Colour"
