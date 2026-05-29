@@ -18,8 +18,11 @@
     deleteCommentSnapshot,
     updateSnapshotNote,
     refetchVideoComments,
+    exportVideoWithComments,
+    listenBurnInProgress,
     type CommentSnapshotRow,
   } from '$lib/api';
+  import { open as shellOpen } from '@tauri-apps/plugin-shell';
   import { formatDate, formatDuration, formatNumber, videoUrl } from '$lib/format';
   import type { PlayerComment } from '$lib/player/types';
   import { filterComments, listNgRules, subscribeNgRules, type NgRule } from '$lib/stores/ngRules';
@@ -512,9 +515,63 @@
     }
   }
 
+  // ---- コメント焼き込みエクスポート (Phase 1.9) ----
+  let burnInOpen = $state(false);
+  let burnInRunning = $state(false);
+  let burnInPercent = $state(0);
+  let burnInMessage = $state<string | null>(null);
+  let burnInResultPath = $state<string | null>(null);
+  let binFontScale = $state(1.0);
+  let binOpacity = $state(1.0);
+  let burnInUnlisten: (() => void) | null = null;
+
+  async function onBurnIn(vid: string) {
+    if (burnInRunning) return;
+    if (activeSnapshotId == null) {
+      burnInMessage = '焼き込むスナップショットを選択してください';
+      return;
+    }
+    burnInRunning = true;
+    burnInPercent = 0;
+    burnInMessage = null;
+    burnInResultPath = null;
+    burnInUnlisten?.();
+    burnInUnlisten = await listenBurnInProgress((p) => {
+      if (p.videoId === vid) burnInPercent = p.percent;
+    });
+    try {
+      const res = await exportVideoWithComments(vid, {
+        snapshotId: activeSnapshotId,
+        fontScale: binFontScale,
+        opacity: binOpacity,
+      });
+      burnInPercent = 1;
+      burnInResultPath = res.outputPath;
+      burnInMessage = `完了: ${res.commentCount} 件を ${res.width}×${res.height} で焼き込みました`;
+    } catch (e) {
+      burnInMessage = `焼き込み失敗: ${e}`;
+    } finally {
+      burnInRunning = false;
+      burnInUnlisten?.();
+      burnInUnlisten = null;
+    }
+  }
+
+  async function revealExport() {
+    if (!burnInResultPath) return;
+    try {
+      // 出力ファイルの親フォルダを既定のファイラで開く。
+      const dir = burnInResultPath.replace(/[\\/][^\\/]*$/, '');
+      await shellOpen(dir);
+    } catch (e) {
+      burnInMessage = `フォルダを開けません: ${e}`;
+    }
+  }
+
   onDestroy(() => {
     ngUnsub();
     unsubQueueLoop();
+    burnInUnlisten?.();
   });
 </script>
 
@@ -844,6 +901,79 @@
           >
             {snapshotLoading ? '再取得中…' : 'niconico からコメント再取得'}
           </button>
+        </div>
+
+        <!-- コメント焼き込みエクスポート (Phase 1.9) -->
+        <div class="burnin-section">
+          <button
+            type="button"
+            class="burnin-toggle"
+            disabled={activeSnapshotId == null}
+            aria-expanded={burnInOpen}
+            onclick={() => (burnInOpen = !burnInOpen)}
+          >
+            🎬 コメントを焼き込んでエクスポート
+          </button>
+          {#if burnInOpen}
+            <div class="burnin-form">
+              <label class="burnin-opt">
+                <span>フォント倍率</span>
+                <input
+                  type="range"
+                  min="0.5"
+                  max="2"
+                  step="0.1"
+                  bind:value={binFontScale}
+                  disabled={burnInRunning}
+                />
+                <span class="burnin-val">{binFontScale.toFixed(1)}×</span>
+              </label>
+              <label class="burnin-opt">
+                <span>不透明度</span>
+                <input
+                  type="range"
+                  min="0.1"
+                  max="1"
+                  step="0.05"
+                  bind:value={binOpacity}
+                  disabled={burnInRunning}
+                />
+                <span class="burnin-val">{Math.round(binOpacity * 100)}%</span>
+              </label>
+              <button
+                type="button"
+                class="burnin-go"
+                disabled={burnInRunning || activeSnapshotId == null}
+                onclick={() => onBurnIn(lp.videoId)}
+              >
+                {burnInRunning
+                  ? `焼き込み中… ${Math.round(burnInPercent * 100)}%`
+                  : 'エクスポート開始'}
+              </button>
+              {#if burnInRunning}
+                <div class="burnin-bar">
+                  <div
+                    class="burnin-bar-fill"
+                    style:width={`${Math.round(burnInPercent * 100)}%`}
+                  ></div>
+                </div>
+              {/if}
+              <p class="burnin-hint muted">
+                映像を再エンコードするため時間がかかります。出力は exports フォルダに保存されます。
+              </p>
+            </div>
+          {/if}
+          {#if burnInMessage}
+            <div class="snap-msg">{burnInMessage}</div>
+          {/if}
+          {#if burnInResultPath}
+            <div class="burnin-result">
+              <code class="burnin-path">{burnInResultPath}</code>
+              <button type="button" class="snap-btn-small" onclick={revealExport}>
+                フォルダを開く
+              </button>
+            </div>
+          {/if}
         </div>
       </div>
     </div>
@@ -1524,5 +1654,99 @@
   .snap-refetch-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  /* コメント焼き込みエクスポート */
+  .burnin-section {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--theme-border, rgba(128, 128, 128, 0.25));
+  }
+  .burnin-toggle {
+    background: transparent;
+    color: var(--theme-accent);
+    border: 1px solid var(--theme-accent);
+    padding: 6px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .burnin-toggle:hover:not(:disabled) {
+    background: var(--theme-accent);
+    color: var(--theme-accent-fg);
+  }
+  .burnin-toggle:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .burnin-form {
+    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-width: 420px;
+  }
+  .burnin-opt {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+  }
+  .burnin-opt > span:first-child {
+    width: 72px;
+    flex-shrink: 0;
+  }
+  .burnin-opt input[type='range'] {
+    flex: 1;
+  }
+  .burnin-val {
+    width: 44px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .burnin-go {
+    align-self: flex-start;
+    background: var(--theme-accent);
+    color: var(--theme-accent-fg);
+    border: none;
+    padding: 6px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .burnin-go:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+  .burnin-bar {
+    height: 6px;
+    border-radius: 3px;
+    background: rgba(128, 128, 128, 0.3);
+    overflow: hidden;
+  }
+  .burnin-bar-fill {
+    height: 100%;
+    background: var(--theme-accent);
+    transition: width 0.2s linear;
+  }
+  .burnin-hint {
+    font-size: 11px;
+    margin: 2px 0 0;
+  }
+  .burnin-result {
+    margin-top: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .burnin-path {
+    font-size: 11px;
+    word-break: break-all;
+    background: rgba(128, 128, 128, 0.15);
+    padding: 2px 6px;
+    border-radius: 4px;
   }
 </style>
