@@ -6,6 +6,7 @@
 //! - [`run`]: オーケストレータ。1 ジョブ分の DL を実行する
 
 pub mod aes;
+pub mod comment_ass;
 pub mod fetch;
 pub mod ffmpeg;
 pub mod hls;

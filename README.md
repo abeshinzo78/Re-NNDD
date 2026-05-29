@@ -61,6 +61,7 @@ Discord鯖はこちらです　https://discord.gg/cDhnfZ6HMa
 - ダウンロードキューの管理（追加・一覧・開始・キャンセル・完了削除）
 - `yt-dlp` + `ffmpeg` を使った動画保存とライブラリ取り込み
 - ローカル保存動画の再生（内蔵 HTTP Range 配信）
+- コメントを字幕として映像へ焼き込んだ MP4 のエクスポート（`ass` フィルタ）
 - ライブラリ動画削除、設定保存、ストレージ掃除、環境情報表示
 
 ## 進捗
@@ -74,6 +75,7 @@ Discord鯖はこちらです　https://discord.gg/cDhnfZ6HMa
 - Phase 1.6: NG 機能の充足
 - Phase 1.7: プレイリスト・検索 UI の拡充
 - Phase 1.8: コメントスナップショット運用
+- Phase 1.9: コメント焼き込みエクスポート（実装済み）
 
 詳細は [`docs/test-lists/`](./docs/test-lists/) の各テストリストを参照してください。
 
@@ -89,7 +91,6 @@ Discord鯖はこちらです　https://discord.gg/cDhnfZ6HMa
 
 ## 今後の予定
 
-- Phase 1.9: コメント焼き込みエクスポート
 - Phase 2.0: 仕上げ（安定化・ドキュメント・運用調整）
 
 ## 必要環境
