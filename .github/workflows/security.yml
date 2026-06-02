@@ -77,7 +77,7 @@ jobs:
 
       # EmbarkStudios/cargo-deny-action v2.0.17 (commit pin)
       - name: cargo-deny check
-        uses: EmbarkStudios/cargo-deny-action@a531616d8ce3b9177443e48a1159bc945a099823
+        uses: EmbarkStudios/cargo-deny-action@bb137d7af7e4fb67e5f82a49c4fce4fad40782fe
         with:
           command: check
           arguments: --workspace --all-features
