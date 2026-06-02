@@ -154,18 +154,19 @@ export async function loginMfa(mfaSession: string, oneTimePassword: string): Pro
   });
 }
 
-export type HlsResource = {
-  dataBase64: string;
-  contentType?: string;
-  status: number;
-};
-
+/**
+ * Fetch a signed Domand HLS resource (playlist / init / media segment / AES
+ * key) through the Rust side. The body comes back as a raw `ArrayBuffer`
+ * (a `tauri::ipc::Response` on the Rust side) rather than a base64-in-JSON
+ * envelope, so multi-MB segments are not inflated ~33% and re-encoded through
+ * the IPC JSON layer on every fetch.
+ */
 export async function fetchHlsResource(
   url: string,
   rangeStart?: number,
   rangeEnd?: number,
-): Promise<HlsResource> {
-  return invoke<HlsResource>('fetch_hls_resource', { url, rangeStart, rangeEnd });
+): Promise<ArrayBuffer> {
+  return invoke<ArrayBuffer>('fetch_hls_resource', { url, rangeStart, rangeEnd });
 }
 
 export type UserVideoItem = {

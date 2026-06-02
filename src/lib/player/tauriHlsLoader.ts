@@ -21,15 +21,6 @@ function emptyStats(): LoaderStats {
   };
 }
 
-function decodeBase64(data: string): Uint8Array {
-  const binary = atob(data);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes;
-}
-
 function decodeUtf8(bytes: Uint8Array): string {
   return new TextDecoder('utf-8').decode(bytes);
 }
@@ -72,26 +63,22 @@ export class TauriHlsLoader implements Loader<LoaderContext> {
 
     void (async () => {
       try {
-        const resource = await fetchHlsResource(context.url, context.rangeStart, context.rangeEnd);
+        const buffer = await fetchHlsResource(context.url, context.rangeStart, context.rangeEnd);
         if (this.aborted) {
           callbacks.onAbort?.(this.stats, context, null);
           return;
         }
 
-        const bytes = decodeBase64(resource.dataBase64);
+        // `buffer` is the exact response body (a tauri::ipc::Response on the
+        // Rust side), so the Uint8Array view covers it 1:1 — no slicing needed.
+        const bytes = new Uint8Array(buffer);
         this.stats.loaded = bytes.byteLength;
         this.stats.total = bytes.byteLength;
         this.stats.chunkCount = 1;
         this.stats.loading.first = this.stats.loading.first || performance.now();
         this.stats.loading.end = performance.now();
 
-        const data =
-          context.responseType === 'arraybuffer'
-            ? (bytes.buffer.slice(
-                bytes.byteOffset,
-                bytes.byteOffset + bytes.byteLength,
-              ) as ArrayBuffer)
-            : decodeUtf8(bytes);
+        const data = context.responseType === 'arraybuffer' ? buffer : decodeUtf8(bytes);
 
         const kind = classifyUrl(context.url, bytes.byteLength);
 
@@ -108,14 +95,11 @@ export class TauriHlsLoader implements Loader<LoaderContext> {
           );
         }
 
-        callbacks.onSuccess(
-          { url: context.url, data, code: resource.status },
-          this.stats,
-          context,
-          {
-            contentType: resource.contentType,
-          },
-        );
+        // Raw-byte responses carry no HTTP status/headers, so report a
+        // synthetic 200 on success (failures throw and are handled below) and
+        // pass no networkDetails. hls.js consumes `data` directly and infers
+        // the payload kind from responseType, not from a Content-Type header.
+        callbacks.onSuccess({ url: context.url, data, code: 200 }, this.stats, context, null);
       } catch (e) {
         this.stats.loading.end = performance.now();
         if (this.aborted) {

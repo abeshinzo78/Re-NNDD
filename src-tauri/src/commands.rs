@@ -621,14 +621,6 @@ pub async fn issue_hls_url(
     Ok(hls.content_url)
 }
 
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HlsResource {
-    pub data_base64: String,
-    pub content_type: Option<String>,
-    pub status: u16,
-}
-
 /// Fetch a signed Domand HLS resource for hls.js inside the WebView.
 ///
 /// Linux WebKit/Tauri can fail on direct cross-origin HLS fragment/key loads.
@@ -638,13 +630,19 @@ pub struct HlsResource {
 /// Domand fronts CloudFront with niconico-side checks that look at
 /// `User-Agent` and `Referer`. Without a browser-like UA + a niconico
 /// referer the CDN returns 403, even though the URL is signed.
+///
+/// The body is returned as a raw [`tauri::ipc::Response`] (an `ArrayBuffer`
+/// on the JS side), not a base64-in-JSON envelope: HLS segments are multi-MB
+/// and fetched continuously during playback, which is exactly the "large
+/// download HTTP response" case the Tauri docs say to stream as raw bytes
+/// rather than serialize to JSON. See `read_local_file` for the same pattern.
 #[tauri::command]
 pub async fn fetch_hls_resource(
     url: String,
     range_start: Option<u64>,
     range_end: Option<u64>,
     store: State<'_, Arc<SessionStore>>,
-) -> Result<HlsResource> {
+) -> Result<tauri::ipc::Response> {
     validate_domand_url(&url)?;
 
     // No automatic gzip decoding: niconico/CloudFront serves segments as
@@ -784,11 +782,13 @@ pub async fn fetch_hls_resource(
         )));
     }
 
-    Ok(HlsResource {
-        data_base64: BASE64.encode(bytes),
-        content_type,
-        status: status.as_u16(),
-    })
+    // Hand the bytes straight to the IPC layer as a raw buffer. `status` and
+    // `content_type` are intentionally not forwarded: they were only ever used
+    // for logging (above) and as informational fields on the hls.js loader
+    // success callback. The loader reports a synthetic 200 on success, and
+    // hls.js derives the payload kind from the URL / responseType, not from
+    // the Content-Type header.
+    Ok(tauri::ipc::Response::new(bytes.to_vec()))
 }
 
 fn validate_domand_url(raw: &str) -> Result<()> {
