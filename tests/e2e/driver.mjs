@@ -24,8 +24,9 @@
 //   REUSE_VITE=1 reuse a server already on :1420 instead of failing closed
 
 import { spawn } from 'node:child_process';
-import { writeFileSync, mkdirSync, existsSync, openSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { writeFileSync, mkdirSync, existsSync, openSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -128,7 +129,7 @@ async function httpUp(url) {
 // (http://localhost:1420); only `npx tauri build` bakes the frontend in for a
 // prod-style load. A plain `cargo build`/`cargo test` on the workspace silently
 // rebuilds the binary in dev mode -> it then shows "Could not connect to
-// localhost" under the driver. To be robust to BOTH binary flavours we start
+// localhost" under the driver. To be robust to BOTH binary flavors we start
 // our OWN Vite (from this repo) before launching: a prod binary ignores it, a
 // dev binary loads it. Set NO_VITE=1 to skip (pure prod binary, slightly faster).
 async function ensureVite() {
@@ -152,7 +153,10 @@ async function ensureVite() {
     );
   }
   console.log('starting Vite dev server (this repo) for dev-mode binary…');
-  const log = '/tmp/re-nndd-vite.log';
+  // Create the log inside a freshly-made private temp dir (0700) instead of a
+  // hardcoded, predictable /tmp path: a fixed world-writable path can be
+  // pre-created as a symlink by another user before we open it for writing.
+  const log = join(mkdtempSync(join(tmpdir(), 're-nndd-')), 'vite.log');
   const out = openSync(log, 'w');
   // Spawn the vite binary directly (NOT `npm run dev`): npm swallows SIGTERM and
   // orphans its vite child. detached:true makes vite its own group leader so the
