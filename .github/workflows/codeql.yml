@@ -37,6 +37,8 @@ jobs:
         with:
           languages: ${{ matrix.language }}
           queries: security-and-quality
+          # Scope analysis to the shipped app; exclude the dev-only e2e harness.
+          config-file: ./.github/codeql/codeql-config.yml
 
       - name: Autobuild
         uses: github/codeql-action/autobuild@v4

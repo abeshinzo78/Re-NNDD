@@ -1,0 +1,10 @@
+name: 'Re:NNDD CodeQL config'
+
+# CodeQL scans the shipped application. The end-to-end harness under tests/e2e/
+# is dev-only tooling: it spawns a local tauri-driver and drives the app over
+# WebDriver, so product-oriented queries misread its patterns as risks — e.g.
+# writing the local driver's own screenshot bytes to disk trips
+# js/http-to-file-access ("network data written to file"). Exclude the harness
+# from analysis; all application code (src/, src-tauri/) stays fully scanned.
+paths-ignore:
+  - 'tests/e2e/**'
