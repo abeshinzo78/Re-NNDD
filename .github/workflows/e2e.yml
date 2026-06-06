@@ -1,0 +1,126 @@
+name: E2E
+
+# Drives the REAL Tauri app (Rust backend + WebKitGTK frontend + IPC) through
+# tauri-driver under Xvfb. Builds a prod-style debug binary (frontend baked in)
+# and runs tests/e2e/app.test.mjs against it.
+#
+# Kept as a separate workflow from ci.yml: it is heavier (full app build +
+# WebKitGTK) and is advisory — branch protection only requires ci.yml's
+# "CI success" gate.
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - 'claude/**'
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: '0'
+  CARGO_NET_RETRY: '10'
+  RUSTUP_MAX_RETRIES: '10'
+  RUST_BACKTRACE: '1'
+  NODE_VERSION: '20'
+
+jobs:
+  e2e:
+    name: E2E (real app via tauri-driver)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      # WebKitGTK dev stack + the WebDriver (WebKitWebDriver) + Xvfb. Mirrors the
+      # Rust job's deps and adds webkit2gtk-driver / xvfb for the live-app run.
+      - name: Install system dependencies (Tauri 2 + WebDriver + Xvfb)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libgtk-3-dev \
+            libssl-dev \
+            build-essential \
+            pkg-config \
+            webkit2gtk-driver \
+            xvfb
+
+      - name: Setup Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry / target
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: e2e-linux
+          cache-on-failure: true
+
+      - name: Install dependencies (npm ci)
+        run: npm ci --no-audit --no-fund
+
+      # tauri.conf.json の `externalBin` は build script が物理ファイルの存在を
+      # 要求する。E2E では実バイナリは不要 (downloads/exports が無効化されるだけ)
+      # なので空ファイルで pass させる。
+      - name: Stub external binaries (yt-dlp / ffmpeg) for build scripts
+        run: |
+          set -eu
+          TRIPLE="$(rustc -vV | awk '/^host:/ {print $2}')"
+          mkdir -p src-tauri/binaries
+          for name in yt-dlp ffmpeg; do
+            f="src-tauri/binaries/${name}-${TRIPLE}"
+            : > "$f"
+            chmod +x "$f"
+          done
+          ls -la src-tauri/binaries
+
+      - name: Install tauri-driver
+        run: cargo install tauri-driver --locked
+
+      # Prod-style debug binary: runs `npm run build` then a debug `cargo build`,
+      # baking the frontend in (so the live app does not need a Vite dev server).
+      - name: Build app (debug, no bundle)
+        run: npx tauri build --debug --no-bundle
+
+      - name: Run E2E tests
+        env:
+          # The binary is prod-style (frontend baked in) — skip the defensive
+          # Vite launch the driver would otherwise start for dev-mode binaries.
+          NO_VITE: '1'
+        run: xvfb-run -a npm run test:e2e
+
+      # Best-effort screenshots for debugging a failed run. Never masks the
+      # failure above and is skipped cleanly if the app never built.
+      - name: Capture screenshots on failure
+        if: failure()
+        continue-on-error: true
+        env:
+          NO_VITE: '1'
+        run: xvfb-run -a node tests/e2e/driver.mjs tour /tmp/re-nndd-shots
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-screenshots-${{ github.sha }}
+          path: /tmp/re-nndd-shots/
+          if-no-files-found: ignore
+          retention-days: 7
