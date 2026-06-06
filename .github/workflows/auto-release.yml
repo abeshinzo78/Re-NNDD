@@ -1,0 +1,263 @@
+name: Auto release on version bump
+
+# main へ push されたコミットでアプリのバージョンが上がったら、自動で vX.Y.Z
+# タグを切り、release.yml を起動して各 OS 向け Tauri バンドルを正式リリースする。
+# これまで手動だった「タグ push / workflow_dispatch」を、バージョン bump 検知で
+# 自動化するためのトリガ層。release.yml 自体 (ビルド/Release 生成) は変更しない。
+#
+# 仕組み:
+#   1. 既定ブランチ (main) への push で version 系ファイルが変わったら起動。
+#   2. tauri.conf.json / package.json / Cargo.toml いずれかの version フィールドが
+#      直前コミットから変化した時だけ続行 (dependabot 等の依存更新は no-op)。
+#      → 3 ファイルを見るので「1 ファイル直し忘れ→修正コミット」でも拾える。
+#   3. 3 ファイルの version 一致を検証 (ズレていれば fail)。
+#   4. 「その version の GitHub Release が未作成」かつ「既存タグの最大版より新しい」
+#      時だけタグを切り、release.yml を dispatch する。
+#      - Release の有無で冪等性を担保 (tag push 成功・dispatch 失敗の再 run でも
+#        Release が無ければ再 dispatch される)。
+#      - 既存 v* タグの最大版より厳密に新しい事を要求し、誤ダウングレード公開を防ぐ。
+#
+# 制約・設計判断:
+#   - auto-release が扱うのは安定版 (strict `X.Y.Z`) のみ。prerelease (`-beta` 等)
+#     は誤って latest 安定版として公開されるのを避けるため弾く。prerelease を出す
+#     時は release.yml を手動 dispatch (prerelease=true) する。
+#   - 「Release は在るが一部プラットフォームの asset 欠落 (release.yml の matrix 片
+#     落ち)」の復旧はここでは扱わない。それは release.yml 側の失敗ジョブ再実行 /
+#     手動 dispatch の領分で、auto-release が 4 OS 再ビルドを再発火させるのは過剰。
+#
+# セキュリティ上の注意:
+#   - これは contents: write / actions: write を持つ特権ワークフロー。実行は
+#     既定ブランチ上に限定する (push trigger を main のみ + job ガードで既定
+#     ブランチ検証)。feature ブランチからの誤 dispatch では何もしない。
+#   - リポジトリ管理下の version 文字列は run スクリプトに `${{ }}` 直挿しせず、
+#     SemVer 厳格検証した上で env 経由で渡す (シェルインジェクション対策)。
+#
+# なぜ tag push 直接ではなく dispatch なのか:
+#   GITHUB_TOKEN で push したタグは release.yml の `push: tags` を再起動しない
+#   (GitHub の再帰防止仕様)。一方 workflow_dispatch / repository_dispatch は
+#   GITHUB_TOKEN からでも起動できる例外なので、明示 dispatch で確実に走らせる。
+#   https://github.blog/changelog/2022-09-08-github-actions-use-github_token-with-workflow_dispatch-and-repository_dispatch/
+
+on:
+  push:
+    # 既定ブランチ (リリースブランチ) のみ。`master` 等を足すと、未作成ブランチを
+    # 新設して特権ワークフローを発火させられるため意図的に main だけに絞る。
+    branches:
+      - main
+    paths:
+      - 'src-tauri/tauri.conf.json'
+      - 'package.json'
+      - 'Cargo.toml'
+  # 手動の保険。実行は下の job ガードで既定ブランチに限定される。
+  workflow_dispatch:
+
+permissions:
+  contents: write # タグ push
+  actions: write # release.yml の dispatch
+
+concurrency:
+  group: auto-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  tag-and-release:
+    name: Detect version bump and trigger release
+    # 特権ワークフローを既定ブランチ上の実行に限定する。push trigger は main のみ
+    # だが、workflow_dispatch は任意 ref を選べるため明示的に弾く (未マージコードを
+    # 公式リリースとして公開させない)。
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          # 直前バージョンとの差分確認 + 既存タグ全取得 (ダウングレード判定/タグ
+          # 検証をローカルで完結させ、API のページングや一過性失敗に依存しない)。
+          fetch-depth: 0
+
+      - name: Detect version change
+        id: detect
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          read_cargo_version() {
+            # stdin = Cargo.toml の内容。[workspace.package] の version を取り出す。
+            awk '
+              /^\[/ { section = $0 }
+              section == "[workspace.package]" && /^version[[:space:]]*=/ {
+                gsub(/.*=[[:space:]]*"/, ""); gsub(/".*/, ""); print; exit
+              }
+            '
+          }
+
+          cur_t="$(jq -r '.version' src-tauri/tauri.conf.json)"
+          cur_p="$(jq -r '.version' package.json)"
+          cur_c="$(read_cargo_version < Cargo.toml)"
+          echo "Current versions -> tauri:$cur_t package:$cur_p cargo:$cur_c"
+
+          if [ -z "$cur_t" ] || [ "$cur_t" = "null" ]; then
+            echo "::error::Could not read version from src-tauri/tauri.conf.json"
+            exit 1
+          fi
+
+          # 安定版 SemVer のみ受理。run/タグ名に渡る値を英数字と . に限定し
+          # `$(...)` 等のメタ文字を入口で遮断する (インジェクション対策)。prerelease
+          # (`-beta` 等) は安定版として誤公開されるのを避けるため弾く。各要素は
+          # `0` または非ゼロ始まりに限定し、先頭ゼロ (`01.2.3` 等) も弾く。Cargo は
+          # leading zero を拒否するので、通すとタグ作成後に release build が必ず落ちる。
+          if ! printf '%s' "$cur_t" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'; then
+            echo "::error::Version '$cur_t' must be a stable SemVer (X.Y.Z, no leading zeros). Prereleases are not auto-released; dispatch release.yml manually instead."
+            exit 1
+          fi
+
+          echo "version=$cur_t" >> "$GITHUB_OUTPUT"
+          echo "tag=v$cur_t" >> "$GITHUB_OUTPUT"
+
+          # 3 ファイルいずれかの version フィールドが直前コミットから変わったか。
+          # 1 ファイル直し忘れ→別ファイル修正コミット、でも拾えるよう全ファイルを見る。
+          changed=true
+          if [ "$EVENT_NAME" = "push" ] && [ -n "$BEFORE" ] \
+             && [ "$BEFORE" != "0000000000000000000000000000000000000000" ]; then
+            pre_t="$(git show "$BEFORE:src-tauri/tauri.conf.json" 2>/dev/null | jq -r '.version' 2>/dev/null || echo '')"
+            pre_p="$(git show "$BEFORE:package.json" 2>/dev/null | jq -r '.version' 2>/dev/null || echo '')"
+            pre_c="$(git show "$BEFORE:Cargo.toml" 2>/dev/null | read_cargo_version 2>/dev/null || echo '')"
+            echo "Previous versions -> tauri:${pre_t:-<none>} package:${pre_p:-<none>} cargo:${pre_c:-<none>}"
+            if [ "$cur_t" = "$pre_t" ] && [ "$cur_p" = "$pre_p" ] && [ "$cur_c" = "$pre_c" ]; then
+              changed=false
+            fi
+          fi
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+          if [ "$changed" != "true" ]; then
+            echo "::notice::No version field changed since the previous commit; nothing to release."
+          fi
+
+      - name: Verify version files are in sync
+        if: steps.detect.outputs.changed == 'true'
+        env:
+          VERSION: ${{ steps.detect.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          conf="$(jq -r '.version' src-tauri/tauri.conf.json)"
+          pkg="$(jq -r '.version' package.json)"
+          cargo="$(awk '
+            /^\[/ { section = $0 }
+            section == "[workspace.package]" && /^version[[:space:]]*=/ {
+              gsub(/.*=[[:space:]]*"/, ""); gsub(/".*/, ""); print; exit
+            }
+          ' Cargo.toml)"
+          echo "tauri.conf.json: $conf"
+          echo "package.json:    $pkg"
+          echo "Cargo.toml:      $cargo"
+          if [ "$conf" != "$VERSION" ] || [ "$pkg" != "$VERSION" ] || [ "$cargo" != "$VERSION" ]; then
+            echo "::error::Version mismatch. Keep src-tauri/tauri.conf.json, package.json and Cargo.toml in sync before releasing."
+            exit 1
+          fi
+
+      - name: Decide whether to release
+        id: decide
+        if: steps.detect.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ steps.detect.outputs.version }}
+          TAG: ${{ steps.detect.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # 冪等性: その version の Release が既にあれば何もしない。tag ではなく
+          # Release の有無で見ることで、「tag push 済み・dispatch 失敗」の再 run でも
+          # Release 未作成なら再 dispatch できる。lookup は fail-closed: 404 (未作成)
+          # と認証/レート等の一過性エラーを区別し、後者では止める (誤公開防止)。
+          set +e
+          view_err="$(gh release view "$TAG" --repo "$GH_REPO" 2>&1 >/dev/null)"
+          rc=$?
+          set -e
+          if [ "$rc" -eq 0 ]; then
+            echo "::notice::Release $TAG already exists; nothing to do."
+            echo "do_release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! printf '%s' "$view_err" | grep -qiE 'release not found|not found|HTTP 404'; then
+            echo "::error::Could not determine whether release $TAG exists (treating as fatal): $view_err"
+            exit 1
+          fi
+
+          # ダウングレード公開の防止: 既存 v* タグの最大安定版より厳密に新しい時だけ
+          # 続行。タグは checkout で全取得済みのローカル参照なので、API のページング
+          # 窓 (--limit) や一過性失敗に左右されない。安定版のみ扱うため sort -V は
+          # SemVer precedence と一致する。
+          # 現バージョン自身は除外する: 「tag push 済み・dispatch 失敗」の再 run では
+          # 自分のタグが最大版として混入し $VERSION = $latest で誤って降格扱いになり、
+          # dispatch retry パスに到達できなくなる。Release 未完は手前の gh release view
+          # で確認済みなので、自タグは降格判定の対象外にする (指す先検証は後段で担保)。
+          latest="$(git tag -l 'v*' | sed 's/^v//' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | grep -vx "$VERSION" | sort -V | tail -n1 || true)"
+          if [ -n "$latest" ]; then
+            highest="$(printf '%s\n%s\n' "$latest" "$VERSION" | sort -V | tail -n1)"
+            if [ "$VERSION" = "$latest" ] || [ "$highest" != "$VERSION" ]; then
+              echo "::notice::Current version $VERSION is not newer than the highest released tag v$latest; skipping."
+              echo "do_release=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+
+          echo "do_release=true" >> "$GITHUB_OUTPUT"
+
+      - name: Create and push tag
+        if: steps.detect.outputs.changed == 'true' && steps.decide.outputs.do_release == 'true'
+        env:
+          TAG: ${{ steps.detect.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # 既存タグ (前 run でタグだけ push して dispatch 失敗した等) の再利用時は、
+          # 必ず bump コミットを指している事を検証する。手動/別コミット由来のタグを
+          # そのまま --ref に使うと、検証済みでないツリーを公開してしまうため。
+          if git rev-parse -q --verify "refs/tags/$TAG^{commit}" >/dev/null 2>&1; then
+            tag_commit="$(git rev-list -n1 "refs/tags/$TAG")"
+            if [ "$tag_commit" != "$GITHUB_SHA" ]; then
+              echo "::error::Tag $TAG already exists but points at $tag_commit, not the bump commit $GITHUB_SHA. Refusing to release a different tree."
+              exit 1
+            fi
+            echo "::notice::Tag $TAG already exists and matches the bump commit; reusing it."
+          else
+            git tag -a "$TAG" -m "Release $TAG"
+            git push origin "refs/tags/$TAG"
+            echo "::notice::Created and pushed tag $TAG"
+          fi
+
+      - name: Trigger release workflow
+        if: steps.detect.outputs.changed == 'true' && steps.decide.outputs.do_release == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ steps.detect.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 即時 正式公開: draft=false / prerelease=false。auto-release は安定版のみ
+          # 通すので prerelease=false で常に正しい。--ref を作成タグにすることで
+          # リリースは必ず bump commit のツリーから組まれる。一過性失敗に備えて retry。
+          for attempt in 1 2 3 4; do
+            if gh workflow run release.yml \
+                 --repo "$GH_REPO" \
+                 --ref "$TAG" \
+                 -f tag="$TAG" \
+                 -f draft=false \
+                 -f prerelease=false; then
+              echo "::notice::Dispatched release.yml for $TAG (draft=false, prerelease=false; attempt $attempt)"
+              exit 0
+            fi
+            echo "dispatch attempt $attempt failed; retrying..."
+            sleep "$((attempt * 5))"
+          done
+          echo "::error::Failed to dispatch release.yml for $TAG after retries."
+          exit 1
