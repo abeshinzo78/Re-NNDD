@@ -107,9 +107,11 @@ jobs:
 
           # 安定版 SemVer のみ受理。run/タグ名に渡る値を英数字と . に限定し
           # `$(...)` 等のメタ文字を入口で遮断する (インジェクション対策)。prerelease
-          # (`-beta` 等) は安定版として誤公開されるのを避けるため弾く。
-          if ! printf '%s' "$cur_t" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "::error::Version '$cur_t' must be a stable SemVer (X.Y.Z). Prereleases are not auto-released; dispatch release.yml manually instead."
+          # (`-beta` 等) は安定版として誤公開されるのを避けるため弾く。各要素は
+          # `0` または非ゼロ始まりに限定し、先頭ゼロ (`01.2.3` 等) も弾く。Cargo は
+          # leading zero を拒否するので、通すとタグ作成後に release build が必ず落ちる。
+          if ! printf '%s' "$cur_t" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'; then
+            echo "::error::Version '$cur_t' must be a stable SemVer (X.Y.Z, no leading zeros). Prereleases are not auto-released; dispatch release.yml manually instead."
             exit 1
           fi
 
