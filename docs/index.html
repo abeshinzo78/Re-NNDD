@@ -6,206 +6,280 @@
   <title>Re:NNDD - ニコニコ動画デスクトップアーカイブクライアント</title>
   <meta name="description" content="Re:NNDD は Tauri 2 + Rust + Svelte 5 で作られたニコニコ動画専用デスクトップアーカイブクライアントです。">
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    :root {
-      --bg: #0d1117;
-      --bg-card: #161b22;
-      --bg-card-hover: #1c2128;
-      --text: #e6edf3;
-      --text-muted: #8b949e;
-      --accent: #ff3e00;
-      --accent-hover: #ff5722;
-      --tauri: #24c8db;
-      --rust: #dea584;
-      --svelte: #ff3e00;
-      --border: #30363d;
-      --radius: 12px;
-    }
-
-    html { scroll-behavior: smooth; }
-
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans JP', sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      line-height: 1.7;
-      -webkit-font-smoothing: antialiased;
+      font-family: 'Linux Libertine', 'Georgia', 'Times', serif;
+      font-size: 14px;
+      line-height: 1.6;
+      margin: 0;
+      padding: 0;
+      background: #fff;
+      color: #202122;
     }
 
-    a { color: var(--accent); text-decoration: none; }
-    a:hover { color: var(--accent-hover); }
+    a { color: #0645ad; text-decoration: none; }
+    a:visited { color: #0b0080; }
+    a:hover { text-decoration: underline; }
 
-    /* ── Hero ── */
-    .hero {
-      text-align: center;
-      padding: 80px 24px 60px;
-      max-width: 800px;
-      margin: 0 auto;
-    }
-    .hero-logo {
-      font-size: 3.5rem;
-      font-weight: 800;
-      letter-spacing: -0.02em;
-      background: linear-gradient(135deg, var(--svelte), var(--tauri));
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-    .hero-tagline {
-      font-size: 1.2rem;
-      color: var(--text-muted);
-      margin-top: 12px;
-    }
-    .hero-badges {
+    /* ── Top bar ── */
+    .mw-top-bar {
+      background: #fff;
+      border-bottom: 1px solid #a7d7f9;
+      padding: 0.3em 1em;
       display: flex;
-      justify-content: center;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-top: 24px;
-    }
-    .badge {
-      display: inline-flex;
       align-items: center;
-      gap: 6px;
-      padding: 4px 12px;
-      border-radius: 999px;
-      font-size: 0.8rem;
-      font-weight: 600;
-      border: 1px solid var(--border);
-      background: var(--bg-card);
+      justify-content: space-between;
+      font-size: 0.8em;
+      font-family: sans-serif;
     }
-    .hero-actions {
+    .mw-top-bar .personal-tools a { color: #0645ad; margin-left: 1em; }
+    .mw-top-bar .personal-tools a:first-child { margin-left: 0; }
+
+    /* ── Tabs ── */
+    .mw-tabs {
+      background: transparent;
+      padding: 0 1em;
+      border-bottom: 1px solid #a7d7f9;
       display: flex;
-      justify-content: center;
-      gap: 16px;
-      margin-top: 32px;
-      flex-wrap: wrap;
+      gap: 0;
+      font-family: sans-serif;
+      font-size: 0.85em;
     }
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 12px 28px;
-      border-radius: var(--radius);
-      font-weight: 600;
-      font-size: 1rem;
-      transition: all 0.2s;
-      border: none;
+    .mw-tabs a {
+      display: inline-block;
+      padding: 0.5em 1em;
+      color: #0645ad;
+      border: 1px solid transparent;
+      border-bottom: none;
+      margin-bottom: -1px;
+      background: transparent;
       cursor: pointer;
     }
-    .btn-primary {
-      background: var(--accent);
-      color: #fff;
-    }
-    .btn-primary:hover { background: var(--accent-hover); color: #fff; }
-    .btn-secondary {
-      background: var(--bg-card);
-      color: var(--text);
-      border: 1px solid var(--border);
-    }
-    .btn-secondary:hover { background: var(--bg-card-hover); color: var(--text); }
-
-    /* ── Features ── */
-    .features {
-      max-width: 1000px;
-      margin: 0 auto;
-      padding: 40px 24px 60px;
-    }
-    .features-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 16px;
-    }
-    .feature-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 24px;
-      transition: background 0.2s;
-    }
-    .feature-card:hover { background: var(--bg-card-hover); }
-    .feature-card h3 { font-size: 1rem; margin-bottom: 8px; }
-    .feature-card p { font-size: 0.9rem; color: var(--text-muted); }
-
-    /* ── Screenshots ── */
-    .screenshots {
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: 40px 24px 60px;
-    }
-    .screenshots h2 {
-      text-align: center;
-      font-size: 1.8rem;
-      margin-bottom: 12px;
-    }
-    .screenshots .subtitle {
-      text-align: center;
-      color: var(--text-muted);
-      margin-bottom: 32px;
+    .mw-tabs a:hover { text-decoration: none; background: #f8f9fa; }
+    .mw-tabs a.active {
+      background: #fff;
+      border-color: #a7d7f9;
+      border-bottom-color: #fff;
+      font-weight: bold;
     }
 
-    /* Tab switch */
-    .tab-bar {
+    /* ── Sidebar ── */
+    .mw-wrapper {
       display: flex;
-      justify-content: center;
-      gap: 8px;
-      margin-bottom: 32px;
+      min-height: calc(100vh - 80px);
     }
-    .tab-btn {
-      padding: 8px 20px;
-      border-radius: 999px;
-      border: 1px solid var(--border);
-      background: var(--bg-card);
-      color: var(--text-muted);
-      font-size: 0.9rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.2s;
+    .mw-sidebar {
+      width: 176px;
+      min-width: 176px;
+      padding: 0.8em 0.6em;
+      font-size: 0.8em;
+      font-family: sans-serif;
+      border-right: 1px solid #a7d7f9;
+      background: #f8f9fa;
     }
-    .tab-btn:hover { background: var(--bg-card-hover); color: var(--text); }
-    .tab-btn.active {
-      background: var(--accent);
-      color: #fff;
-      border-color: var(--accent);
+    .mw-sidebar h3 {
+      font-size: 0.95em;
+      font-weight: normal;
+      color: #54595d;
+      margin: 0.8em 0 0.3em;
+      padding-bottom: 0.2em;
+      border-bottom: none;
     }
-    .tab-panel { display: none; }
-    .tab-panel.active { display: block; }
+    .mw-sidebar h3:first-child { margin-top: 0; }
+    .mw-sidebar ul {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+    .mw-sidebar li { margin: 0.15em 0; }
+    .mw-sidebar li a { color: #0645ad; }
+    .mw-sidebar li a:hover { text-decoration: underline; }
 
-    /* Section */
-    .ss-section { margin-bottom: 48px; }
-    .ss-section h3 {
-      font-size: 1.2rem;
-      margin-bottom: 16px;
-      padding-left: 12px;
-      border-left: 3px solid var(--accent);
+    /* ── Content ── */
+    .mw-content {
+      flex: 1;
+      padding: 1em 1.5em 2em;
+      max-width: 100%;
+      overflow-x: hidden;
     }
-    .ss-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-      gap: 16px;
+
+    /* Headings */
+    .mw-content h1 {
+      font-size: 1.8em;
+      font-weight: normal;
+      border-bottom: 1px solid #a2a9b1;
+      padding-bottom: 0.15em;
+      margin-bottom: 0.5em;
     }
-    .ss-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      overflow: hidden;
-      transition: transform 0.2s, box-shadow 0.2s;
+    .mw-content h2 {
+      font-size: 1.5em;
+      font-weight: normal;
+      border-bottom: 1px solid #a2a9b1;
+      padding-bottom: 0.15em;
+      margin-top: 1.2em;
+      margin-bottom: 0.4em;
     }
-    .ss-card:hover {
-      transform: translateY(-4px);
-      box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+    .mw-content h3 {
+      font-size: 1.17em;
+      font-weight: bold;
+      margin-top: 1em;
+      margin-bottom: 0.3em;
+      border-bottom: none;
     }
-    .ss-card img {
+
+    /* TOC */
+    .toc {
+      border: 1px solid #a2a9b1;
+      background: #f8f9fa;
+      padding: 0.8em 1.2em;
+      display: inline-block;
+      margin: 0.5em 0 1em;
+      font-size: 0.95em;
+    }
+    .toc-title {
+      font-weight: bold;
+      text-align: center;
+      margin-bottom: 0.5em;
+    }
+    .toc ol { margin: 0; padding-left: 2em; }
+    .toc li { margin: 0.1em 0; }
+
+    /* Tables */
+    .wikitable {
+      border-collapse: collapse;
+      border: 1px solid #a2a9b1;
+      background: #f8f9fa;
+      margin: 0.5em 0 1em;
+      font-size: 0.95em;
       width: 100%;
-      display: block;
-      cursor: zoom-in;
     }
-    .ss-card .caption {
-      padding: 10px 16px;
-      font-size: 0.85rem;
-      color: var(--text-muted);
+    .wikitable th {
+      background: #eaecf0;
+      border: 1px solid #a2a9b1;
+      padding: 0.4em 0.8em;
+      text-align: left;
+      font-weight: bold;
     }
+    .wikitable td {
+      border: 1px solid #a2a9b1;
+      padding: 0.4em 0.8em;
+      vertical-align: top;
+    }
+
+    /* Infobox */
+    .infobox {
+      float: right;
+      clear: right;
+      width: 280px;
+      border: 1px solid #a2a9b1;
+      background: #f8f9fa;
+      margin: 0 0 1em 1em;
+      font-size: 0.9em;
+      border-collapse: collapse;
+    }
+    .infobox th {
+      background: #cef2e0;
+      text-align: center;
+      padding: 0.4em;
+      border: 1px solid #a2a9b1;
+    }
+    .infobox td {
+      padding: 0.3em 0.5em;
+      border: 1px solid #a2a9b1;
+    }
+    .infobox td.img-cell {
+      text-align: center;
+      padding: 0.6em;
+      background: #fff;
+    }
+    .infobox td.img-cell img { max-width: 100%; }
+    .infobox .ib-header {
+      background: #caf0d8;
+      text-align: center;
+      font-size: 1.15em;
+      font-weight: bold;
+      padding: 0.5em;
+    }
+    .infobox .ib-subheader {
+      background: #e0f0e8;
+      text-align: center;
+      font-size: 0.9em;
+      padding: 0.3em;
+    }
+
+    /* Gallery */
+    .gallery {
+      margin: 0.5em 0 1em;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+    .gallery-item {
+      border: 1px solid #c8ccd1;
+      background: #f8f9fa;
+      display: inline-flex;
+      flex-direction: column;
+      width: 220px;
+    }
+    .gallery-item .thumb {
+      padding: 4px;
+      text-align: center;
+      background: #fff;
+    }
+    .gallery-item .thumb img {
+      max-width: 210px;
+      max-height: 160px;
+      cursor: pointer;
+    }
+    .gallery-item .gallerytext {
+      font-size: 0.85em;
+      padding: 2px 4px 4px;
+      text-align: center;
+      color: #202122;
+    }
+
+    /* Gallery row variant (full-width) */
+    .gallery-full .gallery-item {
+      width: 100%;
+      max-width: 700px;
+    }
+    .gallery-full .gallery-item .thumb img {
+      max-width: 690px;
+      max-height: none;
+    }
+
+    /* Code */
+    code {
+      background: #f8f9fa;
+      border: 1px solid #eaecf0;
+      border-radius: 2px;
+      padding: 1px 4px;
+      font-size: 0.9em;
+    }
+
+    /* Category links */
+    .catlinks {
+      border: 1px solid #a2a9b1;
+      background: #f8f9fa;
+      padding: 0.4em 0.8em;
+      margin-top: 1.5em;
+      font-size: 0.9em;
+    }
+    .catlinks a { color: #0645ad; }
+
+    /* Footer */
+    .mw-footer {
+      border-top: 1px solid #a7d7f9;
+      background: #f8f9fa;
+      padding: 0.6em 1em;
+      font-size: 0.8em;
+      color: #202122;
+      text-align: center;
+      font-family: sans-serif;
+    }
+    .mw-footer a { color: #0645ad; }
+
+    /* Clear floats */
+    .mw-clearfix::after { content: ''; display: table; clear: both; }
 
     /* Lightbox */
     .lightbox {
@@ -213,334 +287,303 @@
       position: fixed;
       inset: 0;
       z-index: 1000;
-      background: rgba(0,0,0,0.92);
+      background: rgba(0,0,0,0.88);
       align-items: center;
       justify-content: center;
-      cursor: zoom-out;
+      cursor: pointer;
     }
     .lightbox.open { display: flex; }
-    .lightbox img {
-      max-width: 95vw;
-      max-height: 95vh;
-      border-radius: 4px;
-    }
+    .lightbox img { max-width: 95vw; max-height: 95vh; }
 
-    /* ── Tech stack ── */
-    .tech {
-      max-width: 1000px;
-      margin: 0 auto;
-      padding: 40px 24px 60px;
-    }
-    .tech h2 {
-      text-align: center;
-      font-size: 1.8rem;
-      margin-bottom: 32px;
-    }
-    .tech-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-      gap: 16px;
-    }
-    .tech-item {
-      text-align: center;
-      padding: 20px 12px;
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-    }
-    .tech-item .name { font-weight: 700; margin-top: 8px; font-size: 0.95rem; }
-    .tech-item .desc { font-size: 0.8rem; color: var(--text-muted); margin-top: 4px; }
-
-    /* ── Footer ── */
-    footer {
-      text-align: center;
-      padding: 32px 24px;
-      color: var(--text-muted);
-      font-size: 0.85rem;
-      border-top: 1px solid var(--border);
-    }
-
-    @media (max-width: 640px) {
-      .hero-logo { font-size: 2.4rem; }
-      .hero-tagline { font-size: 1rem; }
-      .ss-grid { grid-template-columns: 1fr; }
+    @media (max-width: 768px) {
+      .mw-sidebar { display: none; }
+      .infobox { float: none; width: 100%; margin: 0 0 1em 0; }
+      .gallery-item { width: 100%; }
+      .gallery-item .thumb img { max-width: 100%; }
     }
   </style>
 </head>
 <body>
 
-<!-- Hero -->
-<section class="hero">
-  <div class="hero-logo">Re:NNDD</div>
-  <p class="hero-tagline">
-    ニコニコ動画専用デスクトップアーカイブクライアント<br>
-    Tauri 2 &middot; Rust &middot; Svelte 5 &middot; TypeScript
-  </p>
-  <div class="hero-badges">
-    <span class="badge">🐧 Linux</span>
-    <span class="badge">🍎 macOS</span>
-    <span class="badge">🪟 Windows</span>
-    <span class="badge">MIT License</span>
+<!-- Top bar -->
+<div class="mw-top-bar">
+  <div>
+    <strong style="font-size:1.1em;">Re:NNDD</strong>
+    <span style="color:#72777d; margin-left:0.5em;">より自由なニコニコ動画を</span>
   </div>
-  <div class="hero-actions">
-    <a class="btn btn-primary" href="https://github.com/abeshinzo78/Re-NNDD/releases" target="_blank">
-      ⬇ Download
-    </a>
-    <a class="btn btn-secondary" href="https://github.com/abeshinzo78/Re-NNDD" target="_blank">
-      GitHub
-    </a>
-    <a class="btn btn-secondary" href="https://discord.gg/cDhnfZ6HMa" target="_blank">
-      Discord
-    </a>
+  <div class="personal-tools">
+    <a href="https://github.com/abeshinzo78/Re-NNDD">GitHub</a>
+    <a href="https://github.com/abeshinzo78/Re-NNDD/releases">Releases</a>
+    <a href="https://discord.gg/cDhnfZ6HMa">Discord</a>
   </div>
-</section>
+</div>
 
-<!-- Features -->
-<section class="features">
-  <div class="features-grid">
-    <div class="feature-card">
-      <h3>🔍 スナップショット検索</h3>
-      <p>ニコニコ動画のスナップショット検索 API 経由で高速に動画を検索。</p>
-    </div>
-    <div class="feature-card">
-      <h3>▶️ HLS 再生 &amp; コメント</h3>
-      <p>内蔵プレイヤーで HLS 動画を再生し、コメントをリアルタイム表示。</p>
-    </div>
-    <div class="feature-card">
-      <h3>⬇️ ダウンロード &amp; ライブラリ</h3>
-      <p>yt-dlp + ffmpeg で動画を保存し、SQLite ベースのライブラリで一元管理。</p>
-    </div>
-    <div class="feature-card">
-      <h3>📝 コメント焼き込み</h3>
-      <p>コメントを ASS 字幕として映像に焼き込んだ MP4 をエクスポート。</p>
-    </div>
-    <div class="feature-card">
-      <h3>📋 プレイリスト</h3>
-      <p>マイリストとスマートプレイリストで動画を整理。</p>
-    </div>
-    <div class="feature-card">
-      <h3>🚫 NG 機能</h3>
-      <p>NG ルールで不要なコンテンツをフィルタリング。</p>
-    </div>
-    <div class="feature-card">
-      <h3>🕹️ コマンドパレット</h3>
-      <p>キーボード操作で素早く機能にアクセス。</p>
-    </div>
-    <div class="feature-card">
-      <h3>🔌 プラグインシステム</h3>
-      <p>JavaScript プラグインで機能を拡張可能。</p>
-    </div>
-  </div>
-</section>
+<!-- Tabs -->
+<div class="mw-tabs" style="padding-left: 177px;">
+  <a class="active" href="#">メインページ</a>
+  <a href="https://github.com/abeshinzo78/Re-NNDD">ソースコード</a>
+  <a href="https://github.com/abeshinzo78/Re-NNDD/releases">ダウンロード</a>
+  <a href="https://github.com/abeshinzo78/Re-NNDD/issues">バグ報告</a>
+</div>
 
-<!-- Screenshots -->
-<section class="screenshots">
-  <h2>スクリーンショット</h2>
-  <p class="subtitle">実際の画面で Re:NNDD の機能を紹介します</p>
+<!-- Main layout -->
+<div class="mw-wrapper">
 
-  <div class="tab-bar">
-    <button class="tab-btn active" data-tab="dark">Dark</button>
-    <button class="tab-btn" data-tab="classic">Classic</button>
-  </div>
+  <!-- Sidebar -->
+  <nav class="mw-sidebar">
+    <h3>案内</h3>
+    <ul>
+      <li><a href="#summary">概要</a></li>
+      <li><a href="#features">機能一覧</a></li>
+      <li><a href="#screenshots">スクリーンショット</a></li>
+      <li><a href="#tech">技術スタック</a></li>
+      <li><a href="#install">インストール</a></li>
+    </ul>
+    <h3>リンク</h3>
+    <ul>
+      <li><a href="https://github.com/abeshinzo78/Re-NNDD">GitHub リポジトリ</a></li>
+      <li><a href="https://github.com/abeshinzo78/Re-NNDD/releases">リリース</a></li>
+      <li><a href="https://discord.gg/cDhnfZ6HMa">Discord</a></li>
+    </ul>
+    <h3>ツール</h3>
+    <ul>
+      <li><a href="https://deepwiki.com/abeshinzo78/Re-NNDD">DeepWiki</a></li>
+    </ul>
+  </nav>
 
-  <!-- Dark theme -->
-  <div class="tab-panel active" id="panel-dark">
+  <!-- Content -->
+  <main class="mw-content mw-clearfix">
 
-    <div class="ss-section">
-      <h3>ランキング</h3>
-      <div class="ss-grid">
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/dark/02-ranking-general.png" alt="ランキング - 総合"><div class="caption">総合ランキング</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/dark/03-ranking-game.png" alt="ランキング - ゲーム"><div class="caption">ゲームランキング</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/dark/04-ranking-anime.png" alt="ランキング - アニメ"><div class="caption">アニメランキング</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/dark/05-ranking-vocaloid.png" alt="ランキング - VOCALOID"><div class="caption">VOCALOIDランキング</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/dark/06-ranking-music.png" alt="ランキング - 音楽"><div class="caption">音楽ランキング</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/dark/07-ranking-utattemita.png" alt="ランキング - 歌ってみた"><div class="caption">歌ってみたランキング</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/dark/08-ranking-odottemita.png" alt="ランキング - 踊ってみた"><div class="caption">踊ってみたランキング</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/dark/09-ranking-entertainment.png" alt="ランキング - エンタメ"><div class="caption">エンタメランキング</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/dark/10-ranking-vtuber.png" alt="ランキング - VTuber"><div class="caption">VTuberランキング</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/dark/11-ranking-mmd.png" alt="ランキング - MMD"><div class="caption">MMDランキング</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/dark/12-ranking-commentary.png" alt="ランキング - 解説"><div class="caption">解説ランキング</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/dark/13-ranking-cooking.png" alt="ランキング - 料理"><div class="caption">料理ランキング</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/dark/14-ranking-general-weekly.png" alt="ランキング - 総合 週間"><div class="caption">総合ランキング (週間)</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/dark/15-ranking-general-hourly.png" alt="ランキング - 総合 時間"><div class="caption">総合ランキング (時間)</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/dark/16-ranking-ng-panel.png" alt="ランキング - NGパネル"><div class="caption">ランキング NGパネル</div></div>
-      </div>
-    </div>
+    <h1 id="summary">Re:NNDD</h1>
 
-    <div class="ss-section">
-      <h3>検索</h3>
-      <div class="ss-grid">
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/dark/17-search-hatsune-miku.png" alt="検索 - 初音ミク"><div class="caption">検索: 初音ミク</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/dark/18-search-game-jikkyo.png" alt="検索 - ゲーム実況"><div class="caption">検索: ゲーム実況</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/dark/19-search-bgm.png" alt="検索 - BGM"><div class="caption">検索: BGM</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/dark/20-search-touhou.png" alt="検索 - 東方"><div class="caption">検索: 東方</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/dark/21-search-utattemita.png" alt="検索 - 歌ってみた"><div class="caption">検索: 歌ってみた</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/dark/22-search-voiceroid.png" alt="検索 - VOICEROID"><div class="caption">検索: VOICEROID</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/dark/23-search-yukkuri-tag.png" alt="検索 - ゆっくり"><div class="caption">検索: ゆっくり</div></div>
-      </div>
+    <!-- Infobox -->
+    <table class="infobox">
+      <tr><td colspan="2" class="ib-header">Re:NNDD</td></tr>
+      <tr><td colspan="2" class="ib-subheader">ニコニコ動画デスクトップアーカイブクライアント</td></tr>
+      <tr><td colspan="2" class="img-cell"><img src="assets/re-nndd-screenshots/dark/01-home.png" alt="Re:NNDD ホーム画面"></td></tr>
+      <tr><th>開発者</th><td><a href="https://github.com/abeshinzo78">abeshinzo78</a></td></tr>
+      <tr><th>初版</th><td>2025年</td></tr>
+      <tr>
+        <th>対応OS</th>
+        <td>
+          <a href="https://github.com/abeshinzo78/Re-NNDD/releases">Linux</a> /
+          <a href="https://github.com/abeshinzo78/Re-NNDD/releases">macOS</a> /
+          <a href="https://github.com/abeshinzo78/Re-NNDD/releases">Windows</a>
+        </td>
+      </tr>
+      <tr><th>種別</th><td>動画ダウンロード・再生ソフト</td></tr>
+      <tr><th>ライセンス</th><td><a href="https://github.com/abeshinzo78/Re-NNDD/blob/main/LICENSE">MIT</a></td></tr>
+      <tr>
+        <th>使用言語</th>
+        <td>Rust, TypeScript, Svelte</td>
+      </tr>
+    </table>
+
+    <p>
+      <b>Re:NNDD</b>（リ・エヌエヌディーディー）は、ニコニコ動画専用のデスクトップアーカイブクライアントである。
+      <a href="https://tauri.app/">Tauri 2</a> + <a href="https://www.rust-lang.org/">Rust</a> + <a href="https://svelte.dev/">Svelte 5</a> + <a href="https://www.typescriptlang.org/">TypeScript</a> で構築されており、Windows・macOS・Linuxに対応する。
+      NNDDオリジナルの著者 <a href="https://github.com/MineAP">MineAP</a> 氏の MIT ライセンス NNDD を起点に、現代的なスタックで再実装するプロジェクトである。
+    </p>
+
+    <div class="toc">
+      <div class="toc-title">目次</div>
+      <ol>
+        <li><a href="#features">機能一覧</a></li>
+        <li><a href="#screenshots">スクリーンショット</a>
+          <ol>
+            <li><a href="#ss-dark">ダークテーマ</a></li>
+            <li><a href="#ss-classic">クラシックテーマ</a></li>
+          </ol>
+        </li>
+        <li><a href="#tech">技術スタック</a></li>
+        <li><a href="#install">インストール</a></li>
+        <li><a href="#ack">謝意</a></li>
+      </ol>
     </div>
 
-    <div class="ss-section">
-      <h3>プレイヤー</h3>
-      <div class="ss-grid">
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/dark/24-player-comments-1.png" alt="プレイヤー - コメント1"><div class="caption">プレイヤー: コメント表示</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/dark/25-player-comments-2.png" alt="プレイヤー - コメント2"><div class="caption">プレイヤー: コメント表示</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/dark/26-player-comments-3.png" alt="プレイヤー - コメント3"><div class="caption">プレイヤー: コメント表示</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/dark/27-player-comments-4.png" alt="プレイヤー - コメント4"><div class="caption">プレイヤー: コメント表示</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/dark/28-player-comments-5.png" alt="プレイヤー - コメント5"><div class="caption">プレイヤー: コメント表示</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/dark/29-player-comments-6.png" alt="プレイヤー - コメント6"><div class="caption">プレイヤー: コメント表示</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/dark/30-player-comments-7.png" alt="プレイヤー - コメント7"><div class="caption">プレイヤー: コメント表示</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/dark/31-player-related-scroll.png" alt="プレイヤー - 関連動画"><div class="caption">プレイヤー: 関連動画</div></div>
-      </div>
+    <!-- Features -->
+    <h2 id="features">機能一覧</h2>
+    <table class="wikitable">
+      <tr><th>機能</th><th>説明</th></tr>
+      <tr><td>スナップショット検索</td><td>ニコニコ動画のスナップショット検索 API 経由で高速に動画を検索</td></tr>
+      <tr><td>ログイン</td><td>メール/パスワード、<code>user_session</code> Cookie 直入力に対応</td></tr>
+      <tr><td>HLS 再生 &amp; コメント</td><td>内蔵プレイヤーで HLS 動画を再生し、コメントをリアルタイム表示</td></tr>
+      <tr><td>ダウンロード &amp; ライブラリ</td><td><code>yt-dlp</code> + <code>ffmpeg</code> で動画を保存、SQLite ベースのライブラリで一元管理</td></tr>
+      <tr><td>コメント焼き込み</td><td>コメントを ASS 字幕として映像に焼き込んだ MP4 をエクスポート</td></tr>
+      <tr><td>ランキング</td><td>総合・VOCALOID・ゲーム・アニメ・音楽などの各ジャンル別ランキングを表示</td></tr>
+      <tr><td>ユーザー/チャンネル</td><td>ユーザー・チャンネルの投稿動画一覧を取得</td></tr>
+      <tr><td>プレイリスト</td><td>マイリストとスマートプレイリストで動画を整理</td></tr>
+      <tr><td>NG 機能</td><td>NG ルールで不要なコンテンツをフィルタリング</td></tr>
+      <tr><td>コマンドパレット</td><td>キーボード操作で素早く機能にアクセス</td></tr>
+      <tr><td>プラグインシステム</td><td>JavaScript プラグインで機能を拡張可能</td></tr>
+      <tr><td>ローカル再生</td><td>内蔵 HTTP Range 配信でローカル保存動画を再生</td></tr>
+    </table>
+
+    <!-- Screenshots -->
+    <span id="screenshots"></span>
+    <h2>スクリーンショット</h2>
+
+    <h3 id="ss-dark">ダークテーマ</h3>
+
+    <h4 id="ss-dark-ranking">ランキング</h4>
+    <div class="gallery">
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/dark/02-ranking-general.png" alt="総合ランキング"></div><div class="gallerytext">総合ランキング</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/dark/03-ranking-game.png" alt="ゲームランキング"></div><div class="gallerytext">ゲーム</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/dark/04-ranking-anime.png" alt="アニメランキング"></div><div class="gallerytext">アニメ</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/dark/05-ranking-vocaloid.png" alt="VOCALOIDランキング"></div><div class="gallerytext">VOCALOID</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/dark/06-ranking-music.png" alt="音楽ランキング"></div><div class="gallerytext">音楽</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/dark/07-ranking-utattemita.png" alt="歌ってみたランキング"></div><div class="gallerytext">歌ってみた</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/dark/08-ranking-odottemita.png" alt="踊ってみたランキング"></div><div class="gallerytext">踊ってみた</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/dark/09-ranking-entertainment.png" alt="エンタメランキング"></div><div class="gallerytext">エンタメ</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/dark/10-ranking-vtuber.png" alt="VTuberランキング"></div><div class="gallerytext">VTuber</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/dark/11-ranking-mmd.png" alt="MMDランキング"></div><div class="gallerytext">MMD</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/dark/12-ranking-commentary.png" alt="解説ランキング"></div><div class="gallerytext">解説</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/dark/13-ranking-cooking.png" alt="料理ランキング"></div><div class="gallerytext">料理</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/dark/14-ranking-general-weekly.png" alt="総合 週間"></div><div class="gallerytext">総合（週間）</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/dark/15-ranking-general-hourly.png" alt="総合 時間"></div><div class="gallerytext">総合（時間）</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/dark/16-ranking-ng-panel.png" alt="NGパネル"></div><div class="gallerytext">ランキング NGパネル</div></div>
     </div>
 
-    <div class="ss-section">
-      <h3>ユーザー / チャンネル</h3>
-      <div class="ss-grid">
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/dark/32-user-channel-1.png" alt="ユーザーチャンネル1"><div class="caption">ユーザー/チャンネルページ</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/dark/33-user-channel-2.png" alt="ユーザーチャンネル2"><div class="caption">ユーザー/チャンネルページ</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/dark/34-user-channel-3.png" alt="ユーザーチャンネル3"><div class="caption">ユーザー/チャンネルページ</div></div>
-      </div>
+    <h4 id="ss-dark-search">検索</h4>
+    <div class="gallery">
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/dark/17-search-hatsune-miku.png" alt="検索 初音ミク"></div><div class="gallerytext">初音ミク</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/dark/18-search-game-jikkyo.png" alt="検索 ゲーム実況"></div><div class="gallerytext">ゲーム実況</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/dark/19-search-bgm.png" alt="検索 BGM"></div><div class="gallerytext">BGM</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/dark/20-search-touhou.png" alt="検索 東方"></div><div class="gallerytext">東方</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/dark/21-search-utattemita.png" alt="検索 歌ってみた"></div><div class="gallerytext">歌ってみた</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/dark/22-search-voiceroid.png" alt="検索 VOICEROID"></div><div class="gallerytext">VOICEROID</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/dark/23-search-yukkuri-tag.png" alt="検索 ゆっくり"></div><div class="gallerytext">ゆっくり</div></div>
     </div>
 
-    <div class="ss-section">
-      <h3>ライブラリ</h3>
-      <div class="ss-grid">
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/dark/35-library-grid.png" alt="ライブラリ - グリッド"><div class="caption">ライブラリ: グリッド表示</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/dark/36-library-search.png" alt="ライブラリ - 検索"><div class="caption">ライブラリ: 検索</div></div>
-      </div>
+    <h4 id="ss-dark-player">プレイヤー</h4>
+    <div class="gallery gallery-full">
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/dark/24-player-comments-1.png" alt="プレイヤー コメント"></div><div class="gallerytext">プレイヤー（コメント表示）</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/dark/25-player-comments-2.png" alt="プレイヤー コメント"></div><div class="gallerytext">プレイヤー（コメント表示）</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/dark/26-player-comments-3.png" alt="プレイヤー コメント"></div><div class="gallerytext">プレイヤー（コメント表示）</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/dark/27-player-comments-4.png" alt="プレイヤー コメント"></div><div class="gallerytext">プレイヤー（コメント表示）</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/dark/28-player-comments-5.png" alt="プレイヤー コメント"></div><div class="gallerytext">プレイヤー（コメント表示）</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/dark/29-player-comments-6.png" alt="プレイヤー コメント"></div><div class="gallerytext">プレイヤー（コメント表示）</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/dark/30-player-comments-7.png" alt="プレイヤー コメント"></div><div class="gallerytext">プレイヤー（コメント表示）</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/dark/31-player-related-scroll.png" alt="関連動画"></div><div class="gallerytext">関連動画スクロール</div></div>
     </div>
 
-    <div class="ss-section">
-      <h3>履歴</h3>
-      <div class="ss-grid">
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/dark/37-history.png" alt="履歴"><div class="caption">視聴履歴</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/dark/38-history-online-filter.png" alt="履歴 - オンラインフィルター"><div class="caption">履歴: オンラインフィルター</div></div>
-      </div>
+    <h4 id="ss-dark-user">ユーザー / チャンネル</h4>
+    <div class="gallery">
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/dark/32-user-channel-1.png" alt="ユーザーチャンネル"></div><div class="gallerytext">ユーザー/チャンネル (1)</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/dark/33-user-channel-2.png" alt="ユーザーチャンネル"></div><div class="gallerytext">ユーザー/チャンネル (2)</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/dark/34-user-channel-3.png" alt="ユーザーチャンネル"></div><div class="gallerytext">ユーザー/チャンネル (3)</div></div>
     </div>
 
-    <div class="ss-section">
-      <h3>プレイリスト</h3>
-      <div class="ss-grid">
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/dark/39-playlists-mylists.png" alt="プレイリスト - マイリスト"><div class="caption">マイリスト</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/dark/40-playlists-smart.png" alt="プレイリスト - スマート"><div class="caption">スマートプレイリスト</div></div>
-      </div>
+    <h4 id="ss-dark-lib">ライブラリ</h4>
+    <div class="gallery">
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/dark/35-library-grid.png" alt="ライブラリ グリッド"></div><div class="gallerytext">グリッド表示</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/dark/36-library-search.png" alt="ライブラリ 検索"></div><div class="gallerytext">検索</div></div>
     </div>
 
-    <div class="ss-section">
-      <h3>その他</h3>
-      <div class="ss-grid">
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/dark/41-downloads-queue.png" alt="ダウンロードキュー"><div class="caption">ダウンロードキュー</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/dark/42-ng-rules.png" alt="NGルール"><div class="caption">NGルール設定</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/dark/43-settings-overview.png" alt="設定 - 概要"><div class="caption">設定</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/dark/44-settings-detail.png" alt="設定 - 詳細"><div class="caption">設定: 詳細</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/dark/45-settings-account-appinfo.png" alt="設定 - アカウント"><div class="caption">設定: アカウント情報</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/dark/46-command-palette.png" alt="コマンドパレット"><div class="caption">コマンドパレット</div></div>
-      </div>
+    <h4 id="ss-dark-history">履歴</h4>
+    <div class="gallery">
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/dark/37-history.png" alt="履歴"></div><div class="gallerytext">視聴履歴</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/dark/38-history-online-filter.png" alt="履歴 フィルター"></div><div class="gallerytext">オンラインフィルター</div></div>
     </div>
 
-  </div>
-
-  <!-- Classic theme -->
-  <div class="tab-panel" id="panel-classic">
-
-    <div class="ss-section">
-      <h3>ホーム &amp; ランキング</h3>
-      <div class="ss-grid">
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/classic/01-home.png" alt="ホーム"><div class="caption">ホーム</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/classic/02-ranking-general.png" alt="ランキング - 総合"><div class="caption">総合ランキング</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/classic/03-ranking-vocaloid.png" alt="ランキング - VOCALOID"><div class="caption">VOCALOIDランキング</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/classic/04-ranking-game.png" alt="ランキング - ゲーム"><div class="caption">ゲームランキング</div></div>
-      </div>
+    <h4 id="ss-dark-playlist">プレイリスト</h4>
+    <div class="gallery">
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/dark/39-playlists-mylists.png" alt="マイリスト"></div><div class="gallerytext">マイリスト</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/dark/40-playlists-smart.png" alt="スマートプレイリスト"></div><div class="gallerytext">スマートプレイリスト</div></div>
     </div>
 
-    <div class="ss-section">
-      <h3>検索</h3>
-      <div class="ss-grid">
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/classic/05-search-hatsune-miku.png" alt="検索 - 初音ミク"><div class="caption">検索: 初音ミク</div></div>
-      </div>
+    <h4 id="ss-dark-other">その他</h4>
+    <div class="gallery">
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/dark/41-downloads-queue.png" alt="ダウンロードキュー"></div><div class="gallerytext">ダウンロードキュー</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/dark/42-ng-rules.png" alt="NGルール"></div><div class="gallerytext">NGルール</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/dark/43-settings-overview.png" alt="設定"></div><div class="gallerytext">設定</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/dark/44-settings-detail.png" alt="設定 詳細"></div><div class="gallerytext">設定（詳細）</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/dark/45-settings-account-appinfo.png" alt="設定 アカウント"></div><div class="gallerytext">アカウント情報</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/dark/46-command-palette.png" alt="コマンドパレット"></div><div class="gallerytext">コマンドパレット</div></div>
     </div>
 
-    <div class="ss-section">
-      <h3>プレイヤー</h3>
-      <div class="ss-grid">
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/classic/06-player-comments-1.png" alt="プレイヤー - コメント1"><div class="caption">プレイヤー: コメント表示</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/classic/07-player-comments-2.png" alt="プレイヤー - コメント2"><div class="caption">プレイヤー: コメント表示</div></div>
-      </div>
+    <!-- Classic theme -->
+    <h3 id="ss-classic">クラシックテーマ</h3>
+
+    <h4>ホーム &amp; ランキング</h4>
+    <div class="gallery">
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/classic/01-home.png" alt="ホーム"></div><div class="gallerytext">ホーム</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/classic/02-ranking-general.png" alt="総合ランキング"></div><div class="gallerytext">総合ランキング</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/classic/03-ranking-vocaloid.png" alt="VOCALOIDランキング"></div><div class="gallerytext">VOCALOID</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/classic/04-ranking-game.png" alt="ゲームランキング"></div><div class="gallerytext">ゲーム</div></div>
     </div>
 
-    <div class="ss-section">
-      <h3>ライブラリ</h3>
-      <div class="ss-grid">
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/classic/08-library-grid.png" alt="ライブラリ - グリッド"><div class="caption">ライブラリ: グリッド表示</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/classic/09-library-search.png" alt="ライブラリ - 検索"><div class="caption">ライブラリ: 検索</div></div>
-      </div>
+    <h4>検索</h4>
+    <div class="gallery">
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/classic/05-search-hatsune-miku.png" alt="検索 初音ミク"></div><div class="gallerytext">初音ミク</div></div>
     </div>
 
-    <div class="ss-section">
-      <h3>履歴 &amp; プレイリスト</h3>
-      <div class="ss-grid">
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/classic/10-history.png" alt="履歴"><div class="caption">視聴履歴</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/classic/11-history-online-filter.png" alt="履歴 - フィルター"><div class="caption">履歴: オンラインフィルター</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/classic/12-playlists-mylists.png" alt="プレイリスト - マイリスト"><div class="caption">マイリスト</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/classic/13-playlists-smart.png" alt="プレイリスト - スマート"><div class="caption">スマートプレイリスト</div></div>
-      </div>
+    <h4>プレイヤー</h4>
+    <div class="gallery">
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/classic/06-player-comments-1.png" alt="プレイヤー コメント"></div><div class="gallerytext">プレイヤー（コメント表示）</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/classic/07-player-comments-2.png" alt="プレイヤー コメント"></div><div class="gallerytext">プレイヤー（コメント表示）</div></div>
     </div>
 
-    <div class="ss-section">
-      <h3>その他</h3>
-      <div class="ss-grid">
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/classic/14-downloads-queue.png" alt="ダウンロードキュー"><div class="caption">ダウンロードキュー</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/classic/15-ng-rules.png" alt="NGルール"><div class="caption">NGルール設定</div></div>
-        <div class="ss-card"><img loading="lazy" src="assets/re-nndd-screenshots/classic/16-settings.png" alt="設定"><div class="caption">設定</div></div>
-      </div>
+    <h4>ライブラリ</h4>
+    <div class="gallery">
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/classic/08-library-grid.png" alt="ライブラリ グリッド"></div><div class="gallerytext">グリッド表示</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/classic/09-library-search.png" alt="ライブラリ 検索"></div><div class="gallerytext">検索</div></div>
     </div>
 
-  </div>
-</section>
+    <h4>履歴 &amp; プレイリスト</h4>
+    <div class="gallery">
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/classic/10-history.png" alt="履歴"></div><div class="gallerytext">視聴履歴</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/classic/11-history-online-filter.png" alt="履歴 フィルター"></div><div class="gallerytext">オンラインフィルター</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/classic/12-playlists-mylists.png" alt="マイリスト"></div><div class="gallerytext">マイリスト</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/classic/13-playlists-smart.png" alt="スマートプレイリスト"></div><div class="gallerytext">スマートプレイリスト</div></div>
+    </div>
 
-<!-- Tech -->
-<section class="tech">
-  <h2>技術スタック</h2>
-  <div class="tech-grid">
-    <div class="tech-item">
-      <svg width="36" height="36" viewBox="0 0 24 24" fill="none"><path d="M12 2L2 19.5h20L12 2z" fill="#24C8DB"/></svg>
-      <div class="name">Tauri 2</div>
-      <div class="desc">デスクトップフレームワーク</div>
+    <h4>その他</h4>
+    <div class="gallery">
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/classic/14-downloads-queue.png" alt="ダウンロードキュー"></div><div class="gallerytext">ダウンロードキュー</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/classic/15-ng-rules.png" alt="NGルール"></div><div class="gallerytext">NGルール</div></div>
+      <div class="gallery-item"><div class="thumb"><img loading="lazy" src="assets/re-nndd-screenshots/classic/16-settings.png" alt="設定"></div><div class="gallerytext">設定</div></div>
     </div>
-    <div class="tech-item">
-      <svg width="36" height="36" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" fill="#DEA584"/></svg>
-      <div class="name">Rust</div>
-      <div class="desc">バックエンド</div>
+
+    <!-- Tech -->
+    <h2 id="tech">技術スタック</h2>
+    <table class="wikitable">
+      <tr><th>コンポーネント</th><th>技術</th></tr>
+      <tr><td>デスクトップフレームワーク</td><td><a href="https://tauri.app/">Tauri 2</a></td></tr>
+      <tr><td>バックエンド言語</td><td><a href="https://www.rust-lang.org/">Rust</a> (stable, edition 2021)</td></tr>
+      <tr><td>フロントエンド</td><td><a href="https://svelte.dev/">Svelte 5</a> + <a href="https://www.typescriptlang.org/">TypeScript</a></td></tr>
+      <tr><td>ビルドツール</td><td><a href="https://vitejs.dev/">Vite</a></td></tr>
+      <tr><td>データベース</td><td><a href="https://www.sqlite.org/">SQLite</a> (bundled)</td></tr>
+      <tr><td>動画ダウンロード</td><td><code>yt-dlp</code> + <code>ffmpeg</code></td></tr>
+      <tr><td>コメント描画</td><td><a href="https://github.com/xpadev-net/niconicomments">niconicomments</a></td></tr>
+    </table>
+
+    <!-- Install -->
+    <h2 id="install">インストール</h2>
+    <p><a href="https://github.com/abeshinzo78/Re-NNDD/releases">Releases</a> から各プラットフォーム向けのバイナリをダウンロードできる。</p>
+    <p>開発版をソースからビルドする場合:</p>
+    <pre style="background:#f8f9fa; border:1px solid #a2a9b1; padding:1em; overflow:auto; font-size:0.9em;">git clone https://github.com/abeshinzo78/Re-NNDD.git
+cd Re-NNDD
+npm install
+bash scripts/fetch-binaries.sh
+npm run tauri:dev</pre>
+
+    <!-- Acknowledgements -->
+    <h2 id="ack">謝意</h2>
+    <p>NNDD オリジナルの著者 <b>MineAP</b> 氏に深く敬意を表する。本プロジェクトは MineAP 氏の MIT ライセンス NNDD を起点に、現代的なスタックで再実装するものである。</p>
+
+    <div class="catlinks">
+      カテゴリ: <a href="#">ニコニコ動画</a> | <a href="#">デスクトップアプリケーション</a> | <a href="#">オープンソースソフトウェア</a> | <a href="#">Tauri</a> | <a href="#">Rust</a>
     </div>
-    <div class="tech-item">
-      <svg width="36" height="36" viewBox="0 0 24 24" fill="none"><path d="M12 2L1.5 20h21L12 2z" fill="#FF3E00"/></svg>
-      <div class="name">Svelte 5</div>
-      <div class="desc">フロントエンド</div>
-    </div>
-    <div class="tech-item">
-      <svg width="36" height="36" viewBox="0 0 24 24" fill="none"><rect x="2" y="2" width="20" height="20" rx="4" fill="#3178C6"/></svg>
-      <div class="name">TypeScript</div>
-      <div class="desc">型安全なJS</div>
-    </div>
-    <div class="tech-item">
-      <svg width="36" height="36" viewBox="0 0 24 24" fill="none"><path d="M4 4h16v16H4z" fill="#646CFF"/></svg>
-      <div class="name">Vite</div>
-      <div class="desc">ビルドツール</div>
-    </div>
-    <div class="tech-item">
-      <svg width="36" height="36" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="3" fill="#003B57"/></svg>
-      <div class="name">SQLite</div>
-      <div class="desc">ローカルDB</div>
-    </div>
-  </div>
-</section>
+
+  </main>
+</div>
 
 <!-- Footer -->
-<footer>
-  <p>Re:NNDD &mdash; MIT License &middot; NNDD オリジナル作者: MineAP 氏に深く敬意を表します</p>
-  <p style="margin-top:8px"><a href="https://github.com/abeshinzo78/Re-NNDD">GitHub</a> &middot; <a href="https://discord.gg/cDhnfZ6HMa">Discord</a></p>
-</footer>
+<div class="mw-footer">
+  このページの内容は <a href="https://github.com/abeshinzo78/Re-NNDD/blob/main/LICENSE">MIT ライセンス</a> の下で利用可能です。
+  Re:NNDD &copy; abeshinzo78 | NNDD &copy; MineAP
+</div>
 
 <!-- Lightbox -->
 <div class="lightbox" id="lightbox">
@@ -548,30 +591,19 @@
 </div>
 
 <script>
-  // Tab switching
-  document.querySelectorAll('.tab-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-      btn.classList.add('active');
-      document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
-    });
-  });
-
-  // Lightbox
-  const lightbox = document.getElementById('lightbox');
-  const lightboxImg = document.getElementById('lightbox-img');
-  document.querySelectorAll('.ss-card img').forEach(img => {
-    img.addEventListener('click', () => {
+  var lightbox = document.getElementById('lightbox');
+  var lightboxImg = document.getElementById('lightbox-img');
+  document.querySelectorAll('.gallery-item .thumb img').forEach(function(img) {
+    img.addEventListener('click', function() {
       lightboxImg.src = img.src;
       lightboxImg.alt = img.alt;
       lightbox.classList.add('open');
     });
   });
-  lightbox.addEventListener('click', () => {
+  lightbox.addEventListener('click', function() {
     lightbox.classList.remove('open');
   });
-  document.addEventListener('keydown', e => {
+  document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') lightbox.classList.remove('open');
   });
 </script>
