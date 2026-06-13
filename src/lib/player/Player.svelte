@@ -128,8 +128,19 @@
   // に固定するための退避値 (-1 = 自動/最良)。MANIFEST_PARSED で参照する。
   // 別動画へ遷移したら $effect でリセットする。
   let desiredLevel = -1;
-  // 画質切り替えで再アタッチした直後に復元する再生位置と再生状態。
-  let restoreAfterReattach: { time: number; play: boolean } | null = null;
+  // 画質切り替えで再アタッチした直後に復元する再生位置・再生状態・再生速度。
+  let restoreAfterReattach: { time: number; play: boolean; rate: number } | null = null;
+  // 直近に実際にロードした HLS URL (403 で再発行され差し替わった最新版を含む)。
+  // 画質切り替えの再アタッチでは prop の初期 URL ではなくこれを使い、期限切れ
+  // URL を読み直して 403 → 再発行のラウンドトリップを踏むのを避ける。
+  let activeHlsUrl = '';
+  // 画質切り替えの再アタッチ進行中フラグ。MediaSource 付け替えで <video> が
+  // 一時的に pause→再生再開するが、これはユーザ操作ではないので player:pause /
+  // player:play プラグインイベントを抑制する。
+  let reattaching = false;
+  // 一度でも実際に再生が始まったか。再生開始前の画質切替は復元せず通常の
+  // ロード/オートプレイ経路に任せる (autoplay 設定が無視されるのを防ぐ)。
+  let playbackStarted = false;
 
   const MAX_HLS_REISSUE_RETRIES = 3;
   const MAX_RECOVERY_ATTEMPTS = 3;
@@ -304,7 +315,9 @@
   async function loadFreshSource(forceRefresh = false) {
     const inflight = hls;
     if (!inflight) return;
-    let url = hlsUrl;
+    // 既に再発行済みなら最新 URL を基点にする (初回は activeHlsUrl 空で prop が新鮮)。
+    // 画質切替の再アタッチで期限切れの初期 prop を読み直して 403 になるのを防ぐ。
+    let url = activeHlsUrl || hlsUrl;
     // Only call refreshHlsUrl on error recovery (403 expiry etc.),
     // NOT on initial load — the prop hlsUrl is already fresh.
     if (forceRefresh && refreshHlsUrl) {
@@ -318,6 +331,7 @@
       }
     }
     if (hls !== inflight) return;
+    activeHlsUrl = url;
     inflight.loadSource(url);
   }
 
@@ -608,9 +622,12 @@
     if (!url) return;
     if (url === hlsUrlPrev && hls) return; // already attached to this URL
     // 別動画へ切り替わった: 前動画でのユーザ画質固定/復元状態はリセットし、
-    // 最良画質から始める (レベル index は動画ごとに意味が異なるため)。
+    // 最良画質から始める (レベル index・URL は動画ごとに意味が異なるため)。
     desiredLevel = -1;
     restoreAfterReattach = null;
+    activeHlsUrl = '';
+    reattaching = false;
+    playbackStarted = false;
     hlsUrlPrev = url;
     attachHls();
   });
@@ -745,7 +762,22 @@
     userPickedLevel = levelIndex;
     desiredLevel = levelIndex;
     currentLevel = levelIndex;
-    restoreAfterReattach = { time: video.currentTime, play: !video.paused };
+    if (playbackStarted) {
+      // 再生中の切替: 位置・再生状態・速度を退避し、再アタッチ後に復元する。
+      // 付け替えで生じる内部 pause→再生再開はユーザ操作ではないので、プラグイン
+      // イベントを抑制する (reattaching は再生中だった時のみ立てる)。
+      reattaching = !video.paused;
+      restoreAfterReattach = {
+        time: video.currentTime,
+        play: !video.paused,
+        rate: video.playbackRate,
+      };
+    } else {
+      // 再生開始前の切替: 復元 (= paused 固定) せず、通常のロード/オートプレイ
+      // 経路に任せる。これで autoplay 設定が効かなくなるのを防ぐ。
+      reattaching = false;
+      restoreAfterReattach = null;
+    }
     attachHls();
   }
   function setCommentOpacity(o: number) {
@@ -857,16 +889,31 @@
     applyPendingSeek();
   }
   function onLoadedMetadata() {
+    // 再アタッチ中にユーザが新しいシーク要求を出していたら (slider / plugin /
+    // export seek)、退避した古い位置より優先する。applyPendingSeek が消費して
+    // しまう前に有無を控えておく。
+    const hadPendingSeek = pendingSeek != null;
     applyPendingSeek();
     if (!video) return;
-    // 画質切り替えで hls.js を作り直した直後は、再生位置と再生状態だけ復元する。
-    // <video> 要素は使い回しているので音量/速度/ミュートは保持されており、
-    // 通常の音量・オートプレイ既定ロジック (下の分岐) は適用しない。
+    // 画質切り替えで hls.js を作り直した直後は、再生位置・再生状態・速度を復元
+    // する。<video> 要素は使い回しているので音量/ミュートは保持されるが、
+    // MediaSource を付け替えると playbackRate は defaultPlaybackRate に戻るため
+    // 明示的に復元する。通常の音量・オートプレイ既定ロジックは適用しない。
     if (restoreAfterReattach) {
-      const { time, play } = restoreAfterReattach;
+      const { time, play, rate } = restoreAfterReattach;
       restoreAfterReattach = null;
-      if (Number.isFinite(time) && time > 0) seekTo(time);
-      if (play) void video.play().catch(() => undefined);
+      // 新しいユーザシークがあればそちらを尊重し、古い退避位置で上書きしない。
+      if (!hadPendingSeek && Number.isFinite(time) && time > 0) seekTo(time);
+      if (Number.isFinite(rate) && rate > 0) video.playbackRate = rate;
+      if (play) {
+        // 再生再開イベントも抑制するため reattaching は onPlaying でクリアする。
+        // ただし play() が拒否されたらフラグが残らないようここでも下ろす。
+        void video.play().catch(() => {
+          reattaching = false;
+        });
+      } else {
+        reattaching = false;
+      }
       return;
     }
     // 設定からデフォルト値を反映
@@ -912,6 +959,13 @@
       audioHandoffSignaled = true;
       onReadyForAudio?.();
     }
+    // 画質切り替えの再アタッチによる再生再開はユーザ操作ではないので、プラグイン
+    // の再生開始イベントは出さずにフラグだけ下ろす。
+    if (reattaching) {
+      reattaching = false;
+      return;
+    }
+    playbackStarted = true;
     // プラグイン: 再生開始
     if (video) {
       pluginBus.emit('player:play', { videoId, currentTime: video.currentTime });
@@ -927,7 +981,9 @@
       // pause が ended 直前に出るが、ここで emit すると plugin が
       // "ユーザ pause" と "自然終了" を区別できなくなる
       // (Codex #15: docs/plugins.md は ended と排他と明記)。
-      if (!video.ended) {
+      // reattaching 中の pause は MediaSource 付け替えによる内部的なもので
+      // ユーザ操作ではないため、プラグインには通知しない。
+      if (!video.ended && !reattaching) {
         pluginBus.emit('player:pause', { videoId, currentTime: video.currentTime });
       }
     }
