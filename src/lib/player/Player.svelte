@@ -885,8 +885,13 @@
       // 位置: 確立済み再生 (initialized) のみ現在位置を退避する (終了済みは先頭)。
       // 初回ロード前は resume を通常の onDurationChange (near-end 判定込み) に委ね、
       // ユーザシークがあれば既に pendingSeek が勝つので、ここでは触らない。
-      if (initialized) {
-        pendingSeek = video.ended ? 0 : video.currentTime;
+      // 位置を保持すべきか: 確立済み (initialized)、または既に位置が進んでいる
+      // (初回 durationchange で resume 適用済み / ユーザシーク済みで currentTime>0)
+      // なら現在位置を退避する。真の未開始 (位置 0) は resume を通常の
+      // onDurationChange (near-end 判定込み) に委ねる。終了済みは先頭。
+      const pos = video.ended ? 0 : video.currentTime;
+      if (initialized || pos > 0) {
+        pendingSeek = pos;
         // 復元シーク (0→保存位置) の完了までコメント overlay を凍結する。ここで
         // 立てるのが肝心 — pendingSeek は durationchange で loadedmetadata より先に
         // 消費されうるため、loadedmetadata 時点での推測では取りこぼす。onSeeked で
@@ -946,9 +951,9 @@
     const step = forward ? 1 / 30 : -1 / 30;
     if (reattaching && restoreAfterReattach) {
       // 再アタッチ中はフレームステップも論理状態へ反映する (停止扱いにして位置を
-      // 進める)。付け替え途中の <video> を直接操作しても失われるため。
+      // 進める)。seekTo 経由にして publishLogicalTime / 先頭凍結解除も共有する。
       setReattachPlayIntent(false);
-      pendingSeek = Math.max(0, currentLogicalTime() + step);
+      seekTo(currentLogicalTime() + step);
       return;
     }
     if (!video.paused) video.pause();
