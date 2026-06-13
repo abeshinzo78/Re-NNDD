@@ -461,7 +461,8 @@
     if (miniPlayer.source?.videoId !== payload.videoId) return;
     const id = setInterval(() => {
       const v = playerRef?.getVideo();
-      if (v) miniPlayer.setSourcePaused(v.paused || v.ended);
+      // 再アタッチ中の transient な paused を拾わないよう論理状態 (isPaused) を使う。
+      if (v) miniPlayer.setSourcePaused((playerRef?.isPaused() ?? v.paused) || v.ended);
     }, 200);
     return () => clearInterval(id);
   });

@@ -148,6 +148,12 @@
   // 一度でも実際に再生が始まったか。再生開始前の画質切替は復元せず通常の
   // ロード/オートプレイ経路に任せる (autoplay 設定が無視されるのを防ぐ)。
   let playbackStarted = false;
+  // 初回ロードの既定 (音量/ミュート/速度) を適用済みか。初回 loadedmetadata 前の
+  // 早期画質切替で既定適用がスキップされ full-volume 等で再生されるのを防ぐ判定。
+  let initialized = false;
+  // ユーザ/プラグインが明示的に一時停止し、まだ明示再生していないか。初回フレーム
+  // 前の明示停止が autoplay 意図で上書きされるのを防ぐために使う。
+  let userPaused = false;
 
   const MAX_HLS_REISSUE_RETRIES = 3;
   const MAX_RECOVERY_ATTEMPTS = 3;
@@ -637,6 +643,8 @@
     activeHlsUrl = '';
     reattaching = false;
     playbackStarted = false;
+    userPaused = false;
+    initialized = false;
     hlsUrlPrev = url;
     attachHls();
   });
@@ -675,11 +683,18 @@
   function togglePlay() {
     if (!video) return;
     if (reattaching && restoreAfterReattach) {
-      setReattachPlayIntent(!restoreAfterReattach.play);
+      const next = !restoreAfterReattach.play;
+      userPaused = !next;
+      setReattachPlayIntent(next);
       return;
     }
-    if (video.paused) void video.play().catch(() => undefined);
-    else video.pause();
+    if (video.paused) {
+      userPaused = false;
+      void video.play().catch(() => undefined);
+    } else {
+      userPaused = true;
+      video.pause();
+    }
   }
   /** クランプ用に有効な duration を返す。`video.duration` が NaN/0 のうち
    *  (metadata 未ロード時) は呼び出し側で「巻き戻り」が起きないよう Infinity を返す。 */
@@ -699,7 +714,10 @@
 
   function seekDelta(delta: number) {
     if (!video) return;
-    seekTo(video.currentTime + delta);
+    // 再アタッチ中は video.currentTime が 0 にリセットされるため、frozen な論理位置
+    // (pendingSeek があればそれ、無ければ currentTime state) を基点に相対シークする。
+    const base = reattaching ? (pendingSeek ?? currentTime) : video.currentTime;
+    seekTo(base + delta);
   }
   function seekTo(t: number) {
     if (!video) return;
@@ -805,14 +823,17 @@
     // 元の再生位置・再生意図を失わない。
     if (!reattaching) {
       reattaching = true;
-      // 位置は再生状態に関わらず常に保持する (終了済みは先頭へ戻し、clamp で
-      // 末尾に貼り付くのを防ぐ)。新しいユーザシークは pendingSeek を上書きして勝つ。
-      pendingSeek = video.ended ? 0 : video.currentTime;
-      // 再アタッチ後に再生すべきか: 再生中、または未開始だが autoplay 予定なら true。
-      // 再生意図と速度を退避し、loadedmetadata で復元する。これで再生開始前の切替
-      // でも autoplay 設定が尊重され、再アタッチ中の明示操作 (下の guard) も拾える。
+      // 位置は常に保持する。未適用の resume があればそれを優先し (初回
+      // durationchange 前の早期切替で resume が 0 に潰れるのを防ぐ)、終了済みは
+      // 先頭、それ以外は現在位置。新しいユーザシークは pendingSeek を上書きして勝つ。
+      pendingSeek =
+        !resumeApplied && resumePosition > 0 ? resumePosition : video.ended ? 0 : video.currentTime;
+      // 再アタッチ後に再生すべきか: 再生中、または「未開始だが autoplay 予定で
+      // ユーザが明示停止していない」なら true。再生意図と速度を退避し
+      // loadedmetadata で復元する。これで再生開始前の切替でも autoplay 設定が
+      // 尊重され、明示停止 (userPaused) も尊重され、再アタッチ中の明示操作も拾える。
       const autoplayIntent = getBool('playback.autoplay') || forceAutoplay;
-      const shouldPlay = !video.paused || (!playbackStarted && autoplayIntent);
+      const shouldPlay = !video.paused || (!playbackStarted && autoplayIntent && !userPaused);
       restoreAfterReattach = { play: shouldPlay, rate: video.playbackRate };
     }
     attachHls();
@@ -929,6 +950,30 @@
     // metadata 来たので保留中の seek 要求を消化
     applyPendingSeek();
   }
+  // 既定の再生速度を設定から適用する。
+  function applyDefaultRate() {
+    if (!video) return;
+    const defaultRate = getNum('playback.default_rate');
+    if (Number.isFinite(defaultRate) && defaultRate > 0) {
+      video.playbackRate = defaultRate;
+    }
+  }
+  // 保存済み (なければ設定既定) の音量・ミュートを適用し、初回既定適用済み
+  // フラグ (initialized) を立てる。
+  function applyAudioDefaults() {
+    if (!video) return;
+    const savedVol = readSavedVolume();
+    if (savedVol != null) {
+      video.volume = savedVol;
+    } else {
+      const defaultVol = getNum('playback.default_volume');
+      if (Number.isFinite(defaultVol)) {
+        video.volume = Math.max(0, Math.min(1, defaultVol));
+      }
+    }
+    if (readSavedMuted()) video.muted = true;
+    initialized = true;
+  }
   function onLoadedMetadata() {
     // 退避/新規いずれの seek 要求も pendingSeek 経由で適用する (どちらの handler
     // が先に走っても最新値が勝つ)。
@@ -942,47 +987,45 @@
     if (restoreAfterReattach) {
       const { play, rate } = restoreAfterReattach;
       restoreAfterReattach = null;
-      if (Number.isFinite(rate) && rate > 0) video.playbackRate = rate;
       // スナップショットを消費したので連打保護フラグ (reattaching) は解除する。
       reattaching = false;
+      if (!initialized) {
+        // 初回 loadedmetadata 前の早期画質切替: 通常 init をスキップするので、
+        // ここで既定の速度・音量・ミュートを適用する (full-volume/unmuted/既定速度
+        // のまま再生されるのを防ぐ)。snapshot.rate は init 前で既定未反映なので使わない。
+        applyDefaultRate();
+        applyAudioDefaults();
+      } else if (Number.isFinite(rate) && rate > 0) {
+        video.playbackRate = rate;
+      }
       // 復元後の paused 状態を同期する (再アタッチ中の明示 pause を UI/プラグインの
       // getState に反映するため)。
       paused = !play;
       if (play) {
         // 直後の onPlaying は内部的な再開なので player:play を 1 度だけ抑制する。
-        // play() が拒否されたらフラグを残さない。
         suppressPlayEventOnce = true;
         void video.play().catch(() => {
+          // 再生失敗時: 抑制フラグを残さず、paused を実状態へ同期する。
           suppressPlayEventOnce = false;
+          paused = video?.paused ?? true;
         });
       }
       return;
     }
     // 設定からデフォルト値を反映
-    const defaultRate = getNum('playback.default_rate');
-    if (Number.isFinite(defaultRate) && defaultRate > 0) {
-      video.playbackRate = defaultRate;
-    }
+    applyDefaultRate();
     if (initialMuted) {
       // PiP 引き継ぎロード: 音量 0 のままバックグラウンド再生開始。
       // ページ側 Player の音声を切らずに mini をウォームアップしている最中。
       // 親 (MiniPlayer) が playing 検知後に音量を戻して引き継ぐ。
       video.volume = 0;
+      initialized = true;
       void video.play().catch(() => undefined);
     } else {
       // ユーザが直近で選んだ音量があればそれを優先。無ければ設定の既定値。
       // これで PiP 切替や別動画への遷移、ページ再マウントで音量が
       // 既定値にリセットされてしまう挙動を防ぐ。
-      const savedVol = readSavedVolume();
-      if (savedVol != null) {
-        video.volume = savedVol;
-      } else {
-        const defaultVol = getNum('playback.default_volume');
-        if (Number.isFinite(defaultVol)) {
-          video.volume = Math.max(0, Math.min(1, defaultVol));
-        }
-      }
-      if (readSavedMuted()) video.muted = true;
+      applyAudioDefaults();
       const autoplay = getBool('playback.autoplay');
       // forceAutoplay は連続再生キュー進行など「ユーザが明示的に継続再生
       // を選んだ」コンテキスト用。`playback.autoplay=false` でも再生開始する。
@@ -1025,6 +1068,9 @@
     paused = video.paused;
     if (video.paused) {
       showControls();
+      // 復元再生の保留中に一時停止されたら抑制フラグを残さない (次の本物の
+      // 再生開始イベントが誤って消されるのを防ぐ)。
+      suppressPlayEventOnce = false;
       // プラグイン: 一時停止 (再生開始は onPlaying 側で emit する)。
       // 自然終了 (video.ended=true) のときは HTMLMediaElement 仕様で
       // pause が ended 直前に出るが、ここで emit すると plugin が
@@ -1226,6 +1272,7 @@
   }
   export function play() {
     if (!video) return;
+    userPaused = false;
     if (reattaching && restoreAfterReattach) {
       setReattachPlayIntent(true);
       return;
@@ -1234,6 +1281,7 @@
   }
   export function pause() {
     if (!video) return;
+    userPaused = true;
     if (reattaching && restoreAfterReattach) {
       setReattachPlayIntent(false);
       return;
