@@ -741,8 +741,23 @@
   // (相対シーク / フレームステップ / AB 点 / スクショ / getCurrentTime) はこの
   // 論理位置を使う。保留中の seek / 未適用 resume (pendingSeek) を優先する。
   function currentLogicalTime(): number {
-    if (reattaching) return pendingSeek ?? currentTime;
+    if (reattaching) {
+      // 未適用の seek 要求があればそれが論理位置。
+      if (pendingSeek != null) return pendingSeek;
+      // 消費後は要素に適用済みの位置を読む (0 は detach 直後の過渡値なので、その間
+      // だけ frozen な currentTime にフォールバックする)。
+      const vt = video?.currentTime ?? 0;
+      return vt > 0 ? vt : currentTime;
+    }
     return video?.currentTime ?? currentTime;
+  }
+  // 論理位置を currentTime state / onTime / player:time へ反映する。再アタッチ中の
+  // 明示シーク (onTimeUpdate 抑制下) を消費側 (PiP handoff / 親 / プラグイン) に
+  // 伝えるために使う。
+  function publishLogicalTime(t: number) {
+    currentTime = t;
+    onTime?.(t);
+    pluginBus.emit('player:time', { videoId, currentTime: t });
   }
   function seekDelta(delta: number) {
     if (!video) return;
@@ -755,6 +770,20 @@
     // あるので、readyState>=1 (HAVE_METADATA) を待ってから適用する。
     if (video.readyState < 1) {
       pendingSeek = Math.max(0, t);
+      if (reattaching) {
+        // 再アタッチ中の明示シークは論理位置として publish する (PiP handoffTime /
+        // onTime / player:time が古い位置のまま固定されないように)。
+        publishLogicalTime(pendingSeek);
+        // 先頭 (0) へのシークは置換要素が既に 0 で seeked が出ないことがある。
+        // コメント凍結を即解除し、fallback まで固まるのを防ぐ。
+        if (pendingSeek === 0) {
+          restoreSeeking = false;
+          if (restoreSeekTimer) {
+            clearTimeout(restoreSeekTimer);
+            restoreSeekTimer = null;
+          }
+        }
+      }
       return;
     }
     let target = Math.max(0, t);
@@ -878,6 +907,10 @@
       const autoplayIntent = getBool('playback.autoplay') || forceAutoplay;
       const shouldPlay = !video.paused || (!playbackStarted && autoplayIntent && !userPaused);
       restoreAfterReattach = { play: shouldPlay, rate: video.playbackRate };
+      // control bar の表示 (再生/一時停止ボタン) と復元意図を一致させる。これを
+      // しないと pre-play autoplay 予定の切替で Play ボタンが出るのにクリックすると
+      // togglePlay が intent を反転し、再生開始ではなく停止になってしまう。
+      paused = !shouldPlay;
     } else if (initialized) {
       // 連打 (再アタッチ中の再切替): play/rate スナップショットは保持しつつ位置を
       // 取り直す。最初の reattach の durationchange で pendingSeek が消費済みでも、
@@ -907,6 +940,9 @@
   }
   function frameStep(forward: boolean) {
     if (!video) return;
+    // フレームステップは「一時停止してコマ送り」。明示的な一時停止意図として記録し、
+    // 直後の画質切替が autoplay 意図で再生を再開してしまうのを防ぐ。
+    userPaused = true;
     const step = forward ? 1 / 30 : -1 / 30;
     if (reattaching && restoreAfterReattach) {
       // 再アタッチ中はフレームステップも論理状態へ反映する (停止扱いにして位置を
