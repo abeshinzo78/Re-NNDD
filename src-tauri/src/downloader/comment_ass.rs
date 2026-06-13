@@ -12,15 +12,25 @@
 //!   固定 (ue/shita) コメントは時間が被らないレーンへ割り当てる。
 //!
 //! niconicomments の html5 既定フォントサイズ (1080 ステージ基準) に合わせて
-//! small=47 / medium=74 / big=110 px を採用し、実際の動画高さへ線形スケール
-//! する。これでプレイヤー表示と焼き込み結果の見た目を揃える。
+//! small=18*1920/683=50.59 / medium=27*1920/683=75.89 / big=39*1920/683=109.65 px
+//! を採用し、実際の動画高さへ線形スケールする。これでプレイヤー表示と焼き込み結果
+//! の見た目を揃える。
 
 /// niconico の基準ステージ高さ。フォントサイズはこの高さでの px を実動画高さへ
 /// スケールする。
 const NICO_STAGE_HEIGHT: f64 = 1080.0;
-const FONT_SMALL_AT_1080: f64 = 47.0;
-const FONT_MEDIUM_AT_1080: f64 = 74.0;
-const FONT_BIG_AT_1080: f64 = 110.0;
+const NICO_REF_WIDTH: f64 = 1920.0;
+const FONT_SMALL_AT_1080: f64 = 60.71;
+const FONT_MEDIUM_AT_1080: f64 = 91.07;
+const FONT_BIG_AT_1080: f64 = 131.58;
+
+/// niconicomments のコメント描画範囲 (1920 基準)。
+const COMMENT_DRAW_RANGE: f64 = 1530.0;
+const COMMENT_DRAW_PADDING: f64 = 195.0;
+/// stream コメントの既定 `long` (センチ秒)。大きくすると全体に遅くなる。
+const DEFAULT_LONG_CS: f64 = 400.0;
+/// スクロール速度オフセット。小さくすると幅広コメントが加速しすぎない。
+const NAKA_SPEED_OFFSET: f64 = 0.5;
 
 /// 焼き込み対象 1 コメント。DB / API どちらの形からでも詰められる薄い構造体。
 #[derive(Debug, Clone)]
@@ -65,7 +75,7 @@ impl Default for AssOptions {
             opacity: 1.0,
             scroll_duration_sec: 4.0,
             fixed_duration_sec: 3.0,
-            font_name: "sans-serif".to_string(),
+            font_name: "Noto Sans CJK JP".to_string(),
         }
     }
 }
@@ -279,15 +289,16 @@ fn outline_color_for(rgb: u32) -> u32 {
 struct ScrollLanes {
     lanes: Vec<Option<(f64, f64)>>,
     width: f64,
-    duration: f64,
+    /// niconicomments `long` パラメータ (秒)。既定 3.0。
+    long_sec: f64,
 }
 
 impl ScrollLanes {
-    fn new(count: usize, width: f64, duration: f64) -> Self {
+    fn new(count: usize, width: f64, long_sec: f64) -> Self {
         Self {
             lanes: vec![None; count],
             width,
-            duration,
+            long_sec,
         }
     }
 
@@ -297,10 +308,8 @@ impl ScrollLanes {
             None => true,
             Some((a, wa)) => {
                 let w = self.width;
-                let d = self.duration;
-                // 条件1: 既存の末尾が画面に入りきってから新コメントが出る。
+                let d = self.long_sec;
                 let cond1 = (b - a) >= d * wa / (w + wa);
-                // 条件2: 新コメントが既存に追突しない (長い=速いので注意)。
                 let cond2 = (b - a) >= d * wb / (w + wb);
                 cond1 && cond2
             }
@@ -395,7 +404,9 @@ pub fn generate_ass(comments: &[BurnInComment], opts: &AssOptions) -> String {
     let lane_height = font_px(Size::Medium, opts).max(1.0);
     let num_lanes = ((height / lane_height).floor() as usize).max(1);
 
-    let mut scroll = ScrollLanes::new(num_lanes, width, opts.scroll_duration_sec.max(0.1));
+    // コリジョン用の幅は niconicomments commentDrawRange (1530) を出力解像度にスケール
+    let collision_width = COMMENT_DRAW_RANGE * width / NICO_REF_WIDTH;
+    let mut scroll = ScrollLanes::new(num_lanes, collision_width, DEFAULT_LONG_CS / 100.0);
     let mut ue = FixedLanes::new(num_lanes);
     let mut shita = FixedLanes::new(num_lanes);
 
@@ -404,7 +415,14 @@ pub fn generate_ass(comments: &[BurnInComment], opts: &AssOptions) -> String {
     ordered.sort_by_key(|c| c.vpos_ms);
 
     let style_alpha = alpha_hex(opts.opacity);
-    let outline_px = (lane_height * 0.04).max(1.0);
+    // outline: 細め (元の 1/3 程度)
+    let outline_px = (lane_height * (1.0 / 27.0)).max(0.5);
+    // niconicomments contextStrokeOpacity=0.4 → stroke alpha (00=opaque, FF=transparent)
+    let stroke_alpha = format!(
+        "{:02X}",
+        ((1.0 - 0.4 * opts.opacity) * 255.0).round().max(0.0).min(255.0) as u32
+    );
+    let stroke_alpha_tag = format!("\\3a&H{stroke_alpha}&");
 
     let mut events = String::new();
 
@@ -443,12 +461,23 @@ pub fn generate_ass(comments: &[BurnInComment], opts: &AssOptions) -> String {
             Position::Naka => {
                 let lane = scroll.allocate(start, max_line_w, need);
                 let y_top = lane as f64 * lane_height;
-                let end = start + opts.scroll_duration_sec;
-                // \an7 = 左上基準。左端を画面右外 (width) → 左外 (-幅) へ移動。
+
+                // niconicomments のスクロール速度公式:
+                //   speed = (drawRange + commentWidth * 0.95) / (long + 100)  px/cs
+                let cw_ref = max_line_w * NICO_REF_WIDTH / width.max(1.0);
+                let speed_cs = (COMMENT_DRAW_RANGE + cw_ref * NAKA_SPEED_OFFSET)
+                    / (DEFAULT_LONG_CS + 100.0);
+                // 画面左端に抜けるまでの時間
+                let exit_cs = (COMMENT_DRAW_PADDING + COMMENT_DRAW_RANGE + cw_ref) / speed_cs
+                    - 100.0;
+                let scroll_sec = (exit_cs / 100.0).max(0.5);
+                let end = start + scroll_sec;
+
+                // \an7 = 左上基準。右端から入って左へ抜ける。
                 let x_start = width;
                 let x_end = -max_line_w;
                 let tags = format!(
-                    "{{\\an7\\fs{fs_int}\\c{color_tag}\\3c{outline_tag}\
+                    "{{\\an7\\fs{fs_int}\\c{color_tag}\\3c{outline_tag}{stroke_alpha_tag}\
                      \\move({x1},{y},{x2},{y})}}",
                     x1 = x_start.round() as i64,
                     x2 = x_end.round() as i64,
@@ -462,7 +491,7 @@ pub fn generate_ass(comments: &[BurnInComment], opts: &AssOptions) -> String {
                 let end = start + opts.fixed_duration_sec;
                 // \an8 = 上中央基準。libass が水平センタリングしてくれる。
                 let tags = format!(
-                    "{{\\an8\\fs{fs_int}\\c{color_tag}\\3c{outline_tag}\\pos({x},{y})}}",
+                    "{{\\an8\\fs{fs_int}\\c{color_tag}\\3c{outline_tag}{stroke_alpha_tag}\\pos({x},{y})}}",
                     x = (width / 2.0).round() as i64,
                     y = y_top.round() as i64,
                 );
@@ -474,7 +503,7 @@ pub fn generate_ass(comments: &[BurnInComment], opts: &AssOptions) -> String {
                 let y_top = height - (lane + need) as f64 * lane_height;
                 let end = start + opts.fixed_duration_sec;
                 let tags = format!(
-                    "{{\\an8\\fs{fs_int}\\c{color_tag}\\3c{outline_tag}\\pos({x},{y})}}",
+                    "{{\\an8\\fs{fs_int}\\c{color_tag}\\3c{outline_tag}{stroke_alpha_tag}\\pos({x},{y})}}",
                     x = (width / 2.0).round() as i64,
                     y = y_top.round().max(0.0) as i64,
                 );
@@ -505,8 +534,8 @@ pub fn generate_ass(comments: &[BurnInComment], opts: &AssOptions) -> String {
          Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, \
          BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, \
          BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n\
-         Style: nnd,{font},{fs},&H{alpha}FFFFFF,&H{alpha}FFFFFF,&H{alpha}000000,&H80000000,\
-         1,0,0,0,100,100,0,0,1,{outline:.1},0,7,0,0,0,1\n\
+          Style: nnd,{font},{fs},&H{alpha}FFFFFF,&H{alpha}FFFFFF,&H{alpha}000000,&H80000000,\
+          1,0,0,0,100,100,0,0,1,{outline:.1},0,7,0,0,0,1\n\
          \n\
          [Events]\n\
          Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n",
@@ -688,7 +717,7 @@ mod tests {
     #[test]
     fn shita_comment_is_near_bottom() {
         let ass = generate_ass(&[cmt(0, "下コメ", &["shita"])], &opts_1080());
-        // 下端付近の y が出るはず (lane_height≈74 → y_top ≈ 1080-74=1006 前後)。
+        // 下端付近の y が出るはず (lane_height≈76 → y_top ≈ 1080-76=1004 前後)。
         // \pos(960,<y>) の y が height の半分より大きい (下半分)。
         let line = ass.lines().find(|l| l.starts_with("Dialogue:")).unwrap();
         let y: i64 = line

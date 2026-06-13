@@ -23,6 +23,7 @@
     type CommentSnapshotRow,
   } from '$lib/api';
   import { open as shellOpen } from '@tauri-apps/plugin-shell';
+  import { open as openDialog } from '@tauri-apps/plugin-dialog';
   import { formatDate, formatDuration, formatNumber, videoUrl } from '$lib/format';
   import type { PlayerComment } from '$lib/player/types';
   import { filterComments, listNgRules, subscribeNgRules, type NgRule } from '$lib/stores/ngRules';
@@ -523,7 +524,17 @@
   let burnInResultPath = $state<string | null>(null);
   let binFontScale = $state(1.0);
   let binOpacity = $state(1.0);
+  let binOutputDir = $state<string | null>(null);
   let burnInUnlisten: (() => void) | null = null;
+
+  async function pickOutputDir() {
+    try {
+      const selected = await openDialog({ directory: true, multiple: false });
+      if (typeof selected === 'string') binOutputDir = selected;
+    } catch (_) {
+      // user cancelled
+    }
+  }
 
   async function onBurnIn(vid: string) {
     if (burnInRunning) return;
@@ -544,6 +555,7 @@
         snapshotId: activeSnapshotId,
         fontScale: binFontScale,
         opacity: binOpacity,
+        outputDir: binOutputDir,
       });
       burnInPercent = 1;
       burnInResultPath = res.outputPath;
@@ -920,10 +932,10 @@
                 <span>フォント倍率</span>
                 <input
                   type="range"
-                  min="0.5"
-                  max="2"
-                  step="0.1"
-                  bind:value={binFontScale}
+                   min="0.5"
+                   max="1.5"
+                   step="0.1"
+                   bind:value={binFontScale}
                   disabled={burnInRunning}
                 />
                 <span class="burnin-val">{binFontScale.toFixed(1)}×</span>
@@ -939,6 +951,17 @@
                   disabled={burnInRunning}
                 />
                 <span class="burnin-val">{Math.round(binOpacity * 100)}%</span>
+              </label>
+              <label class="burnin-opt">
+                <span>出力先</span>
+                <button
+                  type="button"
+                  class="burnin-dir-btn"
+                  onclick={pickOutputDir}
+                  disabled={burnInRunning}
+                >
+                  {binOutputDir ?? '既定の exports/ フォルダ'}
+                </button>
               </label>
               <button
                 type="button"
@@ -1704,6 +1727,27 @@
     width: 44px;
     text-align: right;
     font-variant-numeric: tabular-nums;
+  }
+  .burnin-dir-btn {
+    flex: 1;
+    background: none;
+    border: 1px solid var(--theme-border);
+    color: var(--theme-fg);
+    padding: 3px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 11px;
+    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .burnin-dir-btn:hover {
+    background: rgba(128, 128, 128, 0.1);
+  }
+  .burnin-dir-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
   .burnin-go {
     align-self: flex-start;

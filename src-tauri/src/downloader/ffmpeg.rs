@@ -478,6 +478,139 @@ where
     }
 }
 
+/// PNG 連番を動画にオーバーレイ焼き込み。
+/// `frames_dir` 内の `%06d.png` を読み取り、アルファチャンネル付きで動画へ合成する。
+pub async fn overlay_comment_frames<F>(
+    app: Option<&tauri::AppHandle>,
+    video: &Path,
+    audio: Option<&Path>,
+    frames_dir: &Path,
+    fps: u32,
+    output: &Path,
+    total_duration_sec: f64,
+    mut on_progress: F,
+) -> Result<MuxOutcome, ApiError>
+where
+    F: FnMut(f64),
+{
+    let ff = tools::ffmpeg(app);
+    if matches!(ff.source, tools::BinarySource::NotFound) {
+        return Ok(MuxOutcome::FfmpegNotFound);
+    }
+    if output.exists() {
+        let _ = tokio::fs::remove_file(output).await;
+    }
+
+    let frame_pattern = frames_dir
+        .join("%06d.png")
+        .to_string_lossy()
+        .into_owned();
+
+    let mut cmd = tools::tokio_command(&ff.command);
+    cmd.arg("-hide_banner")
+        .arg("-loglevel")
+        .arg("error")
+        .arg("-nostats")
+        .arg("-progress")
+        .arg("pipe:1")
+        .arg("-y")
+        .arg("-i")
+        .arg(video);
+    if let Some(a) = audio {
+        cmd.arg("-i").arg(a);
+    }
+    // PNG 連番を入力 (アルファチャンネル付き)
+    cmd.arg("-framerate")
+        .arg(fps.to_string())
+        .arg("-i")
+        .arg(&frame_pattern)
+        .arg("-filter_complex")
+        .arg("[0:v][1:v]overlay[out]")
+        .arg("-map")
+        .arg("[out]");
+    if audio.is_some() {
+        cmd.arg("-map").arg("1:a:0");
+    } else {
+        cmd.arg("-map").arg("0:a:0?");
+    }
+    cmd.arg("-c:v")
+        .arg("libx264")
+        .arg("-preset")
+        .arg("veryfast")
+        .arg("-crf")
+        .arg("20")
+        .arg("-pix_fmt")
+        .arg("yuv420p")
+        .arg("-c:a")
+        .arg("copy")
+        .arg("-movflags")
+        .arg("+faststart")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped());
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| ApiError::Downloader(format!("failed to spawn ffmpeg: {e}")))?;
+
+    let stderr_handle = {
+        let stderr = child.stderr.take();
+        stderr.map(|s| {
+            tokio::spawn(async move {
+                use tokio::io::AsyncReadExt;
+                let mut buf = Vec::new();
+                let mut reader = tokio::io::BufReader::new(s);
+                reader
+                    .read_to_end(&mut buf)
+                    .await
+                    .map(|_| String::from_utf8_lossy(&buf).into_owned())
+                    .unwrap_or_default()
+            })
+        })
+    };
+
+    // 進捗解析 (burn_in_comments と同じ)
+    if let Some(stdout) = child.stdout.take() {
+        use tokio::io::{AsyncBufReadExt, BufReader};
+        let mut lines = BufReader::new(stdout).lines();
+        let duration = if total_duration_sec > 0.0 {
+            total_duration_sec
+        } else {
+            1.0
+        };
+        loop {
+            let line = match lines.next_line().await {
+                Ok(Some(l)) => l,
+                _ => break,
+            };
+            if line.starts_with("progress=") && line.contains("end") {
+                break;
+            }
+            if let Some(sec) = parse_progress_line(&line) {
+                let p = (sec / duration).clamp(0.0, 1.0);
+                on_progress(p);
+            }
+        }
+    }
+
+    let status = child
+        .wait()
+        .await
+        .map_err(|e| ApiError::Downloader(format!("failed to wait ffmpeg: {e}")))?;
+
+    let stderr = match stderr_handle {
+        Some(h) => h.await.unwrap_or_default(),
+        None => String::new(),
+    };
+
+    if status.success() {
+        on_progress(1.0);
+        Ok(MuxOutcome::Success)
+    } else {
+        Ok(MuxOutcome::FfmpegFailed { stderr })
+    }
+}
+
 /// `-progress pipe:1` の 1 行から経過秒を取り出す。`out_time_us`
 /// (マイクロ秒) を優先し、無ければ `out_time=HH:MM:SS.us` を見る。
 fn parse_progress_line(line: &str) -> Option<f64> {
