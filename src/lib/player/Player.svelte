@@ -124,15 +124,22 @@
   let currentLevel = $state(-1);
   let lastTimeUpdateTs = 0;
   let userPickedLevel = -1;
-  // 画質切り替えで hls.js を作り直す時、新インスタンスを「ユーザが選んだレベル」
-  // に固定するための退避値 (-1 = 自動/最良)。MANIFEST_PARSED で参照する。
-  // 別動画へ遷移したら $effect でリセットする。
-  let desiredLevel = -1;
+  // 画質切り替えで hls.js を作り直す時、新インスタンスをユーザが選んだ画質に固定
+  // するための退避値。index は manifest インスタンスごとにローカルで、URL 再発行で
+  // 並びが変わりうるため、安定なセレクタ (height) を保持し MANIFEST_PARSED で index を
+  // 解決し直す。null = 自動/最良。別動画へ遷移したら $effect でリセットする。
+  let desiredHeight: number | null = null;
   // 画質切り替えで再アタッチした直後に復元する再生状態 (再生/一時停止) と速度。
   // 再生位置は pendingSeek 経由で復元する (再アタッチ中の新しいシークが優先)。
-  // rateExplicit: 再アタッチ中にユーザが明示的に速度変更したか (初回ロード前の
-  // 早期切替で既定速度に上書きされないようにするため)。
-  let restoreAfterReattach: { play: boolean; rate: number; rateExplicit?: boolean } | null = null;
+  // rateExplicit: 再アタッチ中にユーザが明示的に速度変更したか。
+  // silentPlay: 復元再生で player:play を抑制するか (既に再生中だった「継続」は
+  //   true。停止→再生の新規/明示再生は false で onPlaying 時に通知する)。
+  let restoreAfterReattach: {
+    play: boolean;
+    rate: number;
+    rateExplicit?: boolean;
+    silentPlay?: boolean;
+  } | null = null;
   // 復元再生 (restore の play) 由来の onPlaying を 1 度だけ抑制するフラグ。
   // 内部的な再開なので player:play プラグインイベントを出さないために使う。
   let suppressPlayEventOnce = false;
@@ -431,10 +438,11 @@
         hlsLevels = hls.levels ?? [];
 
         let targetIdx = -1;
-        // 画質切り替えによる再アタッチ時は、ユーザが選んだレベルを最優先で固定。
-        // (URL 再発行をまたいでも選択画質を維持する)
-        if (desiredLevel >= 0 && desiredLevel < (hls.levels?.length ?? 0)) {
-          targetIdx = desiredLevel;
+        // 画質切り替え/再アタッチ時は、選択画質 (height) を新マニフェストの index に
+        // 解決し直してユーザの選択を維持する (index は manifest 毎にローカルで、URL
+        // 再発行で並びが変わりうるため index 退避では別解像度に化けうる)。
+        if (desiredHeight != null && hls.levels) {
+          targetIdx = hls.levels.findIndex((l) => l.height === desiredHeight);
         }
         if (targetIdx < 0 && initialQualityLabel && hls.levels) {
           targetIdx = hls.levels.findIndex(
@@ -649,7 +657,7 @@
     if (url === hlsUrlPrev && hls) return; // already attached to this URL
     // 別動画へ切り替わった: 前動画でのユーザ画質固定/復元状態はリセットし、
     // 最良画質から始める (レベル index・URL は動画ごとに意味が異なるため)。
-    desiredLevel = -1;
+    desiredHeight = null;
     restoreAfterReattach = null;
     suppressPlayEventOnce = false;
     pendingSeek = null;
@@ -699,11 +707,14 @@
   function setReattachPlayIntent(playing: boolean) {
     if (!restoreAfterReattach) return;
     restoreAfterReattach.play = playing;
+    // 明示操作なので復元再生は「継続(無音)」ではない — 再生開始時に player:play を出す。
+    restoreAfterReattach.silentPlay = false;
     paused = !playing;
-    pluginBus.emit(playing ? 'player:play' : 'player:pause', {
-      videoId,
-      currentTime: currentLogicalTime(),
-    });
+    // 一時停止は実状態 (停止) と一致するので即通知してよい。再生は docs の契約
+    // (player:play = フレーム出力開始) を守るため、ここでは出さず onPlaying に委ねる。
+    if (!playing) {
+      pluginBus.emit('player:pause', { videoId, currentTime: currentLogicalTime() });
+    }
   }
   function togglePlay() {
     if (!video) return;
@@ -875,11 +886,11 @@
     // コーデック再構成を完全に回避する。再生位置と再生状態は復元する
     // (同じ <video> 要素を使うので音量/速度/ミュートは保持される)。
     userPickedLevel = levelIndex;
-    desiredLevel = levelIndex;
+    desiredHeight = levels[levelIndex]?.height ?? null;
     currentLevel = levelIndex;
     // 既に再アタッチ進行中なら、最初の切替で退避したスナップショットと位置
-    // (pendingSeek) を保持し、desiredLevel だけ差し替える。これで画質を連打しても
-    // 元の再生位置・再生意図を失わない。
+    // (pendingSeek) を保持し、選択画質 (desiredHeight) だけ差し替える。これで画質を
+    // 連打しても元の再生位置・再生意図を失わない。
     if (!reattaching) {
       reattaching = true;
       // 位置: 確立済み再生 (initialized) のみ現在位置を退避する (終了済みは先頭)。
@@ -911,7 +922,13 @@
       // 尊重され、明示停止 (userPaused) も尊重され、再アタッチ中の明示操作も拾える。
       const autoplayIntent = getBool('playback.autoplay') || forceAutoplay;
       const shouldPlay = !video.paused || (!playbackStarted && autoplayIntent && !userPaused);
-      restoreAfterReattach = { play: shouldPlay, rate: video.playbackRate };
+      // silentPlay: 既に再生中だった切替は「継続」なので復元再生で player:play を
+      // 出さない。停止→再生 (autoplay/明示) は新規再生なので onPlaying で通知する。
+      restoreAfterReattach = {
+        play: shouldPlay,
+        rate: video.playbackRate,
+        silentPlay: !video.paused,
+      };
       // control bar の表示 (再生/一時停止ボタン) と復元意図を一致させる。これを
       // しないと pre-play autoplay 予定の切替で Play ボタンが出るのにクリックすると
       // togglePlay が intent を反転し、再生開始ではなく停止になってしまう。
@@ -1089,7 +1106,7 @@
     // defaultPlaybackRate に戻るため明示的に復元する。通常の音量・オートプレイ
     // 既定ロジックは適用しない。
     if (restoreAfterReattach) {
-      const { play, rate, rateExplicit } = restoreAfterReattach;
+      const { play, rate, rateExplicit, silentPlay } = restoreAfterReattach;
       restoreAfterReattach = null;
       // スナップショットを消費したので連打保護フラグ (reattaching) は解除する。
       reattaching = false;
@@ -1111,8 +1128,9 @@
       // getState に反映するため)。
       paused = !play;
       if (play) {
-        // 直後の onPlaying は内部的な再開なので player:play を 1 度だけ抑制する。
-        suppressPlayEventOnce = true;
+        // 継続再生 (silentPlay) のみ onPlaying の player:play を抑制する。新規/明示
+        // 再生は契約どおり onPlaying で player:play を出す (再生失敗時は何も出さない)。
+        suppressPlayEventOnce = silentPlay === true;
         void video.play().catch(() => {
           // 再生失敗時: 抑制フラグを残さず、paused を実状態へ同期する。
           suppressPlayEventOnce = false;
