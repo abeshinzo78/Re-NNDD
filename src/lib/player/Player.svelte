@@ -130,7 +130,9 @@
   let desiredLevel = -1;
   // 画質切り替えで再アタッチした直後に復元する再生状態 (再生/一時停止) と速度。
   // 再生位置は pendingSeek 経由で復元する (再アタッチ中の新しいシークが優先)。
-  let restoreAfterReattach: { play: boolean; rate: number } | null = null;
+  // rateExplicit: 再アタッチ中にユーザが明示的に速度変更したか (初回ロード前の
+  // 早期切替で既定速度に上書きされないようにするため)。
+  let restoreAfterReattach: { play: boolean; rate: number; rateExplicit?: boolean } | null = null;
   // 復元再生 (restore の play) 由来の onPlaying を 1 度だけ抑制するフラグ。
   // 内部的な再開なので player:play プラグインイベントを出さないために使う。
   let suppressPlayEventOnce = false;
@@ -155,6 +157,11 @@
   // ユーザ/プラグインが明示的に一時停止し、まだ明示再生していないか。初回フレーム
   // 前の明示停止が autoplay 意図で上書きされるのを防ぐために使う。
   let userPaused = false;
+  // 復元シーク (再アタッチ後に保存位置へ戻すシーク) の進行中フラグ。この間も
+  // コメント overlay を凍結し、restore seek で canvas が一瞬空になるのを防ぐ。
+  // CommentLayer の freeze に渡すため $state。
+  let restoreSeeking = $state(false);
+  let restoreSeekTimer: ReturnType<typeof setTimeout> | null = null;
 
   const MAX_HLS_REISSUE_RETRIES = 3;
   const MAX_RECOVERY_ATTEMPTS = 3;
@@ -661,6 +668,7 @@
     if (hideTimer) clearTimeout(hideTimer);
     if (stallNudgeTimer) clearTimeout(stallNudgeTimer);
     if (seekUnhideTimer) clearTimeout(seekUnhideTimer);
+    if (restoreSeekTimer) clearTimeout(restoreSeekTimer);
     clearPendingVideoError();
   });
 
@@ -687,7 +695,10 @@
     if (!restoreAfterReattach) return;
     restoreAfterReattach.play = playing;
     paused = !playing;
-    pluginBus.emit(playing ? 'player:play' : 'player:pause', { videoId, currentTime });
+    pluginBus.emit(playing ? 'player:play' : 'player:pause', {
+      videoId,
+      currentTime: currentLogicalTime(),
+    });
   }
   function togglePlay() {
     if (!video) return;
@@ -796,6 +807,7 @@
     if (!video) return;
     if (reattaching && restoreAfterReattach) {
       restoreAfterReattach.rate = r;
+      restoreAfterReattach.rateExplicit = true;
       playbackRate = r;
       return;
     }
@@ -1004,7 +1016,8 @@
   }
   function onLoadedMetadata() {
     // 退避/新規いずれの seek 要求も pendingSeek 経由で適用する (どちらの handler
-    // が先に走っても最新値が勝つ)。
+    // が先に走っても最新値が勝つ)。restore でシークが走るかを消費前に控える。
+    const restoreSeekInitiated = restoreAfterReattach != null && pendingSeek != null;
     applyPendingSeek();
     if (!video) return;
     // 画質切り替えで hls.js を作り直した直後は、再生状態と速度を復元する
@@ -1013,16 +1026,32 @@
     // defaultPlaybackRate に戻るため明示的に復元する。通常の音量・オートプレイ
     // 既定ロジックは適用しない。
     if (restoreAfterReattach) {
-      const { play, rate } = restoreAfterReattach;
+      const { play, rate, rateExplicit } = restoreAfterReattach;
       restoreAfterReattach = null;
       // スナップショットを消費したので連打保護フラグ (reattaching) は解除する。
       reattaching = false;
+      // 復元シークが走るならコメント overlay をその完了まで凍結し続ける (restore
+      // seek 中に canvas が一瞬空白になるのを防ぐ)。onSeeked で解除し、同位置シークで
+      // seeked が出ない場合に備えタイマーでも解除する。
+      if (restoreSeekInitiated) {
+        restoreSeeking = true;
+        if (restoreSeekTimer) clearTimeout(restoreSeekTimer);
+        restoreSeekTimer = setTimeout(() => {
+          restoreSeeking = false;
+          restoreSeekTimer = null;
+        }, 1000);
+      }
       if (!initialized) {
-        // 初回 loadedmetadata 前の早期画質切替: 通常 init をスキップするので、
-        // ここで既定の速度・音量・ミュートを適用する (full-volume/unmuted/既定速度
-        // のまま再生されるのを防ぐ)。snapshot.rate は init 前で既定未反映なので使わない。
-        applyDefaultRate();
+        // 初回 loadedmetadata 前の早期画質切替: 通常 init をスキップするので、ここで
+        // 既定の音量・ミュート・速度を適用する (full-volume/unmuted/既定速度のまま
+        // 再生されるのを防ぐ)。ただしユーザが再アタッチ中に明示的に速度変更していた
+        // 場合はそれを優先する。
         applyAudioDefaults();
+        if (rateExplicit && Number.isFinite(rate) && rate > 0) {
+          video.playbackRate = rate;
+        } else {
+          applyDefaultRate();
+        }
       } else if (Number.isFinite(rate) && rate > 0) {
         video.playbackRate = rate;
       }
@@ -1128,6 +1157,14 @@
     syncAudioSeek();
   }
   function onSeeked() {
+    // 復元シークが完了したらコメント凍結を解除する。
+    if (restoreSeeking) {
+      restoreSeeking = false;
+      if (restoreSeekTimer) {
+        clearTimeout(restoreSeekTimer);
+        restoreSeekTimer = null;
+      }
+    }
     syncAudioSeek();
     syncAudioPlayState();
     // decode が新フレームを描画するまで 1 frame 待ってから戻す
@@ -1433,7 +1470,7 @@
       {comments}
       enabled={commentsEnabled}
       opacity={commentOpacity}
-      freeze={reattaching}
+      freeze={reattaching || restoreSeeking}
     />
   {/key}
   {#if loadingMessage}

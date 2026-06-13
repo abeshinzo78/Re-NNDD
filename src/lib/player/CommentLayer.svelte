@@ -266,12 +266,13 @@
     }
 
     if (nc && video && enabled) {
-      if (video.seeking) {
+      if (freeze) {
+        // 画質切り替えの再アタッチ / 復元シーク中は video.currentTime が 0 へ落ちたり
+        // seeking になる。コメントを先頭へ巻き戻したり空白にしないよう、最後に描画した
+        // フレームを保持する (seeking のクリアより優先)。
+      } else if (video.seeking) {
         forceClearCanvas();
         lastVpos = -1;
-      } else if (freeze) {
-        // 画質切り替えの再アタッチ中は video.currentTime が 0 に落ちる。コメントを
-        // 先頭へ巻き戻さないよう、最後に描画したフレームを保持する (再描画しない)。
       } else {
         const vpos = Math.floor(video.currentTime * 100);
         if (vpos !== lastVpos) {
