@@ -803,11 +803,11 @@
   // (相対シーク / フレームステップ / AB 点 / スクショ / getCurrentTime) はこの
   // 論理位置を使う。保留中の seek / 未適用 resume (pendingSeek) を優先する。
   function currentLogicalTime(): number {
-    // 再アタッチ中は currentTime state を論理位置の真値として使う。過渡的な 0 への
-    // 巻き戻りは onTimeUpdate 抑制で反映されず、適用済み/予約シークは下記の
-    // onReattachSeek / publishLogicalTime で currentTime に反映されるため、未適用の
-    // pendingSeek があればそれ、無ければ currentTime が論理位置になる。
-    if (reattaching) return pendingSeek ?? currentTime;
+    // 再アタッチ中 (および終了失敗で復帰待ちの間) は currentTime state を論理位置の
+    // 真値として使う。過渡的な 0 巻き戻り / 失敗要素の 0 は onTimeUpdate 抑制や退避値
+    // (pendingSeek) で吸収され、未適用の pendingSeek があればそれ、無ければ
+    // currentTime が論理位置になる。
+    if (reattaching || reattachFailed) return pendingSeek ?? currentTime;
     return video?.currentTime ?? currentTime;
   }
   // 論理位置を currentTime state / onTime / player:time へ反映する。再アタッチ中の
@@ -931,7 +931,8 @@
     // 映像コーデックは変わらないので再バッファせず内部状態だけ更新する。
     const curHeight = currentLevel >= 0 ? levels[currentLevel]?.height : undefined;
     const nextHeight = levels[levelIndex]?.height;
-    if (curHeight != null && curHeight === nextHeight) {
+    // 終了失敗の再試行中は同解像度ショートカットも飛ばし、実際に再アタッチする。
+    if (curHeight != null && curHeight === nextHeight && !reattachFailed) {
       userPickedLevel = levelIndex;
       currentLevel = levelIndex;
       return;
