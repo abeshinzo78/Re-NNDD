@@ -143,8 +143,9 @@
   let activeHlsUrl = '';
   // 画質切り替えの再アタッチ進行中フラグ。MediaSource 付け替えで <video> が
   // 一時的に pause→再生再開するが、これはユーザ操作ではないので player:pause /
-  // player:play プラグインイベントを抑制する。
-  let reattaching = false;
+  // player:play プラグインイベントを抑制する。CommentLayer の freeze に渡すため
+  // $state にする (非リアクティブだと子へ変化が伝わらない)。
+  let reattaching = $state(false);
   // 一度でも実際に再生が始まったか。再生開始前の画質切替は復元せず通常の
   // ロード/オートプレイ経路に任せる (autoplay 設定が無視されるのを防ぐ)。
   let playbackStarted = false;
@@ -340,6 +341,7 @@
         if (hls !== inflight) return;
         errorMessage = `HLS URL 再発行失敗: ${e}`;
         loadingMessage = null;
+        cancelReattach();
         return;
       }
     }
@@ -368,6 +370,9 @@
   function attachHls() {
     if (!video || !hlsUrl) return;
     detachHls();
+    // 再アタッチ開始時に保留中の一過性 video エラータイマーを止める。これが
+    // 再アタッチ中に発火して errorMessage を立てると、誤って終了扱いされる。
+    clearPendingVideoError();
     errorMessage = null;
     loadingMessage = 'HLS を初期化中…';
     reissueAttempts = 0;
@@ -595,6 +600,7 @@
 
         errorMessage = `HLS エラー: ${detail}`;
         loadingMessage = null;
+        cancelReattach();
       });
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
       video.src = hlsUrl;
@@ -658,17 +664,16 @@
     clearPendingVideoError();
   });
 
-  // 端末的なエラー表示に入ったら再アタッチ窓を畳む。これをしないと再アタッチ中の
-  // ロード失敗 (URL 再発行失敗 / リカバリ枯渇 / SRC 非対応) で reattaching と
-  // restoreAfterReattach が残り、時刻/再生状態の更新が永久に抑制され、以後の
-  // play/pause/rate 操作が「適用されないスナップショット」へ吸い込まれてしまう。
-  $effect(() => {
-    if (errorMessage && reattaching) {
-      reattaching = false;
-      restoreAfterReattach = null;
-      suppressPlayEventOnce = false;
-    }
-  });
+  // 確定的な終了 (terminal) ロード失敗で再アタッチ窓を畳む。これをしないと
+  // reattaching / restoreAfterReattach が残り、時刻・再生状態の更新が永久に抑制
+  // され、以後の play/pause/rate 操作が「適用されないスナップショット」へ吸い込
+  // まれてしまう。一過性エラー (3 秒猶予の video error 等) では呼ばない —
+  // HLS がまだ復帰しうるため、誤って再生意図を捨てない。
+  function cancelReattach() {
+    reattaching = false;
+    restoreAfterReattach = null;
+    suppressPlayEventOnce = false;
+  }
 
   // 画質切り替えの再アタッチ中の「明示的な」再生/一時停止 (ユーザ/プラグイン操作)
   // を復元スナップショットへ反映する。付け替え途中の <video> を直接操作しても
@@ -823,11 +828,12 @@
     // 元の再生位置・再生意図を失わない。
     if (!reattaching) {
       reattaching = true;
-      // 位置は常に保持する。未適用の resume があればそれを優先し (初回
-      // durationchange 前の早期切替で resume が 0 に潰れるのを防ぐ)、終了済みは
-      // 先頭、それ以外は現在位置。新しいユーザシークは pendingSeek を上書きして勝つ。
-      pendingSeek =
-        !resumeApplied && resumePosition > 0 ? resumePosition : video.ended ? 0 : video.currentTime;
+      // 位置: 確立済み再生 (initialized) のみ現在位置を退避する (終了済みは先頭)。
+      // 初回ロード前は resume を通常の onDurationChange (near-end 判定込み) に委ね、
+      // ユーザシークがあれば既に pendingSeek が勝つので、ここでは触らない。
+      if (initialized) {
+        pendingSeek = video.ended ? 0 : video.currentTime;
+      }
       // 再アタッチ後に再生すべきか: 再生中、または「未開始だが autoplay 予定で
       // ユーザが明示停止していない」なら true。再生意図と速度を退避し
       // loadedmetadata で復元する。これで再生開始前の切替でも autoplay 設定が
@@ -939,7 +945,13 @@
 
   function onDurationChange() {
     if (!video) return;
-    duration = Number.isFinite(video.duration) ? video.duration : 0;
+    // 再アタッチ中は detach で duration が一時的に NaN→0 になり、シークバーが無効化
+    // され plugin state にも 0 が漏れる。同一動画なので有効値のときだけ更新する。
+    if (Number.isFinite(video.duration) && video.duration > 0) {
+      duration = video.duration;
+    } else if (!reattaching) {
+      duration = 0;
+    }
     // Restore saved position once duration is available
     if (!resumeApplied && resumePosition > 0 && duration > 0) {
       resumeApplied = true;
@@ -1294,9 +1306,9 @@
     return paused;
   }
   export function getCurrentTime(): number {
-    // 再アタッチ中は <video>.currentTime が一時的に 0 になるため、frozen な論理
-    // 位置 (currentTime state) を返す。
-    if (reattaching) return currentTime;
+    // 再アタッチ中は <video>.currentTime が一時的に 0 になるため論理位置を返す。
+    // 保留中の seek / 未適用 resume (pendingSeek) があればそれを優先する。
+    if (reattaching) return pendingSeek ?? currentTime;
     return video?.currentTime ?? currentTime;
   }
 </script>
@@ -1373,6 +1385,7 @@
       // その間に play / timeupdate が走ったら一過性として無視する。
       if (code === 4) {
         errorMessage = `動画再生エラー: ${detail}`;
+        cancelReattach();
         return;
       }
       clearPendingVideoError();
@@ -1402,7 +1415,13 @@
   <!-- 動画ソース (localSrc / hlsUrl) が変わったら CommentLayer を remount。
        これで前動画の canvas ピクセルが残像として残るのを確実に防ぐ。 -->
   {#key localSrc || hlsUrl}
-    <CommentLayer {video} {comments} enabled={commentsEnabled} opacity={commentOpacity} />
+    <CommentLayer
+      {video}
+      {comments}
+      enabled={commentsEnabled}
+      opacity={commentOpacity}
+      freeze={reattaching}
+    />
   {/key}
   {#if loadingMessage}
     <div class="loading">{loadingMessage}</div>
