@@ -9,9 +9,12 @@
     comments: PlayerComment[];
     enabled: boolean;
     opacity: number;
+    /** 画質切り替えの再アタッチ中は true。video.currentTime が一時的に 0 へ落ちる
+     *  間、コメントを先頭へ巻き戻さず最後のフレームを保持するために使う。 */
+    freeze?: boolean;
   };
 
-  let { video, comments, enabled, opacity }: Props = $props();
+  let { video, comments, enabled, opacity, freeze = false }: Props = $props();
 
   let canvas: HTMLCanvasElement | null = $state(null);
   let nc: NiconiComments | null = null;
@@ -263,7 +266,11 @@
     }
 
     if (nc && video && enabled) {
-      if (video.seeking) {
+      if (freeze) {
+        // 画質切り替えの再アタッチ / 復元シーク中は video.currentTime が 0 へ落ちたり
+        // seeking になる。コメントを先頭へ巻き戻したり空白にしないよう、最後に描画した
+        // フレームを保持する (seeking のクリアより優先)。
+      } else if (video.seeking) {
         forceClearCanvas();
         lastVpos = -1;
       } else {

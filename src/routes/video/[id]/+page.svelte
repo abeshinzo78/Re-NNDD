@@ -56,7 +56,12 @@
   let backHref = $state('/search');
   let backLabel = $state('← 検索に戻る');
 
-  type PlayerRef = { seek: (t: number) => void; getVideo: () => HTMLVideoElement | null };
+  type PlayerRef = {
+    seek: (t: number) => void;
+    getVideo: () => HTMLVideoElement | null;
+    getCurrentTime: () => number;
+    isPaused: () => boolean;
+  };
   let playerRef = $state<PlayerRef | undefined>();
 
   let videoId = $derived(page.params.id ?? '');
@@ -366,10 +371,13 @@
       return false;
     }
     const vid = playerRef?.getVideo();
-    const t = vid?.currentTime ?? currentTime ?? 0;
+    // 画質切り替えの再アタッチ中は <video> の currentTime/paused が一時的に
+    // 0/paused にリセットされる。Player の論理状態 (getCurrentTime/isPaused) を
+    // 使い、PiP 引き継ぎが先頭・一時停止で固定されてしまうのを防ぐ。
+    const t = playerRef?.getCurrentTime() ?? currentTime ?? 0;
     // 起動時点でページ側 Player が鳴っているかを掴んでおく。
     // 鳴っている場合のみ、mini は無音ロード→引き継ぎフローを走らせる。
-    const wasPlaying = vid != null && !vid.paused && !vid.ended;
+    const wasPlaying = vid != null && playerRef?.isPaused() === false && !vid.ended;
     // `payload` は同一コンポーネントが /video/A → /video/B でパラ遷移した時
     // 後から書き換わる。クロージャに `payload` を直接参照させると、PiP 再生中の
     // 動画 A のトークン再発行が B の URL を取得してしまう。スナップショットで固める。
@@ -453,7 +461,8 @@
     if (miniPlayer.source?.videoId !== payload.videoId) return;
     const id = setInterval(() => {
       const v = playerRef?.getVideo();
-      if (v) miniPlayer.setSourcePaused(v.paused || v.ended);
+      // 再アタッチ中の transient な paused を拾わないよう論理状態 (isPaused) を使う。
+      if (v) miniPlayer.setSourcePaused((playerRef?.isPaused() ?? v.paused) || v.ended);
     }, 200);
     return () => clearInterval(id);
   });
