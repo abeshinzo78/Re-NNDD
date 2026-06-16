@@ -166,4 +166,42 @@ describe('thumbFallback', () => {
     expect(img.src).not.toContain('OLD');
     action.destroy();
   });
+
+  it('videoId 無しでも、リトライ保留中に別サムネへ使い回されたら新 src を壊さない', async () => {
+    // シリーズ/マイリスト表紙のような use:thumbFallback 単独呼び出し
+    // (videoId 無し) で、同じ <img> が別サムネに使い回されるケース。
+    const img = makeImg('https://cdn.example/thumbnails/A/A');
+    const action = thumbFallback(img, {});
+
+    img.dispatchEvent(new Event('error')); // urlA のリトライを予約
+    await flush();
+
+    // リトライ発火前に Svelte が同じノードを別サムネ B に使い回す。
+    img.src = 'https://cdn.example/thumbnails/B/B';
+    await delay(400); // urlA のリトライタイマが発火するが…
+
+    // B を空にしたり A を復元したりしていない。
+    expect(img.src).toContain('/B/B');
+    expect(img.src).not.toContain('/A/A');
+    action.destroy();
+  });
+
+  it('使い回し後に新サムネがエラーしたら、前の broken 状態を引き継がず新規処理する', async () => {
+    const img = makeImg('https://cdn.example/thumbnails/E/E');
+    const action = thumbFallback(img, {});
+
+    // E を最後まで失敗させてプレースホルダ化。
+    img.dispatchEvent(new Event('error'));
+    await delay(400);
+    img.dispatchEvent(new Event('error'));
+    await flush();
+    expect(img.dataset.thumbBroken).toBe('true');
+
+    // 同じ <img> を F に使い回し、F もエラー → 新エピソードとして broken を解除。
+    img.src = 'https://cdn.example/thumbnails/F/F';
+    img.dispatchEvent(new Event('error'));
+    await flush();
+    expect(img.dataset.thumbBroken).toBeUndefined();
+    action.destroy();
+  });
 });

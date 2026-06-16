@@ -61,15 +61,19 @@ function sameUrl(a: string, b: string): boolean {
 
 export function thumbFallback(img: HTMLImageElement, params: ThumbFallbackParams = {}) {
   let videoId = params.videoId ?? null;
+  let destroyed = false;
+  // いま面倒を見ている画像ソース。<img> ノードが別サムネに使い回されて src が
+  // 変わったら「別エピソード」として状態を作り直す。videoId が無い/変わらない
+  // 貼り替え (シリーズ/マイリスト表紙のような use:thumbFallback 単独呼び出し) でも
+  // 取りこぼさないよう、無効化の基準は videoId ではなく **現在の src** にする
+  // (PR #13 review)。
+  let episodeSrc: string | null = null;
   let triedResolve = false;
   let triedRetry = false;
-  let destroyed = false;
-  // update() で別動画に貼り替わるたびに進める世代トークン。再解決の await や
-  // リトライの setTimeout が解決するより前に rebind されると、古い世代の
-  // 継続処理が新しい動画の <img> に旧 URL を書き込んでしまう (リスト仮想化で
-  // 同じノードが使い回されるケース)。遅延 src 操作の直前に毎回照合して弾く
-  // (PR #13 review)。
-  let generation = 0;
+  // 遅延処理 (再解決の await / リトライの setTimeout) は開始時のトークンを持ち、
+  // src を書き込む直前に最新と照合して、古いエピソードの URL を新しい画像へ
+  // 書き込むのを防ぐ。
+  let token = 0;
 
   function showPlaceholder() {
     img.dataset.thumbBroken = 'true';
@@ -77,26 +81,41 @@ export function thumbFallback(img: HTMLImageElement, params: ThumbFallbackParams
     if (!img.style.background) {
       img.style.background = 'var(--theme-bg, #1b1b1b)';
     }
+    // 自前のプレースホルダは「現在ソース」として記録し、error ループを断つ。
+    episodeSrc = TRANSPARENT_PX;
     img.src = TRANSPARENT_PX;
   }
 
-  /** この onError 開始時点の世代から状態が変わっていれば true(=もう触るな)。 */
-  function stale(gen: number): boolean {
-    return destroyed || gen !== generation || img.dataset.thumbBroken === 'true';
-  }
-
   async function onError() {
-    if (destroyed || img.dataset.thumbBroken) return;
-    const gen = generation;
-    const broken = img.src;
+    if (destroyed) return;
+    const current = img.src;
+    // 自前で貼ったプレースホルダや空 src は無視 (無限ループ防止)。
+    if (!current || current === TRANSPARENT_PX) return;
+
+    // 別ソースへ使い回されていたら状態を作り直し、旧エピソードの遅延処理を
+    // トークンで無効化する (videoId が変わらないケースもここで拾える)。
+    if (current !== episodeSrc) {
+      episodeSrc = current;
+      triedResolve = false;
+      triedRetry = false;
+      token += 1;
+      delete img.dataset.thumbBroken;
+    }
+    if (img.dataset.thumbBroken === 'true') return;
+
+    const myToken = token;
+    const broken = current;
+    // 遅延処理後に「破棄/別ソースへ差し替え」が起きていれば true(=もう触るな)。
+    const superseded = () => destroyed || myToken !== token || img.src !== broken;
 
     // ① 現行サムネ URL を権威ソースから取り直して貼り替える。
     if (!triedResolve) {
       triedResolve = true;
       if (videoId) {
         const fresh = await resolveAuthoritative(videoId);
-        if (stale(gen)) return;
+        if (superseded()) return;
         if (fresh && !sameUrl(fresh, broken)) {
+          episodeSrc = fresh; // 自分の差し替えは新エピソードとして記録
           img.src = fresh;
           return;
         }
@@ -106,14 +125,14 @@ export function thumbFallback(img: HTMLImageElement, params: ThumbFallbackParams
     // ② 純粋な一時エラー対策に 1 回だけ貼り直す(同 URL の再フェッチ)。
     if (!triedRetry) {
       triedRetry = true;
-      const url = broken;
       window.setTimeout(() => {
-        if (stale(gen)) return;
+        if (superseded()) return;
         // 一旦 src を外してから戻すと、同 URL でも確実に再フェッチが走る。
         img.removeAttribute('src');
         window.setTimeout(() => {
-          if (stale(gen)) return;
-          if (!img.getAttribute('src')) img.src = url;
+          // 破棄/別エピソード、または誰かが src を入れ直していたら触らない。
+          if (destroyed || myToken !== token || img.getAttribute('src')) return;
+          img.src = broken;
         }, 30);
       }, 300);
       return;
@@ -129,13 +148,10 @@ export function thumbFallback(img: HTMLImageElement, params: ThumbFallbackParams
     update(next: ThumbFallbackParams) {
       const nextId = next?.videoId ?? null;
       if (nextId !== videoId) {
-        // バインド先の動画が変わったらフォールバック状態をリセットし、世代を
-        // 進めて旧動画向けの遅延処理(再解決/リトライ)を無効化する。
+        // 別動画にバインドし直された。保留中の遅延処理を確実に無効化する
+        // (エピソードの作り直し自体は次の error 時に src 比較で行われる)。
         videoId = nextId;
-        triedResolve = false;
-        triedRetry = false;
-        generation += 1;
-        delete img.dataset.thumbBroken;
+        token += 1;
       }
     },
     destroy() {
