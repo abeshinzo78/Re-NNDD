@@ -427,9 +427,7 @@ pub async fn resolve_thumbnail_url(
     if !status.is_success() {
         let preview: String = body.chars().take(200).collect();
         tracing::warn!(%url, %status, body = %preview, "resolve_thumbnail_url");
-        return Err(AppError::Other(format!(
-            "サムネ解決 API エラー ({status})"
-        )));
+        return Err(AppError::Other(format!("サムネ解決 API エラー ({status})")));
     }
 
     Ok(parse_thumbnail_url_from_xml(&body))
@@ -3841,7 +3839,10 @@ mod tests {
         let deleted = r#"<nicovideo_thumb_response status="fail"><error>
             <code>DELETED</code></error></nicovideo_thumb_response>"#;
         assert_eq!(parse_thumbnail_url_from_xml(deleted), None);
-        assert_eq!(parse_thumbnail_url_from_xml("<thumbnail_url></thumbnail_url>"), None);
+        assert_eq!(
+            parse_thumbnail_url_from_xml("<thumbnail_url></thumbnail_url>"),
+            None
+        );
         assert_eq!(parse_thumbnail_url_from_xml(""), None);
     }
 

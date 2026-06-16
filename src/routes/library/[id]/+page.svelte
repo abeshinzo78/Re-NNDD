@@ -534,7 +534,7 @@
     try {
       const selected = await openDialog({ directory: true, multiple: false });
       if (typeof selected === 'string') binOutputDir = selected;
-    } catch (_) {
+    } catch {
       // user cancelled
     }
   }
@@ -935,10 +935,10 @@
                 <span>フォント倍率</span>
                 <input
                   type="range"
-                   min="0.5"
-                   max="1.5"
-                   step="0.1"
-                   bind:value={binFontScale}
+                  min="0.5"
+                  max="1.5"
+                  step="0.1"
+                  bind:value={binFontScale}
                   disabled={burnInRunning}
                 />
                 <span class="burnin-val">{binFontScale.toFixed(1)}×</span>

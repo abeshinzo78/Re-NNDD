@@ -587,6 +587,12 @@ export type BurnInOptions = {
   fixedDurationSec?: number;
   /** libass のフォント名 (既定 sans-serif)。 */
   fontName?: string;
+  /**
+   * 出力先フォルダ。UI から渡されるが、現状バックエンド (`export_video_with_comments`)
+   * は未対応で `exports/` 配下へ固定出力する (unknown field として無視される)。
+   * 型エラー回避と将来の実装余地のため optional で受けておく。
+   */
+  outputDir?: string | null;
 };
 
 export type BurnInResult = {
