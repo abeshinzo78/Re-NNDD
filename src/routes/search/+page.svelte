@@ -113,11 +113,16 @@
     targets = next;
   }
 
-  /** Snapshot Search has no native popularity sort. We fetch by
-   * `viewCounter desc` with an expanded limit, then re-rank client-side
-   * with a time-decayed weighted score (see {@link sortByPopularity}). */
-  function toApiSort(): { field: SearchField; direction: 'asc' | 'desc' } {
+  /** Map the UI sort to the API sort.
+   *
+   * Snapshot Search has no native popularity sort, so for 「人気が高い順」 we
+   * fetch by `viewCounter desc` with an expanded limit and re-rank client-side
+   * (see {@link sortByPopularity}). nvapi *does* have a native popularity sort
+   * (`hot`), so there we omit the sort and let the backend map it — no
+   * client-side re-rank. */
+  function toApiSort(): { field: SearchField; direction: 'asc' | 'desc' } | undefined {
     if (sortField === 'popularity') {
+      if (engine === 'nvapi') return undefined;
       return { field: 'viewCounter', direction: 'desc' };
     }
     return { field: sortField, direction: sortDir };
@@ -129,8 +134,10 @@
     pending = true;
     error = null;
     try {
-      // For popularity sort, over-fetch so re-ranking has a bigger pool.
-      const apiLimit = sortField === 'popularity' ? Math.min(limit * 3, 100) : limit;
+      // Only the snapshot popularity path needs the over-fetch + client
+      // re-rank; nvapi popularity uses the server's native `hot` ordering.
+      const popularityRerank = sortField === 'popularity' && engine !== 'nvapi';
+      const apiLimit = popularityRerank ? Math.min(limit * 3, 100) : limit;
       const apiResp = await searchVideosOnline(
         {
           q: query,
@@ -154,7 +161,7 @@
         },
         engine,
       );
-      if (sortField === 'popularity') {
+      if (popularityRerank) {
         apiResp.data = sortByPopularity(apiResp.data).slice(0, limit);
       }
       response = apiResp;
@@ -173,7 +180,8 @@
   <h2>オンライン検索</h2>
   <p class="muted">
     {#if engine === 'nvapi'}
-      niconico nvapi（公式 Web クライアントと同じ検索 API）を叩く。ログイン中はセッションを使って検索する。
+      niconico nvapi（公式 Web クライアントと同じ検索
+      API）を叩く。ログイン中はセッションを使って検索する。
     {:else}
       niconico スナップショット検索 API v2 を直接叩く。データは 5:00 JST に日次更新。
     {/if}

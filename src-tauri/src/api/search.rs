@@ -197,8 +197,11 @@ impl NvapiSearchClient {
             // The snapshot `targets` concept (title/description/tags) has no
             // direct nvapi analogue: `keyword` already matches across
             // title/tags/description. The one meaningful mapping is an
-            // exact-tag search, so honor a lone `tagsExact` target.
-            if query.targets == [SearchTarget::TagsExact] {
+            // exact-tag search. The form's default target is `title`, so key
+            // off *presence* of `tagsExact` (not it being the sole target) —
+            // otherwise toggling 「タグ完全一致」 on top of the default would
+            // silently fall through to a broad keyword search.
+            if query.targets.contains(&SearchTarget::TagsExact) {
                 pairs.append_pair("tag", &query.q);
             } else {
                 pairs.append_pair("keyword", &query.q);
@@ -637,10 +640,12 @@ mod tests {
     }
 
     #[test]
-    fn nvapi_build_url_uses_tag_for_exact_tag_target() {
+    fn nvapi_build_url_uses_tag_when_exact_tag_present() {
         let client = NvapiSearchClient::with_base_url("https://example.test", None).unwrap();
+        // The default form target is `title`; toggling tagsExact on top of it
+        // must still produce an exact-tag search, not a broad keyword search.
         let mut q = baseline();
-        q.targets = vec![SearchTarget::TagsExact];
+        q.targets = vec![SearchTarget::Title, SearchTarget::TagsExact];
         let url = client.build_url(&q).unwrap();
         let qs: std::collections::HashMap<_, _> = url.query_pairs().into_owned().collect();
         assert_eq!(qs.get("tag").map(String::as_str), Some("ゆっくり"));
