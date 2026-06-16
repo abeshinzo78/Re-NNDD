@@ -67,6 +67,9 @@
   let videoId = $derived(page.params.id ?? '');
   let theme = $derived(getStr('appearance.theme'));
   let isClassicTheme = $derived(theme === 'niconico-classic');
+  // 説明文を最初から開いた状態で出すか (設定 appearance.expand_description)。
+  // 折りたたみ自体は残すので、ユーザは展開後に手動で閉じることもできる。
+  let expandDescription = $derived(getBool('appearance.expand_description'));
   let loadingFor: string | null = null;
   let loop = $state(false);
   // ユーザが Player の loop ボタンを明示的に操作したかを記録する。
@@ -792,7 +795,7 @@
           </div>
         {/if}
         {#if payload.video.description}
-          <details>
+          <details open={expandDescription}>
             <summary>説明文</summary>
             <!-- niconico API の説明文は外部入力。`{@html}` 前に許可リストで
                  サニタイズして XSS（→ Tauri invoke 経由の任意ファイル削除など）
