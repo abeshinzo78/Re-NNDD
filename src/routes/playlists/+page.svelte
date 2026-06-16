@@ -25,6 +25,7 @@
   } from '$lib/stores/smartPlaylists';
   import { setQueue, itemHref, type PlaybackQueueItem } from '$lib/stores/playbackQueue';
   import { formatDate, formatDuration, formatNumber } from '$lib/format';
+  import { thumbFallback } from '$lib/thumbnail';
 
   type Tab = 'mylist' | 'smart';
   let tab = $state<Tab>('mylist');
@@ -357,7 +358,12 @@
                     title="ここから連続再生"
                   >
                     {#if item.thumbnailUrl}
-                      <img src={item.thumbnailUrl} alt="" loading="lazy" />
+                      <img
+                        src={item.thumbnailUrl}
+                        alt=""
+                        loading="lazy"
+                        use:thumbFallback={{ videoId: item.videoId }}
+                      />
                     {:else}
                       <div class="thumb-placeholder"></div>
                     {/if}

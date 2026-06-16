@@ -5,6 +5,7 @@
   import { addNgRule, type NgTargetType } from '$lib/stores/ngRules';
   import { quickDownload } from '$lib/quickDownload';
   import { pluginItemActions } from '$lib/plugins/registry';
+  import { thumbFallback } from '$lib/thumbnail';
 
   type Props = {
     hit: SearchHit;
@@ -112,10 +113,24 @@
   {#if hit.thumbnailUrl}
     {#if playerHref}
       <a href={playerHref} onclick={onClick}>
-        <img class="thumb" src={hit.thumbnailUrl} alt="" loading="lazy" decoding="async" />
+        <img
+          class="thumb"
+          src={hit.thumbnailUrl}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          use:thumbFallback={{ videoId: hit.contentId }}
+        />
       </a>
     {:else}
-      <img class="thumb" src={hit.thumbnailUrl} alt="" loading="lazy" decoding="async" />
+      <img
+        class="thumb"
+        src={hit.thumbnailUrl}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        use:thumbFallback={{ videoId: hit.contentId }}
+      />
     {/if}
   {:else}
     <div class="thumb placeholder"></div>

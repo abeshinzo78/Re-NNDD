@@ -10,6 +10,7 @@
   } from '$lib/stores/smartPlaylists';
   import { setQueue, itemHref, type PlaybackQueueItem } from '$lib/stores/playbackQueue';
   import { formatDate, formatDuration, formatNumber } from '$lib/format';
+  import { thumbFallback } from '$lib/thumbnail';
 
   let smartId = $derived(page.params.id ?? '');
 
@@ -190,7 +191,13 @@
         <button type="button" class="card" onclick={() => startPlayAll(i)} title="ここから連続再生">
           <div class="thumb-wrap">
             {#if thumbSrc(item)}
-              <img class="thumb" src={thumbSrc(item)} alt="" loading="lazy" />
+              <img
+                class="thumb"
+                src={thumbSrc(item)}
+                alt=""
+                loading="lazy"
+                use:thumbFallback={{ videoId: item.contentId }}
+              />
             {:else}
               <div class="thumb-placeholder">?</div>
             {/if}

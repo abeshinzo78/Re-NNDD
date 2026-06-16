@@ -152,6 +152,7 @@ pub fn run() {
             commands::search_short_ranking,
             commands::fetch_video_html,
             commands::fetch_related_videos,
+            commands::resolve_thumbnail_url,
             // ----- プラグイン (フロント拡張機能) -----
             plugins::commands::plugin_list_installed,
             plugins::commands::plugin_get_manifest,

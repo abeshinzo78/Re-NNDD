@@ -13,6 +13,7 @@
   } from '$lib/api';
   import { formatDate, formatDuration, formatNumber, videoUrl } from '$lib/format';
   import { setQueue, itemHref, type PlaybackQueueItem } from '$lib/stores/playbackQueue';
+  import { thumbFallback } from '$lib/thumbnail';
   import VideoActionMenu from '$lib/VideoActionMenu.svelte';
 
   let userId = $derived(page.params.id ?? '');
@@ -338,7 +339,13 @@
                 onclick={() => startPlayAllVideos(i)}
                 title="ここから連続再生"
               >
-                <img class="thumb" src={item.thumbnailUrl} alt="" loading="lazy" />
+                <img
+                  class="thumb"
+                  src={item.thumbnailUrl}
+                  alt=""
+                  loading="lazy"
+                  use:thumbFallback={{ videoId: item.contentId }}
+                />
               </button>
             {:else}
               <div class="thumb placeholder"></div>
@@ -418,7 +425,7 @@
           >
             <div class="list-card-thumb">
               {#if ml.thumbnailUrl}
-                <img src={ml.thumbnailUrl} alt="" loading="lazy" />
+                <img src={ml.thumbnailUrl} alt="" loading="lazy" use:thumbFallback />
               {:else}
                 <div class="list-card-thumb placeholder">
                   <svg viewBox="0 0 24 24" width="24" height="24"
@@ -470,7 +477,13 @@
                           onclick={() => startPlayAllMylist(ml, i)}
                           title="ここから連続再生"
                         >
-                          <img class="thumb" src={item.thumbnailUrl} alt="" loading="lazy" />
+                          <img
+                            class="thumb"
+                            src={item.thumbnailUrl}
+                            alt=""
+                            loading="lazy"
+                            use:thumbFallback={{ videoId: item.contentId }}
+                          />
                         </button>
                       {:else}
                         <div class="thumb placeholder"></div>
@@ -519,7 +532,7 @@
           >
             <div class="list-card-thumb">
               {#if sr.thumbnailUrl}
-                <img src={sr.thumbnailUrl} alt="" loading="lazy" />
+                <img src={sr.thumbnailUrl} alt="" loading="lazy" use:thumbFallback />
               {:else}
                 <div class="list-card-thumb placeholder">
                   <svg viewBox="0 0 24 24" width="24" height="24"
@@ -573,7 +586,13 @@
                           onclick={() => startPlayAllSeries(sr, i)}
                           title="ここから連続再生"
                         >
-                          <img class="thumb" src={item.thumbnailUrl} alt="" loading="lazy" />
+                          <img
+                            class="thumb"
+                            src={item.thumbnailUrl}
+                            alt=""
+                            loading="lazy"
+                            use:thumbFallback={{ videoId: item.contentId }}
+                          />
                         </button>
                       {:else}
                         <div class="thumb placeholder"></div>

@@ -30,6 +30,7 @@
   import { addHistory } from '$lib/stores/history';
   import { getBool, getStr, loadSettings } from '$lib/stores/settings.svelte';
   import { sanitizeDescriptionHtml } from '$lib/sanitize';
+  import { thumbFallback } from '$lib/thumbnail';
   import { miniPlayer } from '$lib/player/miniPlayerStore.svelte';
   import {
     advanceQueue,
@@ -666,7 +667,7 @@
             <div class="pip-placeholder">
               <div class="pip-thumb">
                 {#if lp.thumbnailUrl}
-                  <img src={lp.thumbnailUrl} alt="" />
+                  <img src={lp.thumbnailUrl} alt="" use:thumbFallback={{ videoId: lp.videoId }} />
                 {/if}
                 <div class="pip-overlay">
                   <div class="pip-icon" aria-hidden="true">
@@ -685,7 +686,7 @@
             <div class="pip-placeholder">
               <div class="pip-thumb">
                 {#if lp.thumbnailUrl}
-                  <img src={lp.thumbnailUrl} alt="" />
+                  <img src={lp.thumbnailUrl} alt="" use:thumbFallback={{ videoId: lp.videoId }} />
                 {/if}
                 <div class="pip-overlay">
                   <div class="pip-icon" aria-hidden="true">
