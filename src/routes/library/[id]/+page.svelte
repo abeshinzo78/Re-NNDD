@@ -30,6 +30,7 @@
   import { addHistory } from '$lib/stores/history';
   import { getBool, getStr, loadSettings } from '$lib/stores/settings.svelte';
   import { sanitizeDescriptionHtml } from '$lib/sanitize';
+  import { thumbFallback } from '$lib/thumbnail';
   import { miniPlayer } from '$lib/player/miniPlayerStore.svelte';
   import {
     advanceQueue,
@@ -533,7 +534,7 @@
     try {
       const selected = await openDialog({ directory: true, multiple: false });
       if (typeof selected === 'string') binOutputDir = selected;
-    } catch (_) {
+    } catch {
       // user cancelled
     }
   }
@@ -666,7 +667,7 @@
             <div class="pip-placeholder">
               <div class="pip-thumb">
                 {#if lp.thumbnailUrl}
-                  <img src={lp.thumbnailUrl} alt="" />
+                  <img src={lp.thumbnailUrl} alt="" use:thumbFallback={{ videoId: lp.videoId }} />
                 {/if}
                 <div class="pip-overlay">
                   <div class="pip-icon" aria-hidden="true">
@@ -685,7 +686,7 @@
             <div class="pip-placeholder">
               <div class="pip-thumb">
                 {#if lp.thumbnailUrl}
-                  <img src={lp.thumbnailUrl} alt="" />
+                  <img src={lp.thumbnailUrl} alt="" use:thumbFallback={{ videoId: lp.videoId }} />
                 {/if}
                 <div class="pip-overlay">
                   <div class="pip-icon" aria-hidden="true">
@@ -934,10 +935,10 @@
                 <span>フォント倍率</span>
                 <input
                   type="range"
-                   min="0.5"
-                   max="1.5"
-                   step="0.1"
-                   bind:value={binFontScale}
+                  min="0.5"
+                  max="1.5"
+                  step="0.1"
+                  bind:value={binFontScale}
                   disabled={burnInRunning}
                 />
                 <span class="burnin-val">{binFontScale.toFixed(1)}×</span>

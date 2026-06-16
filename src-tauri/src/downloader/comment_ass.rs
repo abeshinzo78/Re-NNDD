@@ -420,7 +420,9 @@ pub fn generate_ass(comments: &[BurnInComment], opts: &AssOptions) -> String {
     // niconicomments contextStrokeOpacity=0.4 → stroke alpha (00=opaque, FF=transparent)
     let stroke_alpha = format!(
         "{:02X}",
-        ((1.0 - 0.4 * opts.opacity) * 255.0).round().max(0.0).min(255.0) as u32
+        ((1.0 - 0.4 * opts.opacity) * 255.0)
+            .round()
+            .clamp(0.0, 255.0) as u32
     );
     let stroke_alpha_tag = format!("\\3a&H{stroke_alpha}&");
 
@@ -465,11 +467,11 @@ pub fn generate_ass(comments: &[BurnInComment], opts: &AssOptions) -> String {
                 // niconicomments のスクロール速度公式:
                 //   speed = (drawRange + commentWidth * 0.95) / (long + 100)  px/cs
                 let cw_ref = max_line_w * NICO_REF_WIDTH / width.max(1.0);
-                let speed_cs = (COMMENT_DRAW_RANGE + cw_ref * NAKA_SPEED_OFFSET)
-                    / (DEFAULT_LONG_CS + 100.0);
+                let speed_cs =
+                    (COMMENT_DRAW_RANGE + cw_ref * NAKA_SPEED_OFFSET) / (DEFAULT_LONG_CS + 100.0);
                 // 画面左端に抜けるまでの時間
-                let exit_cs = (COMMENT_DRAW_PADDING + COMMENT_DRAW_RANGE + cw_ref) / speed_cs
-                    - 100.0;
+                let exit_cs =
+                    (COMMENT_DRAW_PADDING + COMMENT_DRAW_RANGE + cw_ref) / speed_cs - 100.0;
                 let scroll_sec = (exit_cs / 100.0).max(0.5);
                 let end = start + scroll_sec;
 

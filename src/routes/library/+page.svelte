@@ -12,6 +12,7 @@
   import { formatDuration, formatNumber } from '$lib/format';
   import { setQueue, itemHref, type PlaybackQueueItem } from '$lib/stores/playbackQueue';
   import { createSmartPlaylist } from '$lib/stores/smartPlaylists';
+  import { thumbFallback } from '$lib/thumbnail';
   import VideoActionMenu from '$lib/VideoActionMenu.svelte';
 
   let items = $state<LibraryVideoItem[]>([]);
@@ -221,7 +222,13 @@
           <a class="card" href={`/library/${item.id}?from=library`}>
             <div class="thumb-wrap">
               {#if thumbSrc(item)}
-                <img class="thumb" src={thumbSrc(item)} alt="" loading="lazy" />
+                <img
+                  class="thumb"
+                  src={thumbSrc(item)}
+                  alt=""
+                  loading="lazy"
+                  use:thumbFallback={{ videoId: item.id }}
+                />
               {:else}
                 <div class="thumb-placeholder">?</div>
               {/if}

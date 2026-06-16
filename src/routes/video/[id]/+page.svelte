@@ -13,6 +13,7 @@
   import { loadSearchState } from '$lib/stores/searchState';
   import SearchHitCard from '$lib/SearchHitCard.svelte';
   import MylistAddButton from '$lib/MylistAddButton.svelte';
+  import { thumbFallback } from '$lib/thumbnail';
   import { filterComments, listNgRules, subscribeNgRules, type NgRule } from '$lib/stores/ngRules';
   import { addHistory } from '$lib/stores/history';
   import { getBool, getStr, loadSettings } from '$lib/stores/settings.svelte';
@@ -530,13 +531,17 @@
     <div class="player-row">
       <div class="player-col">
         <div class="loading-skeleton">
+          <!-- 旧 tn.smilevideo.jp は廃止済みで常に失敗していたため、現行 CDN の
+               素 URL を使い、ハッシュ付きサムネの動画は thumbFallback が
+               getthumbinfo から現行 URL を引き直す。 -->
           <img
-            src={`https://tn.smilevideo.jp/smile?i=${videoId.replace(/^[a-z]+/, '')}`}
+            src={`https://nicovideo.cdn.nimg.jp/thumbnails/${videoId.replace(
+              /^[a-z]+/,
+              '',
+            )}/${videoId.replace(/^[a-z]+/, '')}`}
             alt=""
             class="skeleton-thumb"
-            onerror={(e) => {
-              (e.target as HTMLElement).style.display = 'none';
-            }}
+            use:thumbFallback={{ videoId }}
           />
           <div class="skeleton-overlay">
             <div class="skeleton-spinner"></div>
@@ -581,7 +586,11 @@
             <div class="pip-placeholder">
               <div class="pip-thumb">
                 {#if p.video.thumbnailUrl}
-                  <img src={p.video.thumbnailUrl} alt="" />
+                  <img
+                    src={p.video.thumbnailUrl}
+                    alt=""
+                    use:thumbFallback={{ videoId: p.video.id }}
+                  />
                 {/if}
                 <div class="pip-overlay">
                   <div class="pip-icon" aria-hidden="true">
@@ -600,7 +609,11 @@
             <div class="pip-placeholder">
               <div class="pip-thumb">
                 {#if p.video.thumbnailUrl}
-                  <img src={p.video.thumbnailUrl} alt="" />
+                  <img
+                    src={p.video.thumbnailUrl}
+                    alt=""
+                    use:thumbFallback={{ videoId: p.video.id }}
+                  />
                 {/if}
                 <div class="pip-overlay">
                   <div class="pip-icon" aria-hidden="true">
@@ -754,7 +767,13 @@
           <a class="series-card" href={`/series/${payload.series.id}`}>
             <div class="series-thumb-wrap">
               {#if payload.series.thumbnailUrl}
-                <img class="series-thumb" src={payload.series.thumbnailUrl} alt="" loading="lazy" />
+                <img
+                  class="series-thumb"
+                  src={payload.series.thumbnailUrl}
+                  alt=""
+                  loading="lazy"
+                  use:thumbFallback
+                />
               {:else}
                 <div class="series-thumb placeholder">
                   <svg viewBox="0 0 24 24" width="28" height="28">

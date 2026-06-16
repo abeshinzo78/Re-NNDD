@@ -8,6 +8,7 @@
     type HistorySource,
   } from '$lib/stores/history';
   import { formatDuration } from '$lib/format';
+  import { thumbFallback } from '$lib/thumbnail';
   import VideoActionMenu from '$lib/VideoActionMenu.svelte';
 
   let history = $state<HistoryItem[]>([]);
@@ -145,7 +146,13 @@
         <li class="item">
           <a href={hrefFor(item)} class="thumb-link">
             {#if item.thumbnailUrl}
-              <img src={item.thumbnailUrl} alt="" class="thumb" loading="lazy" />
+              <img
+                src={item.thumbnailUrl}
+                alt=""
+                class="thumb"
+                loading="lazy"
+                use:thumbFallback={{ videoId: item.videoId }}
+              />
             {:else}
               <div class="thumb placeholder"></div>
             {/if}

@@ -4,6 +4,7 @@
   import { fetchSeriesVideos, type UserVideoItem } from '$lib/api';
   import { formatDate, formatDuration, formatNumber } from '$lib/format';
   import { setQueue, itemHref, type PlaybackQueueItem } from '$lib/stores/playbackQueue';
+  import { thumbFallback } from '$lib/thumbnail';
 
   let seriesId = $derived(page.params.id ?? '');
 
@@ -68,7 +69,7 @@
   <header class="header">
     <div class="series-thumb">
       {#if seriesThumbnailUrl}
-        <img src={seriesThumbnailUrl} alt="" loading="lazy" />
+        <img src={seriesThumbnailUrl} alt="" loading="lazy" use:thumbFallback />
       {:else}
         <div class="series-thumb-placeholder">
           <svg viewBox="0 0 24 24" width="32" height="32"
@@ -119,7 +120,13 @@
               onclick={() => startPlayAll(i)}
               title="ここから連続再生"
             >
-              <img class="thumb" src={item.thumbnailUrl} alt="" loading="lazy" />
+              <img
+                class="thumb"
+                src={item.thumbnailUrl}
+                alt=""
+                loading="lazy"
+                use:thumbFallback={{ videoId: item.contentId }}
+              />
             </button>
           {:else}
             <div class="thumb placeholder"></div>

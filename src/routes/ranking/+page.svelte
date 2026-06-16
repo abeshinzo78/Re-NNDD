@@ -16,6 +16,7 @@
     type RankingTagInfo,
   } from '$lib/stores/ngRules';
   import { fetchTagsBulk, getCachedTags } from '$lib/rankingTags';
+  import { thumbFallback } from '$lib/thumbnail';
   import RankingNgPanel from '$lib/RankingNgPanel.svelte';
   import VideoActionMenu from '$lib/VideoActionMenu.svelte';
 
@@ -449,6 +450,7 @@
                 alt=""
                 loading="lazy"
                 decoding="async"
+                use:thumbFallback={{ videoId: item.id }}
               />
             </a>
           {:else}
