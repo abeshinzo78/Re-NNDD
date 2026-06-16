@@ -77,6 +77,8 @@
   let videoId = $derived(page.params.id ?? '');
   let theme = $derived(getStr('appearance.theme'));
   let isClassicTheme = $derived(theme === 'niconico-classic');
+  // 説明文を最初から開いた状態で出すか (設定 appearance.expand_description)。
+  let expandDescription = $derived(getBool('appearance.expand_description'));
   let loadingFor: string | null = null;
   let loop = $state(false);
   // ユーザが Player の loop ボタンを明示的に操作したかを記録する。
@@ -811,7 +813,7 @@
           </div>
         {/if}
         {#if lp.description}
-          <details>
+          <details open={expandDescription}>
             <summary>説明文</summary>
             <!-- 説明文の HTML はサニタイズ済みのものだけを `{@html}` に渡す。
                  詳細は src/lib/sanitize.ts のコメントを参照。 -->
