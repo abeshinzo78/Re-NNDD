@@ -82,12 +82,21 @@ export type SearchResponse = {
   data: SearchHit[];
 };
 
+/** 検索に使うバックエンド API。
+ * - `snapshot`: 公開スナップショット検索 API v2 (認証不要・日次更新)。
+ * - `nvapi`: niconico Web クライアントと同じ内部検索 API。ログイン中は
+ *   保存済みセッション Cookie で認証付き検索になる。 */
+export type SearchEngine = 'snapshot' | 'nvapi';
+
 export async function getAppVersion(): Promise<string> {
   return invoke<string>('get_app_version');
 }
 
-export async function searchVideosOnline(query: SearchQuery): Promise<SearchResponse> {
-  return invoke<SearchResponse>('search_videos_online', { query });
+export async function searchVideosOnline(
+  query: SearchQuery,
+  engine: SearchEngine = 'snapshot',
+): Promise<SearchResponse> {
+  return invoke<SearchResponse>('search_videos_online', { query, engine });
 }
 
 export async function preparePlayback(videoId: string): Promise<PlaybackPayload> {
@@ -587,6 +596,12 @@ export type BurnInOptions = {
   fixedDurationSec?: number;
   /** libass のフォント名 (既定 sans-serif)。 */
   fontName?: string;
+  /**
+   * 出力先フォルダ。UI から渡されるが、現状バックエンド (`export_video_with_comments`)
+   * は未対応で `exports/` 配下へ固定出力する (unknown field として無視される)。
+   * 型エラー回避と将来の実装余地のため optional で受けておく。
+   */
+  outputDir?: string | null;
 };
 
 export type BurnInResult = {

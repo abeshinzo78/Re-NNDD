@@ -30,6 +30,7 @@
   import { addHistory } from '$lib/stores/history';
   import { getBool, getStr, loadSettings } from '$lib/stores/settings.svelte';
   import { sanitizeDescriptionHtml } from '$lib/sanitize';
+  import { thumbFallback } from '$lib/thumbnail';
   import { miniPlayer } from '$lib/player/miniPlayerStore.svelte';
   import {
     advanceQueue,
@@ -77,6 +78,8 @@
   let videoId = $derived(page.params.id ?? '');
   let theme = $derived(getStr('appearance.theme'));
   let isClassicTheme = $derived(theme === 'niconico-classic');
+  // 説明文を最初から開いた状態で出すか (設定 appearance.expand_description)。
+  let expandDescription = $derived(getBool('appearance.expand_description'));
   let loadingFor: string | null = null;
   let loop = $state(false);
   // ユーザが Player の loop ボタンを明示的に操作したかを記録する。
@@ -531,7 +534,7 @@
     try {
       const selected = await openDialog({ directory: true, multiple: false });
       if (typeof selected === 'string') binOutputDir = selected;
-    } catch (_) {
+    } catch {
       // user cancelled
     }
   }
@@ -664,7 +667,7 @@
             <div class="pip-placeholder">
               <div class="pip-thumb">
                 {#if lp.thumbnailUrl}
-                  <img src={lp.thumbnailUrl} alt="" />
+                  <img src={lp.thumbnailUrl} alt="" use:thumbFallback={{ videoId: lp.videoId }} />
                 {/if}
                 <div class="pip-overlay">
                   <div class="pip-icon" aria-hidden="true">
@@ -683,7 +686,7 @@
             <div class="pip-placeholder">
               <div class="pip-thumb">
                 {#if lp.thumbnailUrl}
-                  <img src={lp.thumbnailUrl} alt="" />
+                  <img src={lp.thumbnailUrl} alt="" use:thumbFallback={{ videoId: lp.videoId }} />
                 {/if}
                 <div class="pip-overlay">
                   <div class="pip-icon" aria-hidden="true">
@@ -811,7 +814,7 @@
           </div>
         {/if}
         {#if lp.description}
-          <details>
+          <details open={expandDescription}>
             <summary>説明文</summary>
             <!-- 説明文の HTML はサニタイズ済みのものだけを `{@html}` に渡す。
                  詳細は src/lib/sanitize.ts のコメントを参照。 -->
@@ -932,10 +935,10 @@
                 <span>フォント倍率</span>
                 <input
                   type="range"
-                   min="0.5"
-                   max="1.5"
-                   step="0.1"
-                   bind:value={binFontScale}
+                  min="0.5"
+                  max="1.5"
+                  step="0.1"
+                  bind:value={binFontScale}
                   disabled={burnInRunning}
                 />
                 <span class="burnin-val">{binFontScale.toFixed(1)}×</span>

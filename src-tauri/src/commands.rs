@@ -13,7 +13,7 @@ use tokio::sync::watch;
 
 use crate::api::auth::{login_with_password, LoginOutcome, SessionStore};
 use crate::api::comment::{Comment, CommentApi, ThreadsClient};
-use crate::api::search::{SearchApi, SnapshotSearchClient};
+use crate::api::search::{NvapiSearchClient, SearchApi, SnapshotSearchClient};
 use crate::api::types::{SearchQuery, SearchResponse};
 use crate::api::video::{
     json_value_as_id_string, quality_candidates, NiconicoWatchClient, NvCommentSetup, SeriesInfo,
@@ -222,10 +222,28 @@ pub fn web_log(level: String, message: String) {
     }
 }
 
+/// オンライン動画検索。`engine` で検索エンジンを切り替える:
+/// - `"snapshot"` (既定): 公開スナップショット検索 API v2。認証不要・日次更新。
+/// - `"nvapi"`: niconico Web クライアントと同じ内部検索 API。ログイン中は
+///   保存済みセッション Cookie を付けて呼ぶため、結果が視聴者アカウントに
+///   追従する (センシティブ表示など)。
 #[tauri::command]
-pub async fn search_videos_online(query: SearchQuery) -> Result<SearchResponse> {
-    let client = SnapshotSearchClient::new().map_err(AppError::from)?;
-    let response = client.search(&query).await.map_err(AppError::from)?;
+pub async fn search_videos_online(
+    query: SearchQuery,
+    engine: Option<String>,
+    store: State<'_, Arc<SessionStore>>,
+) -> Result<SearchResponse> {
+    let response = match engine.as_deref() {
+        Some("nvapi") => {
+            // ログイン済みならセッション Cookie を付けて認証付き検索にする。
+            let client = NvapiSearchClient::new(store.cookie_header()).map_err(AppError::from)?;
+            client.search(&query).await.map_err(AppError::from)?
+        }
+        _ => {
+            let client = SnapshotSearchClient::new().map_err(AppError::from)?;
+            client.search(&query).await.map_err(AppError::from)?
+        }
+    };
     Ok(response)
 }
 
@@ -331,9 +349,17 @@ fn parse_related_videos(json: serde_json::Value) -> Result<Vec<RelatedVideoItem>
                         .and_then(|c| c.get("mylist"))
                         .and_then(|v| v.as_i64());
                     let length_seconds = content.get("duration").and_then(|v| v.as_i64());
+                    // `url` を最優先する。`listingUrl` は古い動画だと
+                    // `img.cdn.nimg.jp/...?key=...` の署名付き(失効しうる)URL に
+                    // なる事があり「たまに表示されない」原因になるため、安定した
+                    // `url` を先に見る (build_user_video_item / ランキングと同順序)。
                     let thumbnail_url = content
                         .get("thumbnail")
-                        .and_then(|t| t.get("listingUrl").or_else(|| t.get("url")))
+                        .and_then(|t| {
+                            t.get("url")
+                                .or_else(|| t.get("listingUrl"))
+                                .or_else(|| t.get("middleUrl"))
+                        })
                         .and_then(|v| v.as_str())
                         .map(String::from);
                     let start_time = content
@@ -374,6 +400,55 @@ fn parse_related_videos(json: serde_json::Value) -> Result<Vec<RelatedVideoItem>
         .unwrap_or_default();
 
     Ok(videos)
+}
+
+/// `getthumbinfo` XML から `<thumbnail_url>…</thumbnail_url>` を抜き出す。
+/// 削除/非公開動画は `status="fail"` で本要素が無いので `None` を返す。
+fn parse_thumbnail_url_from_xml(xml: &str) -> Option<String> {
+    let start_tag = "<thumbnail_url>";
+    let end_tag = "</thumbnail_url>";
+    let start = xml.find(start_tag)? + start_tag.len();
+    let end = xml[start..].find(end_tag)? + start;
+    let url = xml[start..end].trim();
+    if url.is_empty() {
+        None
+    } else {
+        Some(url.to_string())
+    }
+}
+
+/// 動画 ID から「現行の」サムネイル URL を権威的に再解決する。
+///
+/// フロントの `<img>` は API/履歴/ライブラリに保存済みの URL をそのまま貼るが、
+/// 投稿者がサムネを差し替えるとハッシュ付き URL (`{id}.{hash}`) に変わって旧 URL が
+/// 404 になったり、署名付き URL の鍵が失効したりして「たまに表示されない」。
+/// その時にこのコマンドで `getthumbinfo`(権威ソース)から現行 URL を取り直す。
+/// セッション Cookie を付けてセンシティブ/会員向けの判定も通す。
+#[tauri::command]
+pub async fn resolve_thumbnail_url(
+    video_id: String,
+    store: State<'_, Arc<SessionStore>>,
+) -> Result<Option<String>> {
+    validate_video_id(&video_id)?;
+    let client = build_nv_client()?;
+    let url = format!("https://ext.nicovideo.jp/api/getthumbinfo/{video_id}");
+
+    let mut req = client.get(&url).header(header::ACCEPT, "application/xml");
+    if let Some(c) = store.cookie_header() {
+        req = req.header(header::COOKIE, c);
+    }
+
+    let resp = req.send().await.map_err(crate::error::ApiError::from)?;
+    let status = resp.status();
+    let body = resp.text().await.map_err(crate::error::ApiError::from)?;
+
+    if !status.is_success() {
+        let preview: String = body.chars().take(200).collect();
+        tracing::warn!(%url, %status, body = %preview, "resolve_thumbnail_url");
+        return Err(AppError::Other(format!("サムネ解決 API エラー ({status})")));
+    }
+
+    Ok(parse_thumbnail_url_from_xml(&body))
 }
 
 #[tauri::command]
@@ -3757,6 +3832,63 @@ mod tests {
     fn validate_video_id_rejects_overlong() {
         let long = "a".repeat(65);
         assert!(validate_video_id(&long).is_err());
+    }
+
+    #[test]
+    fn parse_thumbnail_url_extracts_plain_and_hashed() {
+        let plain = r#"<nicovideo_thumb_response status="ok"><thumb>
+            <thumbnail_url>https://nicovideo.cdn.nimg.jp/thumbnails/6857306/6857306</thumbnail_url>
+            </thumb></nicovideo_thumb_response>"#;
+        assert_eq!(
+            parse_thumbnail_url_from_xml(plain).as_deref(),
+            Some("https://nicovideo.cdn.nimg.jp/thumbnails/6857306/6857306")
+        );
+        // 投稿者がサムネ差し替え済みのケース: ハッシュ付き URL を返す。
+        let hashed = "<thumbnail_url>https://nicovideo.cdn.nimg.jp/thumbnails/46425662/46425662.53524752</thumbnail_url>";
+        assert_eq!(
+            parse_thumbnail_url_from_xml(hashed).as_deref(),
+            Some("https://nicovideo.cdn.nimg.jp/thumbnails/46425662/46425662.53524752")
+        );
+    }
+
+    #[test]
+    fn parse_thumbnail_url_handles_deleted_and_empty() {
+        // 削除済み動画は status="fail" で thumbnail_url 要素が無い。
+        let deleted = r#"<nicovideo_thumb_response status="fail"><error>
+            <code>DELETED</code></error></nicovideo_thumb_response>"#;
+        assert_eq!(parse_thumbnail_url_from_xml(deleted), None);
+        assert_eq!(
+            parse_thumbnail_url_from_xml("<thumbnail_url></thumbnail_url>"),
+            None
+        );
+        assert_eq!(parse_thumbnail_url_from_xml(""), None);
+    }
+
+    #[test]
+    fn parse_related_videos_prefers_stable_url_over_signed_listing() {
+        // 古い動画の recommend では listingUrl が署名付き(失効しうる)URL に
+        // なるため、安定した `url` を優先する事を保証する回帰テスト。
+        let json = serde_json::json!({
+            "data": { "items": [{
+                "contentType": "video",
+                "content": {
+                    "id": "sm6913290",
+                    "title": "old video",
+                    "thumbnail": {
+                        "url": "https://nicovideo.cdn.nimg.jp/thumbnails/6913290/6913290",
+                        "listingUrl": "https://img.cdn.nimg.jp/s/nicovideo/thumbnails/6913290/6913290.original/r320x180l?key=deadbeef",
+                        "middleUrl": serde_json::Value::Null,
+                        "largeUrl": serde_json::Value::Null
+                    }
+                }
+            }]}
+        });
+        let videos = parse_related_videos(json).unwrap();
+        assert_eq!(videos.len(), 1);
+        assert_eq!(
+            videos[0].thumbnail_url.as_deref(),
+            Some("https://nicovideo.cdn.nimg.jp/thumbnails/6913290/6913290")
+        );
     }
 
     #[test]

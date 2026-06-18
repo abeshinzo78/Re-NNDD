@@ -1,4 +1,4 @@
-import type { SearchHit, SearchResponse, SearchTarget } from '$lib/api';
+import type { SearchEngine, SearchHit, SearchResponse, SearchTarget } from '$lib/api';
 
 export type SortKey =
   | 'popularity'
@@ -14,6 +14,8 @@ export type SearchState = {
   sortField: SortKey;
   sortDir: 'asc' | 'desc';
   limit: number;
+  /** 検索エンジン。未設定の旧状態は `snapshot` 扱い。 */
+  engine?: SearchEngine;
   response: SearchResponse | null;
   lastQuery: string | null;
   scrollY: number;

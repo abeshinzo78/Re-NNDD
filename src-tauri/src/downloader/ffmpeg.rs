@@ -480,6 +480,7 @@ where
 
 /// PNG 連番を動画にオーバーレイ焼き込み。
 /// `frames_dir` 内の `%06d.png` を読み取り、アルファチャンネル付きで動画へ合成する。
+#[allow(clippy::too_many_arguments)]
 pub async fn overlay_comment_frames<F>(
     app: Option<&tauri::AppHandle>,
     video: &Path,
@@ -501,10 +502,7 @@ where
         let _ = tokio::fs::remove_file(output).await;
     }
 
-    let frame_pattern = frames_dir
-        .join("%06d.png")
-        .to_string_lossy()
-        .into_owned();
+    let frame_pattern = frames_dir.join("%06d.png").to_string_lossy().into_owned();
 
     let mut cmd = tools::tokio_command(&ff.command);
     cmd.arg("-hide_banner")

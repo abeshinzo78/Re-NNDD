@@ -207,6 +207,15 @@ export const SETTING_DEFS = [
     ],
     order: 10,
   },
+  {
+    key: 'appearance.expand_description',
+    label: '説明文を常に展開',
+    description: '動画ページの説明文を最初から開いた状態で表示する',
+    section: 'appearance',
+    default: false,
+    kind: 'bool',
+    order: 20,
+  },
 
   // === 高度な設定 ===
   {
