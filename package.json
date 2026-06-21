@@ -22,7 +22,7 @@
   "dependencies": {
     "@kongyo2/nicoran-api": "^0.1.1",
     "@kongyo2/nicotag-api": "^0.1.0",
-    "@tauri-apps/api": "^2.1.0",
+    "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-dialog": "^2.0.0",
     "@tauri-apps/plugin-shell": "^2.0.0",
     "@xpadev-net/niconicomments": "^0.2.78",
@@ -34,7 +34,7 @@
     "@sveltejs/adapter-static": "^3.0.6",
     "@sveltejs/kit": "^2.61.1",
     "@sveltejs/vite-plugin-svelte": "^7.0.0",
-    "@tauri-apps/cli": "^2.11.2",
+    "@tauri-apps/cli": "^2.11.3",
     "@testing-library/svelte": "^5.2.4",
     "@types/node": "^25.9.1",
     "esbuild": "^0.28.1",
