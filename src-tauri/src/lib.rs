@@ -38,6 +38,7 @@ pub fn run() {
     if let Err(err) = tauri::Builder::default()
         .manage(Arc::clone(&session))
         .manage(commands::DownloadTasks::default())
+        .manage(crate::downloader::burnin::BurnInSessions::default())
         .manage(Arc::clone(&plugin_runtime))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
@@ -119,7 +120,10 @@ pub fn run() {
             commands::delete_comment_snapshot,
             commands::update_snapshot_note,
             commands::refetch_video_comments,
-            commands::export_video_with_comments,
+            commands::burnin_start,
+            commands::burnin_feed,
+            commands::burnin_finish,
+            commands::burnin_cancel,
             commands::query_library_videos,
             commands::get_library_stats,
             commands::list_library_tags,
