@@ -14,6 +14,13 @@ export default ts.config(
     languageOptions: {
       globals: { ...globals.browser, ...globals.node },
     },
+    rules: {
+      // `_` 始まりの引数/変数は「意図的に未使用」とみなす慣用に合わせる。
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' },
+      ],
+    },
   },
   {
     files: ['**/*.svelte'],
@@ -36,6 +43,15 @@ export default ts.config(
     },
   },
   {
-    ignores: ['build/', '.svelte-kit/', 'dist/', 'src-tauri/target/', 'target/'],
+    // `scripts/burnin-verify/` は焼き込みの実機検証ハーネス (Node + @napi-rs/canvas)。
+    // アプリ本体ではなく検証専用ツールなので、アプリ用 lint ルールの対象外にする。
+    ignores: [
+      'build/',
+      '.svelte-kit/',
+      'dist/',
+      'src-tauri/target/',
+      'target/',
+      'scripts/burnin-verify/',
+    ],
   },
 );

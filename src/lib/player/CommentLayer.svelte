@@ -3,6 +3,7 @@
   import { SvelteMap } from 'svelte/reactivity';
   import NiconiComments from '@xpadev-net/niconicomments';
   import type { PlayerComment } from './types';
+  import { burnInExport } from '$lib/burnin/exportState.svelte';
 
   type Props = {
     video: HTMLVideoElement | null;
@@ -251,6 +252,17 @@
   }
 
   function tick() {
+    // 焼き込みエクスポート中はライブ描画とインスタンス生成を停止する。
+    // niconicomments は config/options/cache をモジュールスコープで共有するため、
+    // エクスポート中にこちらが new/drawCanvas するとエクスポート側の設定を
+    // 上書き・汚染してしまう。nc を破棄してキャンバスをクリアし、エクスポートが
+    // 終わったら次フレーム以降で自然に作り直させる。
+    if (burnInExport.active) {
+      if (nc) destroyNc();
+      rafId = requestAnimationFrame(tick);
+      return;
+    }
+
     // 毎フレーム size を確認し、nc の整合性を取る。これが root of truth。
     // ResizeObserver / 各種 effect の発火タイミングに依存しない。
     if (canvas && video) {

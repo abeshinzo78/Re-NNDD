@@ -2622,32 +2622,48 @@ pub async fn refetch_video_comments(
     Ok(snapshot_id)
 }
 
-// =================== コメント焼き込みエクスポート (Phase 1.9) ===================
+// =================== コメント焼き込みエクスポート ===================
+//
+// 旧実装は Rust 側で独自に ASS 字幕を生成していたが、座標・サイズが本物の
+// niconico と大きくずれていた。現在はフロント (WebView) が
+// `@xpadev-net/niconicomments` で 1 フレームずつ Canvas に描画し、その PNG を
+// stdin 経由で ffmpeg へ流し込んで元動画へオーバーレイする
+// (niconicomments-convert と同じ構成)。Rust 側は ffmpeg セッションの管理と
+// 映像合成のみを担い、コメントの座標計算には一切関与しない。
 
-/// 焼き込みエクスポートのオプション。すべて省略可。
+use crate::downloader::burnin::{self, BurnInSessions};
+
+/// `burnin_start` のオプション。すべて省略可。
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct BurnInOptions {
-    /// 使用するスナップショット。省略時は最新。
-    pub snapshot_id: Option<i64>,
-    /// フォント倍率 (既定 1.0)。
-    pub font_scale: Option<f64>,
-    /// 不透明度 0..1 (既定 1.0)。
+pub struct BurnInStartOptions {
+    /// 出力幅 (px)。省略時は元動画の幅。高さは 16:9 で自動算出。
+    pub width: Option<u32>,
+    /// フレームレート (既定 30)。
+    pub fps: Option<u32>,
+    /// 不透明度 0..1 (既定 1.0)。ffmpeg のオーバーレイ時に適用。
     pub opacity: Option<f64>,
-    /// 流れるコメントの横断秒数 (既定 4.0)。
-    pub scroll_duration_sec: Option<f64>,
-    /// 固定コメントの表示秒数 (既定 3.0)。
-    pub fixed_duration_sec: Option<f64>,
-    /// libass のフォント名 (既定 sans-serif)。
-    pub font_name: Option<String>,
+    /// 出力先フォルダ (省略時は app_data の exports/)。
+    pub output_dir: Option<String>,
 }
 
+/// `burnin_start` の戻り値。フロントはこれを見てフレーム生成する。
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct BurnInResult {
-    /// 生成された MP4 の絶対パス。
+pub struct BurnInStart {
+    pub session_id: String,
+    pub width: u32,
+    pub height: u32,
+    pub fps: u32,
+    pub duration_sec: f64,
+    pub total_frames: u64,
+}
+
+/// `burnin_finish` の戻り値。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BurnInFinish {
     pub output_path: String,
-    pub comment_count: usize,
     pub width: u32,
     pub height: u32,
 }
@@ -2658,18 +2674,27 @@ fn parse_resolution(s: &str) -> Option<(u32, u32)> {
     Some((w.trim().parse().ok()?, h.trim().parse().ok()?))
 }
 
-/// DL 済み動画のコメントを字幕として焼き込んだ MP4 を `exports/` 配下へ書き出す。
-/// 進捗は `burnin:progress` イベント (`{ videoId, percent }`) で通知する。
-#[tauri::command]
-pub async fn export_video_with_comments(
-    video_id: String,
-    options: Option<BurnInOptions>,
-    library: State<'_, Arc<LibraryHandle>>,
-    app: tauri::AppHandle,
-) -> Result<BurnInResult> {
-    use crate::downloader::comment_ass::{generate_ass, AssOptions, BurnInComment};
-    use tauri::{Emitter, Manager};
+/// 偶数へ丸める (libx264 / yuv420p は偶数解像度が必須)。
+fn to_even(n: u32) -> u32 {
+    n & !1
+}
 
+static BURNIN_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// 焼き込みセッションを開始する。ffmpeg を起動し、フロントがフレームを流し込める
+/// 状態にして出力解像度・フレーム数などの metadata を返す。
+///
+/// コメントデータ自体はフロントが既に保持しているため、ここでは扱わない
+/// (動画ファイル・音声・解像度・長さの解決と ffmpeg 起動のみ)。
+#[tauri::command]
+pub async fn burnin_start(
+    video_id: String,
+    options: Option<BurnInStartOptions>,
+    library: State<'_, Arc<LibraryHandle>>,
+    sessions: State<'_, BurnInSessions>,
+    app: tauri::AppHandle,
+) -> Result<BurnInStart> {
+    use tauri::Manager;
     validate_video_id(&video_id)?;
     let options = options.unwrap_or_default();
 
@@ -2678,11 +2703,8 @@ pub async fn export_video_with_comments(
         .app_data_dir()
         .map_err(|e| AppError::Other(format!("app_data_dir: {e}")))?;
 
-    // --- DB から動画メタ + 対象スナップショットのコメントを取り出す ---
-    // (ffmpeg は重いので、ロックはここだけで握って早めに手放す)
-    let (video_rel_path, resolution, duration_sec, snapshot_id, comments) = {
+    let (video_rel_path, resolution, duration_sec) = {
         let conn = library.lock().await;
-
         let row = conn
             .query_row(
                 "SELECT video_path, resolution, duration_sec FROM videos WHERE id = ?1",
@@ -2700,54 +2722,8 @@ pub async fn export_video_with_comments(
         let Some((Some(video_rel_path), resolution, duration_sec)) = row else {
             return Err(AppError::Other("動画がダウンロードされていません".into()));
         };
-
-        let snap_id: Option<i64> = if let Some(sid) = options.snapshot_id {
-            Some(sid)
-        } else {
-            conn.query_row(
-                "SELECT id FROM comment_snapshots WHERE video_id = ?1 \
-                 ORDER BY taken_at DESC, id DESC LIMIT 1",
-                rusqlite::params![video_id],
-                |row| row.get(0),
-            )
-            .optional()
-            .map_err(|e| AppError::Other(format!("query snapshot: {e}")))?
-        };
-        let Some(snap_id) = snap_id else {
-            return Err(AppError::Other("スナップショットがありません".into()));
-        };
-
-        let mut stmt = conn
-            .prepare(
-                "SELECT vpos_ms, content, mail, is_owner \
-                 FROM comments WHERE snapshot_id = ?1 ORDER BY vpos_ms ASC",
-            )
-            .map_err(|e| AppError::Other(format!("prepare comments: {e}")))?;
-        let comments: Vec<BurnInComment> = stmt
-            .query_map(rusqlite::params![snap_id], |r| {
-                let mail: Option<String> = r.get(2)?;
-                let commands: Vec<String> = mail
-                    .unwrap_or_default()
-                    .split_whitespace()
-                    .map(|s| s.to_string())
-                    .collect();
-                Ok(BurnInComment {
-                    vpos_ms: r.get(0)?,
-                    content: r.get(1)?,
-                    commands,
-                    is_owner: r.get::<_, i64>(3)? != 0,
-                })
-            })
-            .map_err(|e| AppError::Other(format!("query comments: {e}")))?
-            .filter_map(|r| r.ok())
-            .collect();
-
-        (video_rel_path, resolution, duration_sec, snap_id, comments)
+        (video_rel_path, resolution, duration_sec)
     };
-
-    if comments.is_empty() {
-        return Err(AppError::Other("焼き込むコメントがありません".into()));
-    }
 
     let abs_video = app_data_dir.join(&video_rel_path);
     if !abs_video.exists() {
@@ -2767,126 +2743,193 @@ pub async fn export_video_with_comments(
         None
     };
 
-    // --- 解像度・長さの決定 (DB 優先、欠けていれば ffmpeg でプローブ) ---
-    let mut width = resolution
+    // 解像度・長さの決定 (DB 優先、欠けていれば ffmpeg でプローブ)。
+    let mut src_w = resolution
         .as_deref()
         .and_then(parse_resolution)
         .map(|d| d.0);
-    let mut height = resolution
+    let mut src_h = resolution
         .as_deref()
         .and_then(parse_resolution)
         .map(|d| d.1);
-    let mut duration = if duration_sec > 0 {
-        duration_sec as f64
-    } else {
-        0.0
-    };
-    if width.is_none() || height.is_none() || duration <= 0.0 {
-        if let Some(info) = crate::downloader::ffmpeg::probe_video(Some(&app), &abs_video).await {
-            width.get_or_insert(info.width);
-            height.get_or_insert(info.height);
-            if duration <= 0.0 {
-                duration = info.duration_sec;
-            }
-        }
+    // 長さは **必ず ffmpeg で実測** する。DB の duration_sec は yt-dlp の f64 を
+    // i64 へ切り捨てた整数なので、例えば実 10.8s が 10s として記録される。これを
+    // そのまま使うとコメントフレーム数 (ceil(duration)*fps) が動画より短くなり、
+    // overlay の framesync が末尾でコメントを固めてしまう。実測の小数秒を使えば
+    // フレーム数が動画全体を覆い、convert と同じ尺になる。
+    let mut duration = 0.0;
+    if let Some(info) = crate::downloader::ffmpeg::probe_video(Some(&app), &abs_video).await {
+        src_w.get_or_insert(info.width);
+        src_h.get_or_insert(info.height);
+        duration = info.duration_sec;
     }
-    let (Some(width), Some(height)) = (width, height) else {
+    if duration <= 0.0 && duration_sec > 0 {
+        // probe 失敗時のみ DB の整数値へフォールバック。
+        duration = duration_sec as f64;
+    }
+    let (Some(src_w), Some(_src_h)) = (src_w, src_h) else {
         return Err(AppError::Other("動画の解像度を判定できませんでした".into()));
     };
+    if duration <= 0.0 {
+        return Err(AppError::Other("動画の長さを判定できませんでした".into()));
+    }
 
-    // --- ASS 生成 ---
-    let ass_opts = AssOptions {
-        width,
-        height,
-        duration_sec: duration,
-        font_scale: options.font_scale.unwrap_or(1.0).clamp(0.3, 4.0),
-        opacity: options.opacity.unwrap_or(1.0).clamp(0.0, 1.0),
-        scroll_duration_sec: options.scroll_duration_sec.unwrap_or(4.0).clamp(0.5, 20.0),
-        fixed_duration_sec: options.fixed_duration_sec.unwrap_or(3.0).clamp(0.5, 20.0),
-        font_name: options
-            .font_name
-            .filter(|s| !s.trim().is_empty())
-            .unwrap_or_else(|| "sans-serif".to_string()),
+    // 出力解像度を 16:9 に正規化。幅はオプション or 元動画幅、高さは 9/16。
+    let out_w = to_even(options.width.unwrap_or(src_w).clamp(64, 3840));
+    let out_h = to_even((f64::from(out_w) * 9.0 / 16.0).round() as u32).max(2);
+    let fps = options.fps.unwrap_or(30).clamp(1, 120);
+    let opacity = options.opacity.unwrap_or(1.0).clamp(0.0, 1.0);
+    // フロントのフレームループ (computeTotalFrames) と一致させる: ceil(duration)*fps。
+    let total_frames = (duration.ceil() as u64) * u64::from(fps);
+
+    // 出力先。指定があればそのフォルダ、無ければ app_data の exports/ 配下
+    // (cleanup_storage が触らない場所)。
+    let exports_dir = match options
+        .output_dir
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        Some(dir) => std::path::PathBuf::from(dir),
+        None => app_data_dir.join("exports"),
     };
-    let comment_count = comments.len();
-    let ass = generate_ass(&comments, &ass_opts);
-
-    // --- 出力先 (cleanup_storage が触らない exports/ 配下) ---
-    let exports_dir = app_data_dir.join("exports");
     tokio::fs::create_dir_all(&exports_dir)
         .await
         .map_err(|e| AppError::Other(format!("create exports dir: {e}")))?;
     let stamp = crate::library::now_unix_secs();
-    let ass_path = exports_dir.join(format!(".{video_id}_{snapshot_id}_{stamp}.ass"));
-    let output_path = exports_dir.join(format!("{video_id}_{snapshot_id}_{stamp}.mp4"));
-    tokio::fs::write(&ass_path, ass.as_bytes())
-        .await
-        .map_err(|e| AppError::Other(format!("write ass: {e}")))?;
+    // 一意なシーケンスを先に確保し、出力ファイル名にも含める。これで同一秒に
+    // 同じ動画の焼き込みを 2 つ走らせても (別ウィンドウ / 連打) 出力が衝突せず、
+    // spawn_session の既存ファイル削除が互いの出力を壊すこともない。
+    let seq = BURNIN_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let output_path = exports_dir.join(format!("{video_id}_{stamp}_{seq}.mp4"));
 
-    // --- 焼き込み (進捗を 1% 刻みで間引いて通知) ---
-    let app_for_progress = app.clone();
-    let video_id_for_progress = video_id.clone();
-    let mut last_emitted = -1.0_f64;
-    let _ = app.emit(
-        "burnin:progress",
-        serde_json::json!({ "videoId": video_id, "percent": 0.0 }),
-    );
-    let outcome = crate::downloader::ffmpeg::burn_in_comments(
+    let session = burnin::spawn_session(
         Some(&app),
         &abs_video,
         audio.as_deref(),
-        &ass_path,
         &output_path,
-        duration,
-        |percent| {
-            if percent - last_emitted >= 0.01 || percent >= 1.0 {
-                last_emitted = percent;
-                let _ = app_for_progress.emit(
-                    "burnin:progress",
-                    serde_json::json!({
-                        "videoId": video_id_for_progress,
-                        "percent": percent,
-                    }),
-                );
-            }
-        },
+        out_w,
+        out_h,
+        fps,
+        opacity,
+        total_frames,
     )
-    .await;
+    .await
+    .map_err(AppError::from)?;
 
-    // 一時 ASS は成否に関わらず片付ける。
-    let _ = tokio::fs::remove_file(&ass_path).await;
+    let session_id = format!("burnin-{stamp}-{seq}");
+    sessions.insert(session_id.clone(), session);
 
-    match outcome {
-        Ok(crate::downloader::ffmpeg::MuxOutcome::Success) => {
-            tracing::info!(
-                video_id = %video_id,
-                snapshot_id,
-                comments = comment_count,
-                output = %output_path.display(),
-                "comment burn-in export complete"
-            );
-            Ok(BurnInResult {
-                output_path: output_path.to_string_lossy().into_owned(),
-                comment_count,
-                width,
-                height,
-            })
+    tracing::info!(
+        video_id = %video_id,
+        session_id = %session_id,
+        out_w,
+        out_h,
+        fps,
+        total_frames,
+        "comment burn-in session started"
+    );
+
+    Ok(BurnInStart {
+        session_id,
+        width: out_w,
+        height: out_h,
+        fps,
+        duration_sec: duration,
+        total_frames,
+    })
+}
+
+/// コメントフレーム (PNG) を 1 枚 ffmpeg へ流し込む。
+///
+/// body は raw バイナリで `burnin::parse_feed_frame` のフレーミングに従う:
+/// `[u8 flag][u32 LE session_len][session][payload]`。flag で frame / empty /
+/// set-empty を切り替える。透明フレームは set-empty で 1 度だけ転送し使い回す。
+///
+/// 戻り値 `true` = 受け付けた / `false` = ffmpeg が必要分を読み終えて stdin を
+/// 閉じた (= もう送らなくてよい、正常系)。フロントはこれを見て送出を止める。
+#[tauri::command]
+pub async fn burnin_feed(
+    request: tauri::ipc::Request<'_>,
+    sessions: State<'_, BurnInSessions>,
+) -> Result<bool> {
+    let body: &[u8] = match request.body() {
+        tauri::ipc::InvokeBody::Raw(bytes) => bytes.as_slice(),
+        _ => return Err(AppError::Other("burnin_feed: raw body required".into())),
+    };
+    let (flag, sid, payload) = burnin::parse_feed_frame(body)
+        .ok_or_else(|| AppError::Other("burnin_feed: malformed frame".into()))?;
+    let session = sessions
+        .get(&sid)
+        .ok_or_else(|| AppError::Other("burnin_feed: unknown session".into()))?;
+    let mut s = session.lock().await;
+    let outcome = match flag {
+        burnin::FLAG_SET_EMPTY => {
+            s.set_empty(payload.to_vec());
+            burnin::FeedOutcome::Accepted
         }
-        Ok(crate::downloader::ffmpeg::MuxOutcome::FfmpegNotFound) => Err(AppError::Other(
-            "ffmpeg が見つかりません。インストールしてから再実行してください。".into(),
-        )),
-        Ok(crate::downloader::ffmpeg::MuxOutcome::FfmpegFailed { stderr }) => {
-            let _ = tokio::fs::remove_file(&output_path).await;
-            Err(AppError::Other(format!(
-                "ffmpeg 失敗:\n{}",
-                stderr.lines().take(20).collect::<Vec<_>>().join("\n")
-            )))
+        burnin::FLAG_EMPTY => s.write_empty().await.map_err(AppError::from)?,
+        burnin::FLAG_FRAME => s.write_frame(payload).await.map_err(AppError::from)?,
+        _ => return Err(AppError::Other("burnin_feed: bad flag".into())),
+    };
+    Ok(outcome.accepted())
+}
+
+/// セッションを完了する。stdin を閉じて ffmpeg の終了を待ち、出力パスを返す。
+///
+/// セッションは **finish が終わるまでレジストリに残す**。こうしておくことで、
+/// encode/faststart を待っている最中に burnin_cancel が来ても ffmpeg を止められる
+/// (finish 開始時に remove してしまうと、後発の cancel が child を見つけられない)。
+#[tauri::command]
+pub async fn burnin_finish(
+    session_id: String,
+    sessions: State<'_, BurnInSessions>,
+) -> Result<BurnInFinish> {
+    let Some(session) = sessions.get(&session_id) else {
+        return Err(AppError::Other("burnin_finish: unknown session".into()));
+    };
+    // finish() の成否に関わらず、ここを抜けたらレジストリから除去する。
+    let outcome = {
+        let mut s = session.lock().await;
+        match s.finish().await {
+            Ok(()) => Ok((
+                s.output_path.to_string_lossy().into_owned(),
+                s.width,
+                s.height,
+            )),
+            Err(e) => Err(e),
         }
-        Err(e) => {
-            let _ = tokio::fs::remove_file(&output_path).await;
-            Err(e.into())
-        }
+    };
+    sessions.remove(&session_id);
+    let (out, width, height) = outcome.map_err(AppError::from)?;
+    tracing::info!(session_id = %session_id, output = %out, "comment burn-in finished");
+    Ok(BurnInFinish {
+        output_path: out,
+        width,
+        height,
+    })
+}
+
+/// セッションを中断する。ffmpeg を kill して部分出力を消す。
+///
+/// finish が ffmpeg を待っている最中でも効くよう、まずセッションロックを介さず
+/// キャンセル通知を送って finish 側に kill させる。その後 (finish が動いていない
+/// 場合も含めて) セッションを除去し、念のため kill + 部分出力の削除を行う。
+#[tauri::command]
+pub async fn burnin_cancel(session_id: String, sessions: State<'_, BurnInSessions>) -> Result<()> {
+    // finish が待機中なら起こして強制終了させる (ロック不要)。notify_one は
+    // 待機者が居なければ permit を残すので、通知が finish の待機開始より先でも
+    // 取りこぼさない。
+    if let Some(cancel) = sessions.cancel_handle(&session_id) {
+        cancel.notify_one();
     }
+    if let Some(session) = sessions.remove(&session_id) {
+        let mut s = session.lock().await;
+        // finish() が成功直後 (completed) のセッションを遅延キャンセルが掴んでも、
+        // 生成済みの正しい出力は削除しない。未完なら kill して部分出力を消す。
+        s.discard_if_incomplete().await;
+    }
+    Ok(())
 }
 
 // =================== ライブラリ検索・整列・集計 ===================

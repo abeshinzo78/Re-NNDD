@@ -1,5 +1,4 @@
 import { invoke } from '@tauri-apps/api/core';
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type { PlaybackPayload, PlayerComment } from './player/types';
 
 export type SearchTarget = 'title' | 'description' | 'tags' | 'tagsExact';
@@ -581,59 +580,13 @@ export async function remuxLocalVideo(videoId: string): Promise<string> {
   return invoke<string>('remux_local_video', { videoId });
 }
 
-// =================== コメント焼き込みエクスポート (Phase 1.9) ===================
-
-export type BurnInOptions = {
-  /** 使用するスナップショット。省略時は最新。 */
-  snapshotId?: number | null;
-  /** フォント倍率 (既定 1.0)。 */
-  fontScale?: number;
-  /** 不透明度 0..1 (既定 1.0)。 */
-  opacity?: number;
-  /** 流れるコメントの横断秒数 (既定 4.0)。 */
-  scrollDurationSec?: number;
-  /** 固定コメントの表示秒数 (既定 3.0)。 */
-  fixedDurationSec?: number;
-  /** libass のフォント名 (既定 sans-serif)。 */
-  fontName?: string;
-  /**
-   * 出力先フォルダ。UI から渡されるが、現状バックエンド (`export_video_with_comments`)
-   * は未対応で `exports/` 配下へ固定出力する (unknown field として無視される)。
-   * 型エラー回避と将来の実装余地のため optional で受けておく。
-   */
-  outputDir?: string | null;
-};
-
-export type BurnInResult = {
-  /** 生成された MP4 の絶対パス。 */
-  outputPath: string;
-  commentCount: number;
-  width: number;
-  height: number;
-};
-
-export type BurnInProgress = {
-  videoId: string;
-  percent: number;
-};
-
-/** DL 済み動画へコメントを焼き込んだ MP4 を `exports/` 配下へ書き出す。 */
-export async function exportVideoWithComments(
-  videoId: string,
-  options?: BurnInOptions,
-): Promise<BurnInResult> {
-  return invoke<BurnInResult>('export_video_with_comments', {
-    videoId,
-    options: options ?? null,
-  });
-}
-
-/** 焼き込み進捗 (`burnin:progress`) を購読する。戻り値の関数で解除。 */
-export async function listenBurnInProgress(
-  handler: (p: BurnInProgress) => void,
-): Promise<UnlistenFn> {
-  return listen<BurnInProgress>('burnin:progress', (e) => handler(e.payload));
-}
+// =================== コメント焼き込みエクスポート ===================
+//
+// 実装は `src/lib/burnin/` へ移動した。WebView 上で `@xpadev-net/niconicomments`
+// が 1 フレームずつ描画し、PNG を Rust 経由で ffmpeg へ流し込んで元動画へ
+// オーバーレイする (niconicomments-convert と同じ方式)。座標・サイズの算出は
+// niconicomments 本体に完全委譲しており、旧来の独自 ASS 生成は廃止した。
+export { runBurnInExport, type BurnInExportOptions, type BurnInResult } from './burnin/browser';
 
 /**
  * app_data_dir 配下のファイルを ArrayBuffer で取得する。
