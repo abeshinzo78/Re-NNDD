@@ -51,3 +51,7 @@ Thumbs.db
 .codex
 CLAUDE.md
 CLAUDE.md
+
+# burn-in verification harness build artifacts
+scripts/burnin-verify/*.cjs
+scripts/burnin-verify/out/

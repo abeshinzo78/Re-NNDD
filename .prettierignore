@@ -5,3 +5,5 @@ node_modules
 src-tauri/target
 target
 package-lock.json
+
+scripts/burnin-verify

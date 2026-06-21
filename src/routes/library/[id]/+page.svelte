@@ -18,8 +18,7 @@
     deleteCommentSnapshot,
     updateSnapshotNote,
     refetchVideoComments,
-    exportVideoWithComments,
-    listenBurnInProgress,
+    runBurnInExport,
     type CommentSnapshotRow,
   } from '$lib/api';
   import { open as shellOpen } from '@tauri-apps/plugin-shell';
@@ -519,16 +518,30 @@
     }
   }
 
-  // ---- コメント焼き込みエクスポート (Phase 1.9) ----
+  // ---- コメント焼き込みエクスポート ----
+  // WebView 上で niconicomments が 1 フレームずつ描画 → Rust 経由で ffmpeg へ
+  // 流し込んで元動画へ合成する (niconicomments-convert と同方式)。
   let burnInOpen = $state(false);
   let burnInRunning = $state(false);
   let burnInPercent = $state(0);
+  let burnInPhase = $state<'render' | 'encode' | null>(null);
   let burnInMessage = $state<string | null>(null);
   let burnInResultPath = $state<string | null>(null);
   let binFontScale = $state(1.0);
   let binOpacity = $state(1.0);
+  // 出力幅 (null = 元動画準拠)。高さは 16:9 で自動算出。
+  let binWidth = $state<number | null>(null);
+  let binFps = $state(30);
   let binOutputDir = $state<string | null>(null);
-  let burnInUnlisten: (() => void) | null = null;
+  let burnInAbort: AbortController | null = null;
+
+  const widthPresets = [
+    { label: '元動画準拠', value: null },
+    { label: '1920×1080', value: 1920 },
+    { label: '1280×720', value: 1280 },
+    { label: '854×480', value: 854 },
+    { label: '640×360', value: 640 },
+  ];
 
   async function pickOutputDir() {
     try {
@@ -547,29 +560,54 @@
     }
     burnInRunning = true;
     burnInPercent = 0;
+    burnInPhase = 'render';
     burnInMessage = null;
     burnInResultPath = null;
-    burnInUnlisten?.();
-    burnInUnlisten = await listenBurnInProgress((p) => {
-      if (p.videoId === vid) burnInPercent = p.percent;
-    });
+    burnInAbort = new AbortController();
     try {
-      const res = await exportVideoWithComments(vid, {
-        snapshotId: activeSnapshotId,
+      // アクティブなスナップショットのコメントを取得して焼き込む。
+      const dto = await loadSnapshotComments(activeSnapshotId);
+      const snapComments = dto.map(dtoToPlayerComment);
+      if (snapComments.length === 0) {
+        throw new Error('焼き込むコメントがありません');
+      }
+      const res = await runBurnInExport({
+        videoId: vid,
+        comments: snapComments,
         fontScale: binFontScale,
         opacity: binOpacity,
-        outputDir: binOutputDir,
+        width: binWidth ?? undefined,
+        fps: binFps,
+        outputDir: binOutputDir ?? undefined,
+        onProgress: (rendered, total, phase) => {
+          burnInPhase = phase;
+          if (phase === 'render') {
+            burnInPercent = total > 0 ? (rendered / total) * 0.97 : 0;
+          } else {
+            burnInPercent = 0.99;
+          }
+        },
+        signal: burnInAbort.signal,
       });
       burnInPercent = 1;
+      burnInPhase = null;
       burnInResultPath = res.outputPath;
       burnInMessage = `完了: ${res.commentCount} 件を ${res.width}×${res.height} で焼き込みました`;
     } catch (e) {
-      burnInMessage = `焼き込み失敗: ${e}`;
+      if (burnInAbort?.signal.aborted) {
+        burnInMessage = 'キャンセルしました';
+      } else {
+        burnInMessage = `焼き込み失敗: ${e}`;
+      }
     } finally {
       burnInRunning = false;
-      burnInUnlisten?.();
-      burnInUnlisten = null;
+      burnInPhase = null;
+      burnInAbort = null;
     }
+  }
+
+  function cancelBurnIn() {
+    burnInAbort?.abort();
   }
 
   async function revealExport() {
@@ -586,7 +624,7 @@
   onDestroy(() => {
     ngUnsub();
     unsubQueueLoop();
-    burnInUnlisten?.();
+    burnInAbort?.abort();
   });
 </script>
 
@@ -956,6 +994,24 @@
                 <span class="burnin-val">{Math.round(binOpacity * 100)}%</span>
               </label>
               <label class="burnin-opt">
+                <span>解像度</span>
+                <select bind:value={binWidth} disabled={burnInRunning}>
+                  {#each widthPresets as p (p.label)}
+                    <option value={p.value}>{p.label}</option>
+                  {/each}
+                </select>
+                <span class="burnin-val">16:9</span>
+              </label>
+              <label class="burnin-opt">
+                <span>FPS</span>
+                <select bind:value={binFps} disabled={burnInRunning}>
+                  <option value={24}>24</option>
+                  <option value={30}>30</option>
+                  <option value={60}>60</option>
+                </select>
+                <span class="burnin-val">fps</span>
+              </label>
+              <label class="burnin-opt">
                 <span>出力先</span>
                 <button
                   type="button"
@@ -966,16 +1022,23 @@
                   {binOutputDir ?? '既定の exports/ フォルダ'}
                 </button>
               </label>
-              <button
-                type="button"
-                class="burnin-go"
-                disabled={burnInRunning || activeSnapshotId == null}
-                onclick={() => onBurnIn(lp.videoId)}
-              >
-                {burnInRunning
-                  ? `焼き込み中… ${Math.round(burnInPercent * 100)}%`
-                  : 'エクスポート開始'}
-              </button>
+              <div class="burnin-actions">
+                <button
+                  type="button"
+                  class="burnin-go"
+                  disabled={burnInRunning || activeSnapshotId == null}
+                  onclick={() => onBurnIn(lp.videoId)}
+                >
+                  {burnInRunning
+                    ? `${burnInPhase === 'encode' ? '仕上げ中' : '焼き込み中'}… ${Math.round(burnInPercent * 100)}%`
+                    : 'エクスポート開始'}
+                </button>
+                {#if burnInRunning}
+                  <button type="button" class="burnin-cancel" onclick={cancelBurnIn}>
+                    キャンセル
+                  </button>
+                {/if}
+              </div>
               {#if burnInRunning}
                 <div class="burnin-bar">
                   <div
@@ -985,7 +1048,8 @@
                 </div>
               {/if}
               <p class="burnin-hint muted">
-                映像を再エンコードするため時間がかかります。出力は exports フォルダに保存されます。
+                niconicomments で本物どおりに描画したコメントを ffmpeg
+                で合成します。映像を再エンコードするため時間がかかります。
               </p>
             </div>
           {/if}
