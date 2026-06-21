@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import type { PlayerComment } from '../player/types';
-import { buildConfigOverride, sanitizeContent, toV1Threads } from './comments';
+import { buildConfigOverride, sanitizeContent, toIsoPostedAt, toV1Threads } from './comments';
 
 const cmt = (over: Partial<PlayerComment>): PlayerComment => ({
   id: 'x',
@@ -60,6 +60,25 @@ describe('toV1Threads', () => {
   test('本文は sanitize される', () => {
     const threads = toV1Threads([cmt({ content: 'a\x07b' })]);
     expect(threads[0].comments[0].body).toBe('ab');
+  });
+
+  test('ローカルの Unix 秒 postedAt は ISO 8601 へ変換される', () => {
+    // niconicomments v1 は Date.parse(postedAt) でモード判定するため ISO が必須。
+    const threads = toV1Threads([cmt({ postedAt: '1170000000' })]);
+    expect(threads[0].comments[0].postedAt).toBe('2007-01-28T16:00:00.000Z');
+  });
+});
+
+describe('toIsoPostedAt', () => {
+  test('Unix 秒文字列を ISO へ', () => {
+    expect(toIsoPostedAt('1170000000')).toBe('2007-01-28T16:00:00.000Z');
+  });
+  test('既に ISO ならそのまま', () => {
+    expect(toIsoPostedAt('2024-01-01T00:00:00+09:00')).toBe('2024-01-01T00:00:00+09:00');
+  });
+  test('空/undefined は空文字', () => {
+    expect(toIsoPostedAt('')).toBe('');
+    expect(toIsoPostedAt(undefined)).toBe('');
   });
 });
 

@@ -2752,19 +2752,20 @@ pub async fn burnin_start(
         .as_deref()
         .and_then(parse_resolution)
         .map(|d| d.1);
-    let mut duration = if duration_sec > 0 {
-        duration_sec as f64
-    } else {
-        0.0
-    };
-    if src_w.is_none() || src_h.is_none() || duration <= 0.0 {
-        if let Some(info) = crate::downloader::ffmpeg::probe_video(Some(&app), &abs_video).await {
-            src_w.get_or_insert(info.width);
-            src_h.get_or_insert(info.height);
-            if duration <= 0.0 {
-                duration = info.duration_sec;
-            }
-        }
+    // 長さは **必ず ffmpeg で実測** する。DB の duration_sec は yt-dlp の f64 を
+    // i64 へ切り捨てた整数なので、例えば実 10.8s が 10s として記録される。これを
+    // そのまま使うとコメントフレーム数 (ceil(duration)*fps) が動画より短くなり、
+    // overlay の framesync が末尾でコメントを固めてしまう。実測の小数秒を使えば
+    // フレーム数が動画全体を覆い、convert と同じ尺になる。
+    let mut duration = 0.0;
+    if let Some(info) = crate::downloader::ffmpeg::probe_video(Some(&app), &abs_video).await {
+        src_w.get_or_insert(info.width);
+        src_h.get_or_insert(info.height);
+        duration = info.duration_sec;
+    }
+    if duration <= 0.0 && duration_sec > 0 {
+        // probe 失敗時のみ DB の整数値へフォールバック。
+        duration = duration_sec as f64;
     }
     let (Some(src_w), Some(_src_h)) = (src_w, src_h) else {
         return Err(AppError::Other("動画の解像度を判定できませんでした".into()));
@@ -2796,7 +2797,11 @@ pub async fn burnin_start(
         .await
         .map_err(|e| AppError::Other(format!("create exports dir: {e}")))?;
     let stamp = crate::library::now_unix_secs();
-    let output_path = exports_dir.join(format!("{video_id}_{stamp}.mp4"));
+    // 一意なシーケンスを先に確保し、出力ファイル名にも含める。これで同一秒に
+    // 同じ動画の焼き込みを 2 つ走らせても (別ウィンドウ / 連打) 出力が衝突せず、
+    // spawn_session の既存ファイル削除が互いの出力を壊すこともない。
+    let seq = BURNIN_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let output_path = exports_dir.join(format!("{video_id}_{stamp}_{seq}.mp4"));
 
     let session = burnin::spawn_session(
         Some(&app),
@@ -2812,7 +2817,6 @@ pub async fn burnin_start(
     .await
     .map_err(AppError::from)?;
 
-    let seq = BURNIN_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let session_id = format!("burnin-{stamp}-{seq}");
     sessions.insert(session_id.clone(), session);
 

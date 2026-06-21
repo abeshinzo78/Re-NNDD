@@ -50,7 +50,8 @@ node scripts/burnin-verify/verify.cjs
 
 ## 出力
 
-`/tmp/burnin-verify/out/` に:
+実行ごとに `mkdtemp` で作られる一意の作業ディレクトリ (パスは標準出力の
+`[setup] work dir:` 行と終了時の summary JSON に出ます) に:
 
 - `input.mp4` … yt-dlp で取得した元動画
 - `output.mp4` … コメントを焼き込んだ結果 (1280x720 / 30fps / bt709)
@@ -58,3 +59,7 @@ node scripts/burnin-verify/verify.cjs
 
 サンプルフレームを開けば、流れるコメント (naka)・上下固定 (ue/shita)・色・サイズ・
 弾幕の重なり方が本物の niconico と一致していることを確認できます。
+
+なお既定ではローカルスナップショット相当 (`posted_at` を Unix 秒文字列に変換) で
+描画し、本番と同じ入力で `toIsoPostedAt()` の正規化を実地検証します
+(`SIMULATE_LOCAL=0` で無効化してオンラインの ISO `postedAt` のまま描画)。

@@ -135,10 +135,10 @@ pub fn overlay_filter(width: u32, height: u32, fps: u32, opacity: f64) -> String
          [baseImage][alpha]alphamerge[image]"
     );
     if op >= 0.999 {
-        format!("{base};[video][image]overlay[output]")
+        format!("{base};[video][image]overlay=eof_action=pass[output]")
     } else {
         format!(
-            "{base};[image]format=rgba,colorchannelmixer=aa={op:.4}[imageop];[video][imageop]overlay[output]"
+            "{base};[image]format=rgba,colorchannelmixer=aa={op:.4}[imageop];[video][imageop]overlay=eof_action=pass[output]"
         )
     }
 }
@@ -300,14 +300,16 @@ mod tests {
         assert!(f.contains("scale=w=1920:h=1080"));
         assert!(f.contains("colorspace=bt709:iall=bt601-6-525:fast=1"));
         assert!(f.contains("alphamerge[image]"));
-        assert!(f.contains("[video][image]overlay[output]"));
+        // eof_action=pass: コメントフレームが先に尽きても末尾は素の映像を流す
+        // (整数 duration 切り捨てによる「最後のコメントが固まる」現象を防ぐ)。
+        assert!(f.contains("[video][image]overlay=eof_action=pass[output]"));
     }
 
     #[test]
     fn filter_applies_opacity_when_below_one() {
         let f = overlay_filter(1280, 720, 30, 0.5);
         assert!(f.contains("colorchannelmixer=aa=0.5000"));
-        assert!(f.contains("[video][imageop]overlay[output]"));
+        assert!(f.contains("[video][imageop]overlay=eof_action=pass[output]"));
     }
 
     #[test]

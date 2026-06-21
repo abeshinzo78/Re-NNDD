@@ -104,6 +104,25 @@ export type V1Thread = {
   comments: V1Comment[];
 };
 
+/**
+ * `postedAt` を ISO 8601 へ正規化する。
+ *
+ * niconicomments の v1 パーサは `postedAt` を `Date.parse()` で解釈し、ISO 8601 を
+ * 前提にしている (flash/html5 のモード判定に投稿日時を使う)。ところがローカル
+ * スナップショットのコメントは `posted_at` を **Unix 秒の文字列** (`"1170000000"`)
+ * として返すため、そのまま渡すと `Date.parse` が NaN になり、古いコメントの
+ * モード判定が壊れる (0.2.x は html5 に誤判定、0.3.x はコメントごと破棄)。
+ * 全数字なら Unix 秒とみなして ISO へ変換する。既に ISO ならそのまま通す。
+ */
+export function toIsoPostedAt(raw: string | undefined): string {
+  if (!raw) return '';
+  if (/^\d+$/.test(raw)) {
+    const d = new Date(Number(raw) * 1000);
+    return Number.isNaN(d.getTime()) ? '' : d.toISOString();
+  }
+  return raw;
+}
+
 function toV1Comment(c: PlayerComment): V1Comment {
   return {
     id: c.id,
@@ -114,7 +133,7 @@ function toV1Comment(c: PlayerComment): V1Comment {
     userId: c.userId ?? '',
     isPremium: false,
     score: c.score ?? 0,
-    postedAt: c.postedAt ?? '',
+    postedAt: toIsoPostedAt(c.postedAt),
     nicoruCount: c.nicoruCount ?? 0,
     nicoruId: null,
     source: 'leaf',

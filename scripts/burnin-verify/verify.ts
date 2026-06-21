@@ -2,7 +2,7 @@
 //!
 //! Fetches REAL niconico comments + the REAL video for sm9 using an authenticated
 //! cookie, renders niconicomments frame-by-frame under @napi-rs/canvas, streams
-//! the PNGs into the ffmpeg sidecar (image2pipe) with the EXACT filter graph from
+//! the PNG frames into the ffmpeg sidecar (image2pipe) with the EXACT filter graph from
 //! src-tauri/src/downloader/burnin.rs, and writes output.mp4 + sample frames.
 //!
 //! Mirrors the Rust path:
@@ -12,7 +12,9 @@
 //!   - lib/burnin/core.ts + comments.ts : the shared frame loop + v1 projection
 
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { createCanvas, GlobalFonts, Canvas, Path2D, Image } from '@napi-rs/canvas';
 import NiconiComments from '@xpadev-net/niconicomments';
@@ -47,10 +49,11 @@ const FRONTEND_VERSION = '0';
 const VIDEO_ID = 'sm9';
 const WATCH_URL = `https://www.nicovideo.jp/watch/${VIDEO_ID}`;
 
-const OUT_DIR = '/tmp/burnin-verify/out';
+// 安全な一意の一時ディレクトリを作る (CodeQL: 予測可能な temp パスを避ける)。
+const OUT_DIR = mkdtempSync(join(tmpdir(), 'burnin-verify-'));
 const INPUT_MP4 = `${OUT_DIR}/input.mp4`;
 const OUTPUT_MP4 = `${OUT_DIR}/output.mp4`;
-const COOKIE_FILE = '/tmp/burnin-verify/cookies.txt';
+const COOKIE_FILE = `${OUT_DIR}/cookies.txt`;
 
 // リポジトリルートから実行する前提 (npm スクリプトと同じ)。triple サフィックス
 // 付きのサイドカーバイナリを src-tauri/binaries/ から探す。
@@ -357,9 +360,9 @@ function overlayFilter(width: number, height: number, fps: number, opacity: numb
     `[1:v]format=rgba,alphaextract[alpha];` +
     `[baseImage][alpha]alphamerge[image]`;
   if (op >= 0.999) {
-    return `${base};[video][image]overlay[output]`;
+    return `${base};[video][image]overlay=eof_action=pass[output]`;
   }
-  return `${base};[image]format=rgba,colorchannelmixer=aa=${op.toFixed(4)}[imageop];[video][imageop]overlay[output]`;
+  return `${base};[image]format=rgba,colorchannelmixer=aa=${op.toFixed(4)}[imageop];[video][imageop]overlay=eof_action=pass[output]`;
 }
 
 // ---------------------------------------------------------------------------
@@ -483,9 +486,9 @@ function spawnFfmpegSession(filter: string): FfmpegSession {
 async function main() {
   const t0 = Date.now();
 
-  // Setup: ensure output dir + generate the yt-dlp Netscape cookie file from
-  // the NICO_USER_SESSION env var (self-contained — no pre-existing files).
-  mkdirSync(OUT_DIR, { recursive: true });
+  // Setup: OUT_DIR is already created by mkdtempSync. Generate the yt-dlp
+  // Netscape cookie file from the NICO_USER_SESSION env var (self-contained).
+  console.log(`[setup] work dir: ${OUT_DIR}`);
   const expiry = Math.floor(Date.now() / 1000) + 31_536_000;
   writeFileSync(
     COOKIE_FILE,
@@ -497,6 +500,22 @@ async function main() {
   const comments = await fetchComments(nv);
   if (comments.length === 0) {
     throw new Error('no comments fetched — aborting (expected thousands for sm9)');
+  }
+
+  // Production parity: downloaded snapshots store `posted_at` as a Unix-seconds
+  // STRING (load_snapshot_comments serializes i64.to_string()), unlike the online
+  // API's ISO `postedAt`. Simulate that here so we exercise the SAME input the
+  // real burn-in path sees. toV1Threads()/toIsoPostedAt() must normalize it back
+  // to ISO, otherwise niconicomments misclassifies (0.2.x) or drops (0.3.x) every
+  // comment with a postedAt.
+  if (process.env.SIMULATE_LOCAL !== '0') {
+    for (const c of comments) {
+      if (c.postedAt) {
+        const ms = Date.parse(c.postedAt);
+        if (!Number.isNaN(ms)) c.postedAt = String(Math.floor(ms / 1000));
+      }
+    }
+    console.log('[step1] simulated local storage: postedAt -> Unix-seconds string');
   }
 
   // Step 2: video
