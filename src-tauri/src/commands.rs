@@ -2845,11 +2845,14 @@ pub async fn burnin_start(
 /// body は raw バイナリで `burnin::parse_feed_frame` のフレーミングに従う:
 /// `[u8 flag][u32 LE session_len][session][payload]`。flag で frame / empty /
 /// set-empty を切り替える。透明フレームは set-empty で 1 度だけ転送し使い回す。
+///
+/// 戻り値 `true` = 受け付けた / `false` = ffmpeg が必要分を読み終えて stdin を
+/// 閉じた (= もう送らなくてよい、正常系)。フロントはこれを見て送出を止める。
 #[tauri::command]
 pub async fn burnin_feed(
     request: tauri::ipc::Request<'_>,
     sessions: State<'_, BurnInSessions>,
-) -> Result<()> {
+) -> Result<bool> {
     let body: &[u8] = match request.body() {
         tauri::ipc::InvokeBody::Raw(bytes) => bytes.as_slice(),
         _ => return Err(AppError::Other("burnin_feed: raw body required".into())),
@@ -2860,42 +2863,71 @@ pub async fn burnin_feed(
         .get(&sid)
         .ok_or_else(|| AppError::Other("burnin_feed: unknown session".into()))?;
     let mut s = session.lock().await;
-    match flag {
-        burnin::FLAG_SET_EMPTY => s.set_empty(payload.to_vec()),
+    let outcome = match flag {
+        burnin::FLAG_SET_EMPTY => {
+            s.set_empty(payload.to_vec());
+            burnin::FeedOutcome::Accepted
+        }
         burnin::FLAG_EMPTY => s.write_empty().await.map_err(AppError::from)?,
         burnin::FLAG_FRAME => s.write_frame(payload).await.map_err(AppError::from)?,
         _ => return Err(AppError::Other("burnin_feed: bad flag".into())),
-    }
-    Ok(())
+    };
+    Ok(outcome.accepted())
 }
 
 /// セッションを完了する。stdin を閉じて ffmpeg の終了を待ち、出力パスを返す。
+///
+/// セッションは **finish が終わるまでレジストリに残す**。こうしておくことで、
+/// encode/faststart を待っている最中に burnin_cancel が来ても ffmpeg を止められる
+/// (finish 開始時に remove してしまうと、後発の cancel が child を見つけられない)。
 #[tauri::command]
 pub async fn burnin_finish(
     session_id: String,
     sessions: State<'_, BurnInSessions>,
 ) -> Result<BurnInFinish> {
-    let Some(session) = sessions.remove(&session_id) else {
+    let Some(session) = sessions.get(&session_id) else {
         return Err(AppError::Other("burnin_finish: unknown session".into()));
     };
-    let mut s = session.lock().await;
-    s.finish().await.map_err(AppError::from)?;
-    let out = s.output_path.to_string_lossy().into_owned();
+    // finish() の成否に関わらず、ここを抜けたらレジストリから除去する。
+    let outcome = {
+        let mut s = session.lock().await;
+        match s.finish().await {
+            Ok(()) => Ok((
+                s.output_path.to_string_lossy().into_owned(),
+                s.width,
+                s.height,
+            )),
+            Err(e) => Err(e),
+        }
+    };
+    sessions.remove(&session_id);
+    let (out, width, height) = outcome.map_err(AppError::from)?;
     tracing::info!(session_id = %session_id, output = %out, "comment burn-in finished");
     Ok(BurnInFinish {
         output_path: out,
-        width: s.width,
-        height: s.height,
+        width,
+        height,
     })
 }
 
 /// セッションを中断する。ffmpeg を kill して部分出力を消す。
+///
+/// finish が ffmpeg を待っている最中でも効くよう、まずセッションロックを介さず
+/// キャンセル通知を送って finish 側に kill させる。その後 (finish が動いていない
+/// 場合も含めて) セッションを除去し、念のため kill + 部分出力の削除を行う。
 #[tauri::command]
 pub async fn burnin_cancel(session_id: String, sessions: State<'_, BurnInSessions>) -> Result<()> {
+    // finish が待機中なら起こして強制終了させる (ロック不要)。notify_one は
+    // 待機者が居なければ permit を残すので、通知が finish の待機開始より先でも
+    // 取りこぼさない。
+    if let Some(cancel) = sessions.cancel_handle(&session_id) {
+        cancel.notify_one();
+    }
     if let Some(session) = sessions.remove(&session_id) {
         let mut s = session.lock().await;
-        s.kill().await;
-        let _ = tokio::fs::remove_file(&s.output_path).await;
+        // finish() が成功直後 (completed) のセッションを遅延キャンセルが掴んでも、
+        // 生成済みの正しい出力は削除しない。未完なら kill して部分出力を消す。
+        s.discard_if_incomplete().await;
     }
     Ok(())
 }

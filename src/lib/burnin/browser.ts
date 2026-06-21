@@ -11,6 +11,7 @@ import NiconiComments from '@xpadev-net/niconicomments';
 import type { PlayerComment } from '../player/types';
 import { toV1Threads } from './comments';
 import { buildNiconiOptions, runFrameLoop, type CommentMode, type FrameSink } from './core';
+import { burnInExport } from './exportState.svelte';
 
 // Rust の burnin::FLAG_* と一致させること。
 const FLAG_FRAME = 0;
@@ -100,6 +101,42 @@ function yieldToEventLoop(): Promise<void> {
 }
 
 /**
+ * `burnin_finish` を中断シグナルと競わせる。
+ *
+ * 描画が終わって encode/faststart 待ちに入ったあとでも「キャンセル」を効かせる
+ * ため、finish の解決とシグナルの abort を race する。abort が先に来たら
+ * `burnin_cancel` で ffmpeg を止め (バックエンドは finish 待機中でも kill できる)、
+ * 'aborted' を投げる。
+ */
+function finishOrAbort(sessionId: string, signal?: AbortSignal): Promise<BurnInFinish> {
+  const finishP = invoke<BurnInFinish>('burnin_finish', { sessionId });
+  if (!signal) return finishP;
+  if (signal.aborted) {
+    void invoke('burnin_cancel', { sessionId }).catch(() => {});
+    // 走らせた finish の reject を未処理にしない。
+    finishP.catch(() => {});
+    return Promise.reject(new Error('aborted'));
+  }
+  return new Promise<BurnInFinish>((resolve, reject) => {
+    const onAbort = () => {
+      void invoke('burnin_cancel', { sessionId }).catch(() => {});
+      reject(new Error('aborted'));
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+    finishP.then(
+      (v) => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(v);
+      },
+      (e) => {
+        signal.removeEventListener('abort', onAbort);
+        reject(e);
+      },
+    );
+  });
+}
+
+/**
  * 焼き込みエクスポートを実行する。完了すると出力 MP4 のパスを返す。
  */
 export async function runBurnInExport(opts: BurnInExportOptions): Promise<BurnInResult> {
@@ -121,6 +158,9 @@ export async function runBurnInExport(opts: BurnInExportOptions): Promise<BurnIn
   canvas.getContext('2d');
 
   let nico: NiconiComments | null = null;
+  // エクスポート中はライブのコメントレイヤーを停止させ、niconicomments の
+  // モジュールスコープ共有状態 (config/options/cache) の相互汚染を防ぐ。
+  burnInExport.begin();
   try {
     // 透明フレームを 1 度だけ Rust へ送り、空フレームで使い回す。
     const emptyPng = await canvasToPng(canvas);
@@ -138,10 +178,10 @@ export async function runBurnInExport(opts: BurnInExportOptions): Promise<BurnIn
 
     const sink: FrameSink = {
       async frame(_index, png) {
-        await invoke('burnin_feed', buildFrame(FLAG_FRAME, sessionId, png));
+        return await invoke<boolean>('burnin_feed', buildFrame(FLAG_FRAME, sessionId, png));
       },
       async empty(_index) {
-        await invoke('burnin_feed', buildFrame(FLAG_EMPTY, sessionId));
+        return await invoke<boolean>('burnin_feed', buildFrame(FLAG_EMPTY, sessionId));
       },
     };
 
@@ -161,7 +201,8 @@ export async function runBurnInExport(opts: BurnInExportOptions): Promise<BurnIn
     }
 
     opts.onProgress?.(start.totalFrames, start.totalFrames, 'encode');
-    const fin = await invoke<BurnInFinish>('burnin_finish', { sessionId });
+    // encode/faststart 待ちの間もキャンセルを効かせるため signal と race する。
+    const fin = await finishOrAbort(sessionId, opts.signal);
     return {
       outputPath: fin.outputPath,
       commentCount: opts.comments.length,
@@ -176,6 +217,7 @@ export async function runBurnInExport(opts: BurnInExportOptions): Promise<BurnIn
     }
     throw e;
   } finally {
+    burnInExport.end();
     try {
       (nico as unknown as { destroy?: () => void } | null)?.destroy?.();
     } catch {

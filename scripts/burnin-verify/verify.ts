@@ -70,14 +70,20 @@ function findSidecar(prefix: string): string {
 const FFMPEG = findSidecar('ffmpeg');
 const YTDLP = findSidecar('yt-dlp');
 
-// Render parameters (per the task: first 30s, fps 30, 1280x720)
+// Render parameters (fps 30, 1280x720).
 const WIDTH = 1280;
 const HEIGHT = 720;
 const FPS = 30;
 const SS = 0;
-const TO = 30;
+// Default: burn in the FULL video — the exact production path. The real video ends
+// at a fractional second while the frontend feeds ceil(duration)*fps frames, so a
+// few surplus tail frames are produced; the OLD code died there with a broken pipe
+// (os error 109 on Windows / EPIPE on Linux). Set BURNIN_VERIFY_TO=<seconds, may be
+// fractional> to cap the render for a faster run while still exercising that tail.
+const TO: number | undefined = process.env.BURNIN_VERIFY_TO
+  ? Number(process.env.BURNIN_VERIFY_TO)
+  : undefined;
 const OPACITY = 1.0;
-const SAMPLE_TIMES = [2, 5, 10, 20, 28];
 
 // ---------------------------------------------------------------------------
 // niconicomments polyfill setup — copied VERBATIM from smoke.ts
@@ -370,10 +376,17 @@ function overlayFilter(width: number, height: number, fps: number, opacity: numb
 // ---------------------------------------------------------------------------
 type FfmpegSession = {
   args: string[];
-  writePng: (png: Uint8Array) => Promise<void>;
+  /** Returns true if accepted, false if ffmpeg closed stdin (= it has enough
+   *  frames). Mirrors the production Rust path: a broken pipe on the surplus
+   *  tail frames is NOT an error — success is judged by the exit code at finish. */
+  writePng: (png: Uint8Array) => Promise<boolean>;
   finish: () => Promise<void>;
   getStderr: () => string;
 };
+
+function isSinkClosed(code: string | undefined): boolean {
+  return code === 'EPIPE' || code === 'ERR_STREAM_DESTROYED' || code === 'ERR_STREAM_WRITE_AFTER_END';
+}
 
 function spawnFfmpegSession(filter: string): FfmpegSession {
   const args = [
@@ -384,8 +397,9 @@ function spawnFfmpegSession(filter: string): FfmpegSession {
     '-y',
     '-sws_flags',
     'spline+accurate_rnd+full_chroma_int',
-    '-t',
-    String(TO),
+    // Cap the input only when BURNIN_VERIFY_TO is set; otherwise burn the FULL
+    // video (production parity — no -t).
+    ...(TO !== undefined ? ['-t', String(TO)] : []),
     '-i',
     INPUT_MP4,
     '-f',
@@ -436,46 +450,61 @@ function spawnFfmpegSession(filter: string): FfmpegSession {
     spawnError = e;
   });
 
+  // Capture the process exit ONCE at spawn time. In the surplus-tail case ffmpeg
+  // can emit 'close' between the broken-pipe write and the finish() call, so a
+  // listener registered lazily inside finish() would miss it and hang forever.
+  // Registering here guarantees the exit is observed regardless of timing.
+  const exit: Promise<number | null> = new Promise((resolve) => {
+    child.once('close', (code) => resolve(code));
+    child.once('error', () => resolve(null)); // spawn failure: unblock finish()
+  });
+
   const stdin = child.stdin;
+  let closed = false;
+  // Swallow any stray async EPIPE so an error between writes never crashes the
+  // process; the exit code is the source of truth.
+  stdin.on('error', (e: NodeJS.ErrnoException) => {
+    if (isSinkClosed(e.code)) closed = true;
+  });
 
-  const writePng = (png: Uint8Array): Promise<void> => {
-    if (spawnError) return Promise.reject(spawnError);
-    return new Promise((resolve, reject) => {
-      const onError = (e: Error) => reject(e);
-      stdin.once('error', onError);
-      const ok = stdin.write(Buffer.from(png), (err) => {
-        stdin.removeListener('error', onError);
-        if (err) reject(err);
-      });
-      if (ok) {
-        // Buffer accepted synchronously; resolve on next tick.
-        stdin.removeListener('error', onError);
-        resolve();
-      } else {
-        // Backpressure: wait for drain.
-        stdin.once('drain', () => {
-          stdin.removeListener('error', onError);
-          resolve();
-        });
-      }
-    });
-  };
-
-  const finish = (): Promise<void> =>
+  const writePng = (png: Uint8Array): Promise<boolean> =>
     new Promise((resolve, reject) => {
-      child.on('close', (code) => {
-        if (code === 0) {
-          resolve();
+      if (spawnError) {
+        reject(spawnError);
+        return;
+      }
+      if (closed || stdin.destroyed) {
+        resolve(false);
+        return;
+      }
+      // The write callback fires after flush (or error), which also gives us
+      // natural backpressure handling.
+      stdin.write(Buffer.from(png), (err?: NodeJS.ErrnoException | null) => {
+        if (!err) {
+          resolve(true);
+        } else if (isSinkClosed(err.code)) {
+          closed = true;
+          resolve(false);
         } else {
-          reject(
-            new Error(
-              `ffmpeg exited with code ${code}\n${stderr.split('\n').slice(0, 40).join('\n')}`,
-            ),
-          );
+          reject(err);
         }
       });
-      stdin.end();
     });
+
+  const finish = async (): Promise<void> => {
+    try {
+      stdin.end();
+    } catch {
+      /* already closed */
+    }
+    const code = await exit;
+    if (spawnError) throw spawnError;
+    if (code !== 0) {
+      throw new Error(
+        `ffmpeg exited with code ${code}\n${stderr.split('\n').slice(0, 40).join('\n')}`,
+      );
+    }
+  };
 
   return { args, writePng, finish, getStderr: () => stderr };
 }
@@ -548,14 +577,19 @@ async function main() {
 
   let framesDrawn = 0;
   let emptyFrames = 0;
+  let sinkClosedAt = -1;
   const sink: FrameSink = {
-    async frame(_index: number, png: Uint8Array) {
-      framesDrawn++;
-      await session.writePng(png);
+    async frame(index: number, png: Uint8Array) {
+      const ok = await session.writePng(png);
+      if (ok) framesDrawn++;
+      else if (sinkClosedAt < 0) sinkClosedAt = index;
+      return ok;
     },
-    async empty(_index: number) {
-      emptyFrames++;
-      await session.writePng(emptyPng);
+    async empty(index: number) {
+      const ok = await session.writePng(emptyPng);
+      if (ok) emptyFrames++;
+      else if (sinkClosedAt < 0) sinkClosedAt = index;
+      return ok;
     },
   };
 
@@ -565,7 +599,7 @@ async function main() {
     fps: FPS,
     durationSec,
     ssSec: SS,
-    toSec: TO,
+    toSec: TO, // undefined => full video (production parity)
     sink,
     onProgress: (rendered, totalFrames) => {
       if (rendered % 60 === 0 || rendered === totalFrames) {
@@ -573,7 +607,13 @@ async function main() {
       }
     },
   });
-  console.log(`[step3] frame loop done: total=${total} drawn=${framesDrawn} empty=${emptyFrames}`);
+  const renderedTo = TO ?? durationSec;
+  const requestedFrames = Math.ceil(renderedTo - SS) * FPS;
+  console.log(
+    `[step3] frame loop done: total=${total} drawn=${framesDrawn} empty=${emptyFrames} ` +
+      `requested=${requestedFrames} sinkClosedAt=${sinkClosedAt} ` +
+      `(surplus tail absorbed: ${sinkClosedAt >= 0 ? 'yes' : 'no — fit in pipe buffer'})`,
+  );
 
   await session.finish();
   console.log('[step3] ffmpeg finished (exit 0)');
@@ -586,8 +626,28 @@ async function main() {
   const outProbe = await probe(OUTPUT_MP4);
   console.log('[step3] ffmpeg probe of output.mp4:\n' + outProbe);
 
-  // Step 4: extract sample frames
+  // Assert the output covers (about) the full requested span — i.e. the surplus
+  // tail did NOT truncate the video. Parse "Duration: HH:MM:SS.ss" from the probe.
+  const durMatch = /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(outProbe);
+  if (durMatch) {
+    const outDur = Number(durMatch[1]) * 3600 + Number(durMatch[2]) * 60 + Number(durMatch[3]);
+    const expected = renderedTo - SS;
+    console.log(`[step3] output duration=${outDur.toFixed(2)}s expected≈${expected.toFixed(2)}s`);
+    // Allow 1s slack (container rounding / audio padding).
+    if (outDur < expected - 1) {
+      throw new Error(
+        `output truncated: ${outDur.toFixed(2)}s < expected ${expected.toFixed(2)}s — ` +
+          `the surplus-tail broken pipe likely cut the render short`,
+      );
+    }
+  }
+
+  // Step 4: extract sample frames across the rendered span, incl. the very tail.
   console.log('[step4] extracting sample frames');
+  const span = renderedTo - SS;
+  const SAMPLE_TIMES = [0.05, 0.25, 0.5, 0.75, 0.97]
+    .map((f) => +(SS + span * f).toFixed(2))
+    .filter((t) => t >= 0);
   const framePaths: { t: number; path: string; size: number }[] = [];
   for (const t of SAMPLE_TIMES) {
     const framePath = `${OUT_DIR}/frame_${t}.png`;
@@ -619,10 +679,11 @@ async function main() {
     videoId: VIDEO_ID,
     commentCount: comments.length,
     durationSec,
-    render: { width: WIDTH, height: HEIGHT, fps: FPS, ss: SS, to: TO },
+    render: { width: WIDTH, height: HEIGHT, fps: FPS, ss: SS, to: TO ?? 'full' },
     framesTotal: total,
     framesDrawn,
     emptyFrames,
+    sinkClosedAt,
     inputMp4: INPUT_MP4,
     inputSize: statSync(INPUT_MP4).size,
     outputMp4: OUTPUT_MP4,

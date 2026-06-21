@@ -18,7 +18,7 @@ use std::sync::Arc;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin};
-use tokio::sync::Mutex as AsyncMutex;
+use tokio::sync::{Mutex as AsyncMutex, Notify};
 
 use crate::downloader::tools;
 use crate::error::ApiError;
@@ -28,6 +28,41 @@ pub const FLAG_FRAME: u8 = 0;
 pub const FLAG_EMPTY: u8 = 1;
 pub const FLAG_SET_EMPTY: u8 = 2;
 
+/// `burnin_feed` の結果。フロントはこれを見て送出を続けるか止めるか決める。
+///
+/// - `Accepted`: フレームを stdin へ書けた。続けてよい。
+/// - `SinkClosed`: ffmpeg が必要なフレームを読み終えて stdin を閉じた。これ以上
+///   送っても破棄されるだけなので **正常に** 送出を止める合図 (異常ではない)。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FeedOutcome {
+    Accepted,
+    SinkClosed,
+}
+
+impl FeedOutcome {
+    /// フロントへ返す bool。true = まだ受け付ける / false = 閉じたので止める。
+    pub fn accepted(self) -> bool {
+        matches!(self, FeedOutcome::Accepted)
+    }
+}
+
+/// ffmpeg がもう stdin を読まなくなった (= パイプが閉じた) ことを示す IO エラーか。
+///
+/// 元動画は尺の小数秒で終わるのに対し、フロントは `ceil(尺)*fps` フレームを送る
+/// ため、末尾に「動画より後ろの余剰フレーム」が必ず出る。ffmpeg は必要な分を
+/// 読み終えると正常終了して stdin を閉じるので、その後の書き込みは broken pipe に
+/// なる。これは異常ではなく想定内なので、成否は finish() の終了コードで判定する。
+///
+/// Windows の `ERROR_BROKEN_PIPE` (109) / `ERROR_NO_DATA` (232) はどちらも Rust が
+/// `ErrorKind::BrokenPipe` へマップするので、プラットフォーム差なく拾える。
+fn is_sink_closed(e: &std::io::Error) -> bool {
+    use std::io::ErrorKind::{BrokenPipe, ConnectionAborted, ConnectionReset, WriteZero};
+    matches!(
+        e.kind(),
+        BrokenPipe | WriteZero | ConnectionReset | ConnectionAborted
+    )
+}
+
 /// 1 焼き込みセッション。ffmpeg child と、そこへ書き込む stdin を保持する。
 pub struct BurnInSession {
     stdin: Option<ChildStdin>,
@@ -35,6 +70,15 @@ pub struct BurnInSession {
     stderr: Arc<AsyncMutex<String>>,
     /// 透明フレームの PNG バイト列 (1 度だけ転送して使い回す)。
     empty_png: Option<Vec<u8>>,
+    /// ffmpeg が stdin を閉じた後は以降の書き込みを no-op にするフラグ。
+    input_closed: bool,
+    /// finish() が成功して正しい出力を生成し終えたか。セッションロックを保持した
+    /// まま立てる。これで finish 成功とほぼ同時に来た遅延キャンセルが、生成済みの
+    /// 正しい出力を誤って削除するのを防ぐ。
+    completed: bool,
+    /// キャンセル通知。finish() が ffmpeg を待っている間に burnin_cancel から
+    /// 起こして強制終了させるために使う (セッションロックを介さず通知できる)。
+    cancel: Arc<Notify>,
     pub output_path: PathBuf,
     pub width: u32,
     pub height: u32,
@@ -50,21 +94,39 @@ impl BurnInSession {
     }
 
     /// PNG 1 枚を ffmpeg stdin へ書き込む。
-    pub async fn write_frame(&mut self, png: &[u8]) -> Result<(), ApiError> {
-        let stdin = self
-            .stdin
-            .as_mut()
-            .ok_or_else(|| ApiError::Downloader("burn-in session already closed".into()))?;
-        stdin
-            .write_all(png)
-            .await
-            .map_err(|e| ApiError::Downloader(format!("write frame to ffmpeg: {e}")))?;
-        self.fed += 1;
-        Ok(())
+    ///
+    /// ffmpeg が既に stdin を閉じていた (= 必要フレームを読み終えた) 場合は
+    /// `SinkClosed` を返す。これは異常ではなく、フロントへ「送出を止めてよい」と
+    /// 伝える正常系の合図。真の IO 異常のときだけ `Err` を返す。
+    pub async fn write_frame(&mut self, png: &[u8]) -> Result<FeedOutcome, ApiError> {
+        if self.input_closed {
+            return Ok(FeedOutcome::SinkClosed);
+        }
+        let Some(stdin) = self.stdin.as_mut() else {
+            self.input_closed = true;
+            return Ok(FeedOutcome::SinkClosed);
+        };
+        match stdin.write_all(png).await {
+            Ok(()) => {
+                self.fed += 1;
+                Ok(FeedOutcome::Accepted)
+            }
+            Err(e) if is_sink_closed(&e) => {
+                // ffmpeg が必要分を読み終えて正常終了 → stdin が閉じた。末尾の
+                // 余剰フレームによる broken pipe は想定内。エラーにせず止める。
+                self.input_closed = true;
+                self.stdin.take();
+                Ok(FeedOutcome::SinkClosed)
+            }
+            Err(e) => Err(ApiError::Downloader(format!("write frame to ffmpeg: {e}"))),
+        }
     }
 
     /// 透明フレームを 1 枚書き込む。
-    pub async fn write_empty(&mut self) -> Result<(), ApiError> {
+    pub async fn write_empty(&mut self) -> Result<FeedOutcome, ApiError> {
+        if self.input_closed {
+            return Ok(FeedOutcome::SinkClosed);
+        }
         let png = self
             .empty_png
             .clone()
@@ -73,51 +135,105 @@ impl BurnInSession {
     }
 
     /// stdin を閉じて ffmpeg の終了を待つ。成功すれば `Ok(())`。
+    ///
+    /// 待機中に `cancel` が起こされたら ffmpeg を強制終了して `Err` を返す
+    /// (UI の「キャンセル」が encode/faststart 中でも効くようにするため)。
     pub async fn finish(&mut self) -> Result<(), ApiError> {
         // stdin を drop して EOF を送る → ffmpeg が encode を完了する。
         self.stdin.take();
-        let status = self
-            .child
-            .wait()
-            .await
-            .map_err(|e| ApiError::Downloader(format!("wait ffmpeg: {e}")))?;
-        if status.success() {
-            Ok(())
-        } else {
-            let stderr = self.stderr.lock().await.clone();
-            Err(ApiError::Downloader(format!(
-                "ffmpeg failed:\n{}",
-                stderr.lines().take(30).collect::<Vec<_>>().join("\n")
-            )))
+        let cancel = self.cancel.clone();
+        // child.wait() の完了 vs キャンセル通知を競わせる。select! は選ばれな
+        // かった側の future を drop してから本体を実行するので、cancel 側の本体で
+        // 改めて self.child を触れる (wait future の借用が解放済みのため)。
+        let canceled = {
+            let notified = cancel.notified();
+            tokio::pin!(notified);
+            tokio::select! {
+                res = self.child.wait() => {
+                    let status = res
+                        .map_err(|e| ApiError::Downloader(format!("wait ffmpeg: {e}")))?;
+                    if status.success() {
+                        // ロック保持中に completed を立てる。以降にロックを取る
+                        // 遅延キャンセルは discard_if_incomplete でスキップされ、
+                        // 生成済みの正しい出力が消されない。
+                        self.completed = true;
+                        return Ok(());
+                    }
+                    let stderr = self.stderr.lock().await.clone();
+                    return Err(ApiError::Downloader(format!(
+                        "ffmpeg failed:\n{}",
+                        stderr.lines().take(30).collect::<Vec<_>>().join("\n")
+                    )));
+                }
+                _ = &mut notified => true,
+            }
+        };
+        if canceled {
+            let _ = self.child.start_kill();
+            let _ = self.child.wait().await;
+            return Err(ApiError::Downloader("burn-in canceled".into()));
         }
+        Ok(())
     }
 
     /// ffmpeg を強制終了する (キャンセル時)。
     pub async fn kill(&mut self) {
+        self.input_closed = true;
         self.stdin.take();
         let _ = self.child.kill().await;
     }
+
+    /// キャンセル時の後始末。finish() が既に成功して正しい出力を生成済みなら
+    /// 何もしない (遅延キャンセルが生成物を消すのを防ぐ)。未完なら ffmpeg を
+    /// kill して部分出力を削除する。
+    pub async fn discard_if_incomplete(&mut self) {
+        if self.completed {
+            return;
+        }
+        self.kill().await;
+        let _ = tokio::fs::remove_file(&self.output_path).await;
+    }
+}
+
+/// レジストリ内の 1 エントリ。`cancel` はセッションロックを取らずに参照できる
+/// よう、ここに複製を持っておく (finish が長時間ロックを保持していても
+/// burnin_cancel が即座に通知できる)。
+struct SessionEntry {
+    session: Arc<AsyncMutex<BurnInSession>>,
+    cancel: Arc<Notify>,
 }
 
 /// セッションレジストリ。Tauri state として `manage` する。
 #[derive(Clone, Default)]
 pub struct BurnInSessions {
-    inner: Arc<std::sync::Mutex<HashMap<String, Arc<AsyncMutex<BurnInSession>>>>>,
+    inner: Arc<std::sync::Mutex<HashMap<String, SessionEntry>>>,
 }
 
 impl BurnInSessions {
     pub fn insert(&self, id: String, session: BurnInSession) {
+        let cancel = session.cancel.clone();
         if let Ok(mut map) = self.inner.lock() {
-            map.insert(id, Arc::new(AsyncMutex::new(session)));
+            map.insert(
+                id,
+                SessionEntry {
+                    session: Arc::new(AsyncMutex::new(session)),
+                    cancel,
+                },
+            );
         }
     }
 
     pub fn get(&self, id: &str) -> Option<Arc<AsyncMutex<BurnInSession>>> {
-        self.inner.lock().ok()?.get(id).cloned()
+        Some(self.inner.lock().ok()?.get(id)?.session.clone())
+    }
+
+    /// セッションロックを介さずキャンセル通知ハンドルだけ取り出す。
+    pub fn cancel_handle(&self, id: &str) -> Option<Arc<Notify>> {
+        Some(self.inner.lock().ok()?.get(id)?.cancel.clone())
     }
 
     pub fn remove(&self, id: &str) -> Option<Arc<AsyncMutex<BurnInSession>>> {
-        self.inner.lock().ok()?.remove(id)
+        Some(self.inner.lock().ok()?.remove(id)?.session)
     }
 }
 
@@ -256,6 +372,9 @@ pub async fn spawn_session(
         child,
         stderr: stderr_buf,
         empty_png: None,
+        input_closed: false,
+        completed: false,
+        cancel: Arc::new(Notify::new()),
         output_path: output.to_path_buf(),
         width,
         height,
@@ -344,5 +463,149 @@ mod tests {
     fn feed_frame_rejects_truncated() {
         assert!(parse_feed_frame(&[]).is_none());
         assert!(parse_feed_frame(&[FLAG_FRAME, 10, 0, 0, 0]).is_none()); // sid_len > body
+    }
+
+    #[test]
+    fn sink_closed_detects_broken_pipe_family() {
+        use std::io::{Error, ErrorKind};
+        // パイプが閉じた系 = 末尾余剰フレームによる正常な打ち切り。
+        assert!(is_sink_closed(&Error::from(ErrorKind::BrokenPipe)));
+        assert!(is_sink_closed(&Error::from(ErrorKind::WriteZero)));
+        assert!(is_sink_closed(&Error::from(ErrorKind::ConnectionReset)));
+        assert!(is_sink_closed(&Error::from(ErrorKind::ConnectionAborted)));
+        // 本物の IO 異常はエラーとして扱う (打ち切りにしない)。
+        assert!(!is_sink_closed(&Error::from(ErrorKind::PermissionDenied)));
+        assert!(!is_sink_closed(&Error::from(ErrorKind::NotFound)));
+        assert!(!is_sink_closed(&Error::from(ErrorKind::Other)));
+    }
+
+    #[test]
+    fn windows_broken_pipe_errnos_map_to_sink_closed() {
+        // Windows の ERROR_BROKEN_PIPE (109) / ERROR_NO_DATA (232) は Rust が
+        // ErrorKind::BrokenPipe へマップする。os error 109 の正常打ち切りを保証。
+        #[cfg(windows)]
+        {
+            use std::io::Error;
+            assert!(is_sink_closed(&Error::from_raw_os_error(109)));
+            assert!(is_sink_closed(&Error::from_raw_os_error(232)));
+        }
+        // 非 Windows でも EPIPE(32) は BrokenPipe にマップされる。
+        #[cfg(unix)]
+        {
+            use std::io::Error;
+            assert!(is_sink_closed(&Error::from_raw_os_error(32)));
+        }
+    }
+
+    #[test]
+    fn feed_outcome_accepted_flag() {
+        assert!(FeedOutcome::Accepted.accepted());
+        assert!(!FeedOutcome::SinkClosed.accepted());
+    }
+
+    /// 長時間動く子プロセスを持つセッションを直接組む (ffmpeg 不要のテスト用)。
+    #[cfg(unix)]
+    fn session_with_long_child() -> BurnInSession {
+        let child = tokio::process::Command::new("sleep")
+            .arg("30")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn sleep");
+        BurnInSession {
+            stdin: None,
+            child,
+            stderr: Arc::new(AsyncMutex::new(String::new())),
+            empty_png: None,
+            input_closed: false,
+            completed: false,
+            cancel: Arc::new(Notify::new()),
+            output_path: std::path::PathBuf::from("/tmp/burnin-test-output.mp4"),
+            width: 2,
+            height: 2,
+            fps: 30,
+            total_frames: 0,
+            fed: 0,
+        }
+    }
+
+    /// PR #15 レビュー対応: encode/faststart を待っている最中でもキャンセルが
+    /// 効くこと。レジストリ経由で取り出した cancel ハンドルを叩くと finish が
+    /// 速やかに Err を返して子プロセスを kill する (= UI のキャンセルが届く)。
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn cancel_handle_aborts_finish_via_registry() {
+        let sessions = BurnInSessions::default();
+        sessions.insert("s1".into(), session_with_long_child());
+        let session = sessions.get("s1").expect("session present");
+
+        let started = std::time::Instant::now();
+        let handle = tokio::spawn(async move {
+            let mut s = session.lock().await;
+            s.finish().await
+        });
+
+        // finish が child.wait() を待ち始める頃にキャンセル通知。notify_one は
+        // permit を残すので、待機開始より先でも取りこぼさない。
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+        sessions
+            .cancel_handle("s1")
+            .expect("cancel handle present")
+            .notify_one();
+
+        let res = tokio::time::timeout(std::time::Duration::from_secs(5), handle)
+            .await
+            .expect("finish must return promptly after cancel")
+            .expect("join task");
+        assert!(res.is_err(), "canceled finish should return Err");
+        // sleep 30 を待たずに、キャンセルで早期に返っていること。
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(5),
+            "finish should be aborted, not wait for the child to exit"
+        );
+    }
+
+    /// 通知が finish の待機開始より「先」に来ても取りこぼさない (notify_one の
+    /// permit 保持) ことを確認する。
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn cancel_before_finish_waits_is_not_lost() {
+        let mut session = session_with_long_child();
+        // finish より先に通知しておく。
+        session.cancel.notify_one();
+        let res = tokio::time::timeout(std::time::Duration::from_secs(5), session.finish())
+            .await
+            .expect("finish must observe the stored cancel permit");
+        assert!(res.is_err(), "pre-sent cancel should still abort finish");
+        session.kill().await; // 念のため子プロセスを回収。
+    }
+
+    /// PR #16 レビュー対応: finish 成功とほぼ同時の遅延キャンセルが、生成済みの
+    /// 正しい出力を消さないこと。completed=true なら discard はファイルを残し、
+    /// completed=false (= 中断/失敗) なら部分出力を消す。
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn discard_keeps_completed_output_removes_incomplete() {
+        let dir = tempfile::tempdir().expect("tempdir");
+
+        // completed=true → 出力を残す。
+        let mut done = session_with_long_child();
+        let kept = dir.path().join("kept.mp4");
+        std::fs::write(&kept, b"ok").expect("write kept");
+        done.output_path = kept.clone();
+        done.completed = true;
+        done.discard_if_incomplete().await;
+        assert!(kept.exists(), "completed output must be kept");
+        done.kill().await; // 残った子プロセスを回収。
+
+        // completed=false → 部分出力を削除。
+        let mut partial = session_with_long_child();
+        let gone = dir.path().join("partial.mp4");
+        std::fs::write(&gone, b"partial").expect("write partial");
+        partial.output_path = gone.clone();
+        partial.completed = false;
+        partial.discard_if_incomplete().await;
+        assert!(!gone.exists(), "incomplete output must be removed");
     }
 }

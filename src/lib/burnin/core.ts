@@ -48,10 +48,15 @@ export function buildNiconiOptions(p: NiconiOptionParams = {}) {
  * - `empty`: コメントが無い透明フレーム。実バイトは sink 側が持つ透明 PNG を
  *   使い回す (本番は Rust 側キャッシュ、Node は手元の透明 PNG)。同一の透明
  *   PNG を毎フレーム転送しないための分割。
+ *
+ * 戻り値は「まだ受け付けるか」。`false` を返したら ffmpeg が必要フレームを
+ * 読み終えて stdin を閉じた合図 (元動画が尺の小数秒で終わる一方こちらは
+ * `ceil(尺)*fps` 枚送るため、末尾に余剰フレームが出る)。これは異常ではないので
+ * runFrameLoop は静かに送出を止める。実際の成否は最後の finish で判定する。
  */
 export interface FrameSink {
-  frame(frameIndex: number, png: Uint8Array): Promise<void>;
-  empty(frameIndex: number): Promise<void>;
+  frame(frameIndex: number, png: Uint8Array): Promise<boolean>;
+  empty(frameIndex: number): Promise<boolean>;
 }
 
 export type FrameLoopParams = {
@@ -115,19 +120,28 @@ export async function runFrameLoop(p: FrameLoopParams): Promise<number> {
 
   let offset = Math.ceil(ss * 100);
   let generated = 0;
+  // ffmpeg が stdin を閉じた (= 必要フレームを読み終えた) ら止めるフラグ。
+  let sinkOpen = true;
 
-  while (generated < totalFrames) {
+  while (generated < totalFrames && sinkOpen) {
     for (let i = 0; i < rate; i++) {
       if (p.shouldAbort?.()) return generated;
       const frame = generated;
       const vpos = Math.ceil(i * (100 / rate)) + offset;
       const atVpos = timeline[vpos];
+      let accepted: boolean;
       if (!atVpos || atVpos.length === 0) {
-        await p.sink.empty(frame);
+        accepted = await p.sink.empty(frame);
       } else {
         p.nico.drawCanvas(vpos);
         const png = await p.toPng();
-        await p.sink.frame(frame, png);
+        accepted = await p.sink.frame(frame, png);
+      }
+      if (!accepted) {
+        // ffmpeg が必要分を読み終えて stdin を閉じた。末尾の余剰フレームは
+        // 送っても破棄されるだけなので静かに止める (異常ではない)。
+        sinkOpen = false;
+        break;
       }
       generated++;
       if (generated % yieldEvery === 0) {

@@ -15,14 +15,25 @@ function fakeNico(timeline: Record<number, unknown[]>) {
   return { nico, drawn };
 }
 
-const recordingSink = () => {
+/**
+ * 記録用 sink。`closeAt` を渡すと、その通算フレーム index で `false` を返して
+ * 「ffmpeg が stdin を閉じた (= 必要分を読み終えた)」状況を再現する。
+ */
+const recordingSink = (closeAt = Infinity) => {
   const calls: Array<{ kind: 'frame' | 'empty'; index: number }> = [];
+  let n = 0;
   const sink: FrameSink = {
     async frame(index) {
+      if (n >= closeAt) return false;
+      n++;
       calls.push({ kind: 'frame', index });
+      return true;
     },
     async empty(index) {
+      if (n >= closeAt) return false;
+      n++;
       calls.push({ kind: 'empty', index });
+      return true;
     },
   };
   return { sink, calls };
@@ -119,9 +130,12 @@ describe('runFrameLoop', () => {
     const { nico } = fakeNico({});
     let count = 0;
     const sink: FrameSink = {
-      async frame() {},
+      async frame() {
+        return true;
+      },
       async empty() {
         count++;
+        return true;
       },
     };
     const total = await runFrameLoop({
@@ -134,6 +148,23 @@ describe('runFrameLoop', () => {
     });
     expect(count).toBe(3);
     expect(total).toBe(3);
+  });
+
+  test('sink が false を返したら (ffmpeg が stdin を閉じた) 送出を止める', async () => {
+    // 末尾の余剰フレーム再現: 10 フレーム要求のうち 6 枚目で sink が閉じる。
+    // 余剰分は送らずに止まり、生成数は閉じる直前まで (= 5)。
+    const { nico } = fakeNico({}); // 全 empty
+    const { sink, calls } = recordingSink(5);
+    const total = await runFrameLoop({
+      nico: nico as never,
+      toPng: async () => new Uint8Array(),
+      fps: 10,
+      durationSec: 1, // 要求 10 フレーム
+      sink,
+    });
+    // 5 枚受理 → 6 枚目で false → 即停止。残り 4 枚は送らない。
+    expect(calls.length).toBe(5);
+    expect(total).toBe(5);
   });
 });
 
