@@ -450,6 +450,15 @@ function spawnFfmpegSession(filter: string): FfmpegSession {
     spawnError = e;
   });
 
+  // Capture the process exit ONCE at spawn time. In the surplus-tail case ffmpeg
+  // can emit 'close' between the broken-pipe write and the finish() call, so a
+  // listener registered lazily inside finish() would miss it and hang forever.
+  // Registering here guarantees the exit is observed regardless of timing.
+  const exit: Promise<number | null> = new Promise((resolve) => {
+    child.once('close', (code) => resolve(code));
+    child.once('error', () => resolve(null)); // spawn failure: unblock finish()
+  });
+
   const stdin = child.stdin;
   let closed = false;
   // Swallow any stray async EPIPE so an error between writes never crashes the
@@ -482,25 +491,20 @@ function spawnFfmpegSession(filter: string): FfmpegSession {
       });
     });
 
-  const finish = (): Promise<void> =>
-    new Promise((resolve, reject) => {
-      child.on('close', (code) => {
-        if (code === 0) {
-          resolve();
-        } else {
-          reject(
-            new Error(
-              `ffmpeg exited with code ${code}\n${stderr.split('\n').slice(0, 40).join('\n')}`,
-            ),
-          );
-        }
-      });
-      try {
-        stdin.end();
-      } catch {
-        /* already closed */
-      }
-    });
+  const finish = async (): Promise<void> => {
+    try {
+      stdin.end();
+    } catch {
+      /* already closed */
+    }
+    const code = await exit;
+    if (spawnError) throw spawnError;
+    if (code !== 0) {
+      throw new Error(
+        `ffmpeg exited with code ${code}\n${stderr.split('\n').slice(0, 40).join('\n')}`,
+      );
+    }
+  };
 
   return { args, writePng, finish, getStderr: () => stderr };
 }
