@@ -80,6 +80,11 @@
   let mylists = $state<UserMylistSummary[]>([]);
   let mylistsLoading = $state(false);
   let mylistsError = $state<string | null>(null);
+  // どの userId 分を読み込み済みか。「件数 0 か」では判定しない:
+  // 公開マイリストが 0 件のユーザーだと `mylists.length === 0` が永遠に真のままで、
+  // 読み込み完了 → 効果再発火 → 再読み込み… の無限ループに陥り「読み込み中…」から
+  // 進まなくなる。読み込み済みユーザーを覚える事で空結果でも一度で確定させる。
+  let mylistsLoadedFor = $state<string | null>(null);
 
   // 展開中のマイリスト ID とその動画一覧
   let expandedMylistId = $state<string | null>(null);
@@ -88,13 +93,19 @@
 
   async function loadMylists() {
     if (!userId || kind === 'channel') return;
+    const target = userId;
     mylistsLoading = true;
     mylistsError = null;
     try {
-      const resp = await fetchUserMylists(userId);
+      const resp = await fetchUserMylists(target);
+      if (target !== userId) return; // 読み込み中に別ユーザーへ遷移した
       mylists = resp.items;
+      mylistsLoadedFor = target;
     } catch (e) {
+      if (target !== userId) return;
       mylistsError = String(e);
+      // 空ではなくエラーとして確定させ、無限リトライを防ぐ (エラー表示は出る)。
+      mylistsLoadedFor = target;
     } finally {
       mylistsLoading = false;
     }
@@ -104,6 +115,8 @@
   let seriesList = $state<UserSeriesSummary[]>([]);
   let seriesLoading = $state(false);
   let seriesError = $state<string | null>(null);
+  // マイリスト同様、空結果での無限ループを避けるため読み込み済み userId を覚える。
+  let seriesLoadedFor = $state<string | null>(null);
 
   let expandedSeriesId = $state<string | null>(null);
   let seriesVideos = $state<UserVideoItem[]>([]);
@@ -111,13 +124,18 @@
 
   async function loadSeries() {
     if (!userId || kind === 'channel') return;
+    const target = userId;
     seriesLoading = true;
     seriesError = null;
     try {
-      const resp = await fetchUserSeriesList(userId);
+      const resp = await fetchUserSeriesList(target);
+      if (target !== userId) return;
       seriesList = resp.items;
+      seriesLoadedFor = target;
     } catch (e) {
+      if (target !== userId) return;
       seriesError = String(e);
+      seriesLoadedFor = target;
     } finally {
       seriesLoading = false;
     }
@@ -132,15 +150,26 @@
   });
 
   $effect(() => {
-    if (activeTab === 'mylists' && mylists.length === 0 && !mylistsLoading) {
+    if (activeTab === 'mylists' && mylistsLoadedFor !== userId && !mylistsLoading) {
       loadMylists();
     }
   });
 
   $effect(() => {
-    if (activeTab === 'series' && seriesList.length === 0 && !seriesLoading) {
+    if (activeTab === 'series' && seriesLoadedFor !== userId && !seriesLoading) {
       loadSeries();
     }
+  });
+
+  // プロフィール切替時 (/user/A → /user/B はコンポーネントが再マウントされず
+  // userId だけ変わる) に展開状態を畳む。一覧自体は loadedFor !== userId 判定で
+  // 再取得される。読み取りは userId/kind のみなので他の効果とは競合しない。
+  $effect(() => {
+    void [userId, kind];
+    expandedMylistId = null;
+    mylistVideos = [];
+    expandedSeriesId = null;
+    seriesVideos = [];
   });
 
   let externalHref = $derived(
