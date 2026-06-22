@@ -1028,7 +1028,8 @@ pub async fn fetch_series_videos(
     // Step2/3 のフォールバックへ進む。
     let start_page = page.max(1);
     let batch = page_size.clamp(1, 100);
-    let first = fetch_series_page_nvapi(&client, &series_id, start_page, batch, cookie.clone()).await;
+    let first =
+        fetch_series_page_nvapi(&client, &series_id, start_page, batch, cookie.clone()).await;
 
     let (series_title, series_description, series_thumbnail_url) = match &first {
         Ok((json, _, _)) => {
@@ -1054,7 +1055,8 @@ pub async fn fetch_series_videos(
             const MAX_PAGES: u32 = 50;
             let mut next = start_page + 1;
             while (items.len() as i64) < total_count && next < start_page + MAX_PAGES {
-                match fetch_series_page_nvapi(&client, &series_id, next, batch, cookie.clone()).await
+                match fetch_series_page_nvapi(&client, &series_id, next, batch, cookie.clone())
+                    .await
                 {
                     Ok((_, _, more)) if !more.is_empty() => {
                         items.extend(more);
@@ -1147,8 +1149,9 @@ async fn fetch_series_page_nvapi(
     page_size: u32,
     cookie: Option<String>,
 ) -> Result<(serde_json::Value, i64, Vec<UserVideoItem>)> {
-    let url =
-        format!("https://nvapi.nicovideo.jp/v2/series/{series_id}?page={page}&pageSize={page_size}");
+    let url = format!(
+        "https://nvapi.nicovideo.jp/v2/series/{series_id}?page={page}&pageSize={page_size}"
+    );
     let (json, _body) = nv_get_json(client, &url, cookie, "シリーズ API エラー").await?;
     let total_count = json["data"]["totalCount"].as_i64().unwrap_or(0);
     let items = extract_series_items_from_nvapi(&json);
