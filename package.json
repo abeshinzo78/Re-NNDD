@@ -1,7 +1,7 @@
 {
   "name": "nndd-next",
   "private": true,
-  "version": "0.2.1",
+  "version": "0.2.2",
   "type": "module",
   "description": "Re:NNDD — niconico desktop archive client (Tauri 2 + Svelte 5)",
   "license": "MIT",
