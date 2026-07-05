@@ -10,7 +10,8 @@
  * surface until the HLS downloader (Phase 1.2) lands.
  */
 
-import { createListenerRegistry } from './listenerRegistry';
+import { writeJsonSafe } from './localStorageJson';
+import { createPersistedCollection } from './persistedStore';
 
 export type MylistVideo = {
   videoId: string;
@@ -34,9 +35,6 @@ export type Mylist = {
 const KEY = 'nndd:mylists';
 const SAVED_ID = 'saved';
 
-const { notify, subscribe: subscribeMylists } = createListenerRegistry();
-export { subscribeMylists };
-
 function defaultMylists(): Mylist[] {
   const now = Date.now();
   return [
@@ -51,49 +49,38 @@ function defaultMylists(): Mylist[] {
   ];
 }
 
-function read(): Mylist[] {
-  if (typeof localStorage === 'undefined') return defaultMylists();
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (!raw) return defaultMylists();
-    const parsed = JSON.parse(raw) as Mylist[];
-    if (!Array.isArray(parsed) || parsed.length === 0) return defaultMylists();
-    if (!parsed.some((m) => m.id === SAVED_ID)) {
-      parsed.unshift(defaultMylists()[0]);
-    }
-    // 旧名「保存済み」を「マイリスト」へマイグレート
-    let migrated = false;
-    for (const m of parsed) {
-      if (m.id === SAVED_ID && m.builtin && m.name === '保存済み') {
-        m.name = 'マイリスト';
-        migrated = true;
-      }
-    }
-    if (migrated) {
-      try {
-        localStorage.setItem(KEY, JSON.stringify(parsed));
-      } catch {
-        /* */
-      }
-    }
-    return parsed;
-  } catch {
-    return defaultMylists();
+function reviveMylists(parsed: unknown): Mylist[] {
+  if (!Array.isArray(parsed) || parsed.length === 0) return defaultMylists();
+  const list = parsed as Mylist[];
+  if (!list.some((m) => m.id === SAVED_ID)) {
+    list.unshift(defaultMylists()[0]);
   }
+  // 旧名「保存済み」を「マイリスト」へマイグレート
+  let migrated = false;
+  for (const m of list) {
+    if (m.id === SAVED_ID && m.builtin && m.name === '保存済み') {
+      m.name = 'マイリスト';
+      migrated = true;
+    }
+  }
+  if (migrated) writeJsonSafe(KEY, list);
+  return list;
 }
 
-function write(list: Mylist[]): void {
-  if (typeof localStorage === 'undefined') return;
-  localStorage.setItem(KEY, JSON.stringify(list));
-  notify();
-}
+const {
+  read,
+  write,
+  subscribe: subscribeMylists,
+  getById: getMylist,
+} = createPersistedCollection<Mylist>({
+  key: KEY,
+  fallback: defaultMylists,
+  validate: reviveMylists,
+});
+export { subscribeMylists, getMylist };
 
 export function listMylists(): Mylist[] {
   return read();
-}
-
-export function getMylist(id: string): Mylist | undefined {
-  return read().find((m) => m.id === id);
 }
 
 export function createMylist(name: string): Mylist {

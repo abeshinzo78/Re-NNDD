@@ -37,6 +37,16 @@ export function getHistoryFiltered(source?: HistorySource): HistoryItem[] {
   return all.filter((h) => (h.source ?? 'online') === source);
 }
 
+/**
+ * 同一 `(videoId, source)` のエントリを除いたリストを返す。`source` 省略時は
+ * `'online'` 扱い — online / local は別の視聴体験なので別エントリとして両方残す。
+ * `addHistory` (上へ積み直す前の除去) と `removeHistoryItem` (削除) が共有する。
+ */
+function withoutEntry(list: HistoryItem[], videoId: string, source?: HistorySource): HistoryItem[] {
+  const s = source ?? 'online';
+  return list.filter((h) => !(h.videoId === videoId && (h.source ?? 'online') === s));
+}
+
 export function addHistory(item: Omit<HistoryItem, 'playedAt'>) {
   if (typeof window === 'undefined') return;
   try {
@@ -44,9 +54,7 @@ export function addHistory(item: Omit<HistoryItem, 'playedAt'>) {
     // 同じ videoId + source の組合せは上に持っていく。
     // online と local は別エントリで両方残す（ユーザの体験単位で別物なので）。
     const newSource = item.source ?? 'online';
-    const filtered = current.filter(
-      (h) => !(h.videoId === item.videoId && (h.source ?? 'online') === newSource),
-    );
+    const filtered = withoutEntry(current, item.videoId, newSource);
     filtered.unshift({
       ...item,
       source: newSource,
@@ -70,11 +78,7 @@ export function clearHistory() {
 export function removeHistoryItem(videoId: string, source?: HistorySource) {
   if (typeof window === 'undefined') return;
   try {
-    const current = getHistory();
-    const s = source ?? 'online';
-    const filtered = current.filter(
-      (h) => !(h.videoId === videoId && (h.source ?? 'online') === s),
-    );
+    const filtered = withoutEntry(getHistory(), videoId, source);
     localStorage.setItem(HISTORY_KEY, JSON.stringify(filtered));
   } catch (e) {
     console.warn('Failed to remove history item', e);

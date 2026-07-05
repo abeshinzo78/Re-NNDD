@@ -380,11 +380,10 @@ export async function setSetting(key: SettingKey, value: unknown): Promise<void>
   if (key === LS_THEME_KEY) syncThemeToLocalStorage(raw);
 }
 
-/** 既定値に戻す (DB 行削除)。 */
+/** 既定値に戻す (DB 行削除)。`resetRawSetting` と処理は同一 (SettingKey は
+ *  string の部分型なのでそのまま委譲できる)。型付き公開 API として残す。 */
 export async function resetSetting(key: SettingKey): Promise<void> {
-  delete cache[key];
-  await deleteSettingRaw(key);
-  if (key === LS_THEME_KEY) syncThemeToLocalStorage(null);
+  await resetRawSetting(key);
 }
 
 /** Svelte 内で reactivity に使えるラッパ。`$derived(get(key))` で値を読める。 */
