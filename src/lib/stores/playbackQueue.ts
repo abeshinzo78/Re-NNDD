@@ -10,8 +10,7 @@
  * user expects "play all" to survive incidental refreshes.
  */
 
-import { createListenerRegistry } from './listenerRegistry';
-import { readJson, writeJsonSafe } from './localStorageJson';
+import { createPersistedStore } from './persistedStore';
 
 const KEY = 'nndd:playback-queue';
 
@@ -41,23 +40,20 @@ export type PlaybackQueue = {
   createdAt: number;
 };
 
-const { notify, subscribe: subscribeQueue } = createListenerRegistry();
-export { subscribeQueue };
-
-export function getQueue(): PlaybackQueue | null {
-  return readJson<PlaybackQueue | null>(
-    KEY,
-    () => null,
-    (parsed) => {
-      const q = parsed as PlaybackQueue | null;
-      return q && Array.isArray(q.items) ? q : null;
-    },
-  );
-}
-
-function writeQueue(q: PlaybackQueue | null): void {
-  if (writeJsonSafe(KEY, q)) notify();
-}
+const {
+  read: getQueue,
+  write: writeQueue,
+  subscribe: subscribeQueue,
+} = createPersistedStore<PlaybackQueue | null>({
+  key: KEY,
+  fallback: () => null,
+  validate: (parsed) => {
+    const q = parsed as PlaybackQueue | null;
+    return q && Array.isArray(q.items) ? q : null;
+  },
+  safe: true,
+});
+export { getQueue, subscribeQueue };
 
 /** Replace the queue and return it. The first item is the "current" one. */
 export function setQueue(

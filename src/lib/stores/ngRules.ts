@@ -7,8 +7,7 @@
  * immediately without re-fetching.
  */
 
-import { createListenerRegistry } from './listenerRegistry';
-import { readJson, writeJson } from './localStorageJson';
+import { createPersistedStore } from './persistedStore';
 
 export type NgTargetType =
   | 'video_title'
@@ -46,20 +45,16 @@ export type NgRule = {
 
 const KEY = 'nndd:ngRules';
 
-const { notify, subscribe: subscribeNgRules } = createListenerRegistry();
+const {
+  read,
+  write,
+  subscribe: subscribeNgRules,
+} = createPersistedStore<NgRule[]>({
+  key: KEY,
+  fallback: () => [],
+  validate: (parsed) => (Array.isArray(parsed) ? (parsed as NgRule[]) : []),
+});
 export { subscribeNgRules };
-
-function read(): NgRule[] {
-  return readJson<NgRule[]>(
-    KEY,
-    () => [],
-    (parsed) => (Array.isArray(parsed) ? (parsed as NgRule[]) : []),
-  );
-}
-
-function write(list: NgRule[]) {
-  if (writeJson(KEY, list)) notify();
-}
 
 export function listNgRules(): NgRule[] {
   return read();

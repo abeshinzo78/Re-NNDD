@@ -13,8 +13,7 @@
  */
 
 import type { FilterClause, SearchField, SearchQuery, SearchTarget, SortSpec } from '$lib/api';
-import { createListenerRegistry } from './listenerRegistry';
-import { readJson, writeJsonSafe } from './localStorageJson';
+import { createPersistedCollection } from './persistedStore';
 
 const KEY = 'nndd:smart-playlists';
 
@@ -61,32 +60,25 @@ export type SmartPlaylist = {
   filter: SmartPlaylistFilter;
 };
 
-const { notify, subscribe: subscribeSmartPlaylists } = createListenerRegistry();
-export { subscribeSmartPlaylists };
-
-function read(): SmartPlaylist[] {
-  return readJson<SmartPlaylist[]>(
-    KEY,
-    () => [],
-    (parsed) =>
-      Array.isArray(parsed)
-        ? (parsed as SmartPlaylist[]).filter(
-            (p) => p && typeof p.id === 'string' && typeof p.name === 'string',
-          )
-        : [],
-  );
-}
-
-function write(list: SmartPlaylist[]): void {
-  if (writeJsonSafe(KEY, list)) notify();
-}
+const {
+  read,
+  write,
+  subscribe: subscribeSmartPlaylists,
+  getById: getSmartPlaylist,
+} = createPersistedCollection<SmartPlaylist>({
+  key: KEY,
+  validate: (parsed) =>
+    Array.isArray(parsed)
+      ? (parsed as SmartPlaylist[]).filter(
+          (p) => p && typeof p.id === 'string' && typeof p.name === 'string',
+        )
+      : [],
+  safe: true,
+});
+export { subscribeSmartPlaylists, getSmartPlaylist };
 
 export function listSmartPlaylists(): SmartPlaylist[] {
   return read();
-}
-
-export function getSmartPlaylist(id: string): SmartPlaylist | undefined {
-  return read().find((p) => p.id === id);
 }
 
 function newId(): string {
