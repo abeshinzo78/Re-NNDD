@@ -10,8 +10,8 @@
  * surface until the HLS downloader (Phase 1.2) lands.
  */
 
-import { createListenerRegistry } from './listenerRegistry';
-import { readJson, writeJson, writeJsonSafe } from './localStorageJson';
+import { writeJsonSafe } from './localStorageJson';
+import { createPersistedCollection } from './persistedStore';
 
 export type MylistVideo = {
   videoId: string;
@@ -34,9 +34,6 @@ export type Mylist = {
 
 const KEY = 'nndd:mylists';
 const SAVED_ID = 'saved';
-
-const { notify, subscribe: subscribeMylists } = createListenerRegistry();
-export { subscribeMylists };
 
 function defaultMylists(): Mylist[] {
   const now = Date.now();
@@ -70,20 +67,20 @@ function reviveMylists(parsed: unknown): Mylist[] {
   return list;
 }
 
-function read(): Mylist[] {
-  return readJson(KEY, defaultMylists, reviveMylists);
-}
-
-function write(list: Mylist[]): void {
-  if (writeJson(KEY, list)) notify();
-}
+const {
+  read,
+  write,
+  subscribe: subscribeMylists,
+  getById: getMylist,
+} = createPersistedCollection<Mylist>({
+  key: KEY,
+  fallback: defaultMylists,
+  validate: reviveMylists,
+});
+export { subscribeMylists, getMylist };
 
 export function listMylists(): Mylist[] {
   return read();
-}
-
-export function getMylist(id: string): Mylist | undefined {
-  return read().find((m) => m.id === id);
 }
 
 export function createMylist(name: string): Mylist {

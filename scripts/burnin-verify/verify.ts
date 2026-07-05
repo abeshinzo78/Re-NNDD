@@ -23,7 +23,7 @@ import { buildNiconiOptions } from '../../src/lib/burnin/core';
 import { runFrameLoop } from '../../src/lib/burnin/core';
 import { toV1Threads } from '../../src/lib/burnin/comments';
 import type { FrameSink } from '../../src/lib/burnin/core';
-import type { PlayerComment } from '../../src/lib/player/types';
+import type { NvCommentSetup, PlayerComment } from '../../src/lib/player/types';
 
 // ---------------------------------------------------------------------------
 // Constants (mirror the Rust constants verbatim where applicable)
@@ -150,8 +150,6 @@ function htmlUnescape(s: string): string {
 
 // <meta name="server-response" content="([^"]*)"  (api/video.rs meta_regex)
 const META_RE = /<meta name="server-response" content="([^"]*)"/;
-
-type NvCommentSetup = { server: string; threadKey: string; params: unknown };
 
 // ---------------------------------------------------------------------------
 // Step 1: fetch the watch page and extract duration + nvComment
