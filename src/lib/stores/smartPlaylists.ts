@@ -14,6 +14,7 @@
 
 import type { FilterClause, SearchField, SearchQuery, SearchTarget, SortSpec } from '$lib/api';
 import { createListenerRegistry } from './listenerRegistry';
+import { readJson, writeJsonSafe } from './localStorageJson';
 
 const KEY = 'nndd:smart-playlists';
 
@@ -64,26 +65,20 @@ const { notify, subscribe: subscribeSmartPlaylists } = createListenerRegistry();
 export { subscribeSmartPlaylists };
 
 function read(): SmartPlaylist[] {
-  if (typeof localStorage === 'undefined') return [];
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as SmartPlaylist[];
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter((p) => p && typeof p.id === 'string' && typeof p.name === 'string');
-  } catch {
-    return [];
-  }
+  return readJson<SmartPlaylist[]>(
+    KEY,
+    () => [],
+    (parsed) =>
+      Array.isArray(parsed)
+        ? (parsed as SmartPlaylist[]).filter(
+            (p) => p && typeof p.id === 'string' && typeof p.name === 'string',
+          )
+        : [],
+  );
 }
 
 function write(list: SmartPlaylist[]): void {
-  if (typeof localStorage === 'undefined') return;
-  try {
-    localStorage.setItem(KEY, JSON.stringify(list));
-  } catch {
-    /* quota — ignore */
-  }
-  notify();
+  if (writeJsonSafe(KEY, list)) notify();
 }
 
 export function listSmartPlaylists(): SmartPlaylist[] {

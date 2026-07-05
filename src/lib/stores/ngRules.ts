@@ -8,6 +8,7 @@
  */
 
 import { createListenerRegistry } from './listenerRegistry';
+import { readJson, writeJson } from './localStorageJson';
 
 export type NgTargetType =
   | 'video_title'
@@ -49,21 +50,15 @@ const { notify, subscribe: subscribeNgRules } = createListenerRegistry();
 export { subscribeNgRules };
 
 function read(): NgRule[] {
-  if (typeof localStorage === 'undefined') return [];
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as NgRule[];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
+  return readJson<NgRule[]>(
+    KEY,
+    () => [],
+    (parsed) => (Array.isArray(parsed) ? (parsed as NgRule[]) : []),
+  );
 }
 
 function write(list: NgRule[]) {
-  if (typeof localStorage === 'undefined') return;
-  localStorage.setItem(KEY, JSON.stringify(list));
-  notify();
+  if (writeJson(KEY, list)) notify();
 }
 
 export function listNgRules(): NgRule[] {

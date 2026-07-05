@@ -11,6 +11,7 @@
  */
 
 import { createListenerRegistry } from './listenerRegistry';
+import { readJson, writeJsonSafe } from './localStorageJson';
 
 const KEY = 'nndd:playback-queue';
 
@@ -44,27 +45,18 @@ const { notify, subscribe: subscribeQueue } = createListenerRegistry();
 export { subscribeQueue };
 
 export function getQueue(): PlaybackQueue | null {
-  if (typeof localStorage === 'undefined') return null;
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as PlaybackQueue;
-    if (!parsed || !Array.isArray(parsed.items)) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
+  return readJson<PlaybackQueue | null>(
+    KEY,
+    () => null,
+    (parsed) => {
+      const q = parsed as PlaybackQueue | null;
+      return q && Array.isArray(q.items) ? q : null;
+    },
+  );
 }
 
 function writeQueue(q: PlaybackQueue | null): void {
-  if (typeof localStorage === 'undefined') return;
-  try {
-    if (q == null) localStorage.removeItem(KEY);
-    else localStorage.setItem(KEY, JSON.stringify(q));
-  } catch {
-    /* quota / private mode — silently ignore */
-  }
-  notify();
+  if (writeJsonSafe(KEY, q)) notify();
 }
 
 /** Replace the queue and return it. The first item is the "current" one. */
