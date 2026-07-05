@@ -74,6 +74,46 @@ where
     .await
 }
 
+/// yt-dlp に渡す固定フラグ列（出力先 `-P`・`--ffmpeg-location`・`--cookies`・
+/// URL 以外のすべて）。yt-dlp はフラグ順に依存しないので、動的な出力先とは
+/// 分離して定数化し、単体テストで内容を固定できるようにしている。
+///
+/// サイドカー出力 (`--write-info-json` / `--write-thumbnail` /
+/// `--write-description`) は embed とは別に必ず残す。ライブラリ取り込み
+/// (`commands.rs`) が `video.jpg` / `video.description` / info.json を直接
+/// リネーム・参照しているため、embed へ置き換えると取り込みが壊れる。
+///
+/// `--embed-metadata` / `--embed-thumbnail` は mp4 にタイトル・投稿者・投稿日・
+/// 元 URL・サムネイルを焼き込む（要望対応: メタデータを焼いておくと、後から
+/// ファイル単体で中身を辿るのが楽になる）。EmbedThumbnail は mutagen /
+/// AtomicParsley が無い環境でも ffmpeg にフォールバックし、attached_pic として
+/// 埋め込む（実機の niconico DL で検証済み）。サムネの取れない動画でも当該
+/// postprocessor は非致命的に skip するだけで DL 自体は失敗しない。
+const YTDLP_STATIC_ARGS: &[&str] = &[
+    "--no-warnings",
+    "--newline",
+    "--no-colors",
+    "--no-mtime",
+    "--no-playlist",
+    "-o",
+    "video.%(ext)s",
+    "-f",
+    "bv*+ba/b",
+    "--merge-output-format",
+    "mp4",
+    "--write-info-json",
+    "--write-thumbnail",
+    "--write-description",
+    "--convert-thumbnails",
+    "jpg",
+    "--embed-metadata",
+    "--embed-thumbnail",
+    "--postprocessor-args",
+    "ffmpeg:-movflags +faststart",
+    "--progress-template",
+    "nndd-progress:%(progress._percent_str)s",
+];
+
 async fn download_inner<F>(
     app: Option<&tauri::AppHandle>,
     url: &str,
@@ -122,28 +162,9 @@ where
     // `tokio::process::Command::process_group` は tokio 1.27 以降の API。
     #[cfg(unix)]
     cmd.process_group(0);
-    cmd.arg("--no-warnings")
-        .arg("--newline")
-        .arg("--no-colors")
-        .arg("--no-mtime")
-        .arg("--no-playlist")
-        .arg("-P")
-        .arg(output_dir)
-        .arg("-o")
-        .arg("video.%(ext)s")
-        .arg("-f")
-        .arg("bv*+ba/b")
-        .arg("--merge-output-format")
-        .arg("mp4")
-        .arg("--write-info-json")
-        .arg("--write-thumbnail")
-        .arg("--write-description")
-        .arg("--convert-thumbnails")
-        .arg("jpg")
-        .arg("--postprocessor-args")
-        .arg("ffmpeg:-movflags +faststart")
-        .arg("--progress-template")
-        .arg("nndd-progress:%(progress._percent_str)s");
+    // 出力先だけ動的。残りの固定フラグ（embed / サイドカー / 進捗テンプレ等）は
+    // YTDLP_STATIC_ARGS にまとめてある。yt-dlp はフラグ順非依存なので分離してよい。
+    cmd.arg("-P").arg(output_dir).args(YTDLP_STATIC_ARGS);
 
     // バンドル ffmpeg を yt-dlp に明示。PATH の ffmpeg は無視させる。
     let ff = tools::ffmpeg(app);
@@ -432,5 +453,24 @@ mod tests {
         assert_eq!(s.matches("\tuser_session\tabc\n").count(), 1);
         assert!(!s.contains("\tnovalue\t"));
         assert!(!s.contains("\tbroken\t"));
+    }
+
+    #[test]
+    fn static_args_embed_metadata_and_thumbnail() {
+        // 要望対応: メタデータ/サムネを mp4 に焼き込むフラグが必ず載っていること。
+        assert!(YTDLP_STATIC_ARGS.contains(&"--embed-metadata"));
+        assert!(YTDLP_STATIC_ARGS.contains(&"--embed-thumbnail"));
+    }
+
+    #[test]
+    fn static_args_keep_sidecar_outputs() {
+        // embed を足してもサイドカー出力は残す。commands.rs のライブラリ取り込みが
+        // video.jpg / video.description / info.json を直接参照しているため、
+        // これらを消すと取り込みが壊れる（回帰防止）。
+        assert!(YTDLP_STATIC_ARGS.contains(&"--write-info-json"));
+        assert!(YTDLP_STATIC_ARGS.contains(&"--write-thumbnail"));
+        assert!(YTDLP_STATIC_ARGS.contains(&"--write-description"));
+        // サムネは jpg に正規化してから焼く（EmbedThumbnail が食える形式）。
+        assert!(YTDLP_STATIC_ARGS.contains(&"--convert-thumbnails"));
     }
 }
