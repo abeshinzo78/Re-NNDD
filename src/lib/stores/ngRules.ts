@@ -45,7 +45,11 @@ export type NgRule = {
 
 const KEY = 'nndd:ngRules';
 
-const { read, write, subscribe: subscribeNgRules } = createPersistedStore<NgRule[]>({
+const {
+  read,
+  write,
+  subscribe: subscribeNgRules,
+} = createPersistedStore<NgRule[]>({
   key: KEY,
   fallback: () => [],
   validate: (parsed) => (Array.isArray(parsed) ? (parsed as NgRule[]) : []),
