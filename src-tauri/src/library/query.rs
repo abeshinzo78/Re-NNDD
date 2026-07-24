@@ -1486,12 +1486,8 @@ mod tests {
     #[test]
     fn list_uploaders_reports_uploader_type() {
         let mut conn = setup();
-        conn.execute(
-            "UPDATE videos SET uploader_type = 'channel' WHERE uploader_id = 'u3'",
-            [],
-        )
-        .unwrap();
         seed_library(&mut conn);
+        // シードは uploader_type を入れないので、ここで channel に上書きする。
         conn.execute(
             "UPDATE videos SET uploader_type = 'channel' WHERE uploader_id = 'u3'",
             [],
