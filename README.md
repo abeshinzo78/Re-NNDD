@@ -57,8 +57,8 @@ Discord鯖はこちらです　https://discord.gg/cDhnfZ6HMa
 **検索・閲覧**
 
 - 動画検索（スナップショット検索 API / nvapi の切り替えに対応）
-- ランキングの閲覧（ジャンル・タグ別、ショートランキング対応）
-- ユーザー/チャンネルの投稿動画・マイリスト・シリーズ一覧の取得
+- ランキングの閲覧（ジャンル・期間別、ショートランキング対応）
+- ユーザーの投稿動画・マイリスト・シリーズ一覧、チャンネルの投稿動画一覧の取得
 - 関連動画の表示
 - 再生履歴の記録・一覧・削除
 
@@ -76,7 +76,7 @@ Discord鯖はこちらです　https://discord.gg/cDhnfZ6HMa
 
 - ダウンロードキューの管理（追加・一覧・開始・キャンセル・完了削除）
 - `yt-dlp` + `ffmpeg` を使った動画保存とライブラリ取り込み（メタデータ/サムネイルを mp4 へ埋め込み）
-- 検索結果・ランキングなど各画面からのクイックダウンロード
+- 検索結果・ランキング・関連動画・動画詳細ページからのクイックダウンロード
 
 **ライブラリ**
 
@@ -185,11 +185,12 @@ npm run lint
 npm test
 ```
 
-実アプリを起動する E2E スモークテスト（要: デバッグビルド、`tauri-driver`、X サーバ）:
+実アプリを起動する E2E スモークテスト（要: デバッグビルド、`tauri-driver`。Linux はさらに `webkit2gtk-driver` と `xvfb` が必要）:
 
 ```bash
+sudo apt-get install webkit2gtk-driver xvfb   # Linux (Debian/Ubuntu 系) のみ
 npx tauri build --debug --no-bundle
-cargo install tauri-driver   # 初回のみ
+cargo install tauri-driver --locked           # 初回のみ
 xvfb-run -a npm run test:e2e
 ```
 
