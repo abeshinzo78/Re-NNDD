@@ -421,6 +421,8 @@ export type LibraryQueryParams = {
   isShort?: boolean;
   sortBy?: string;
   sortOrder?: 'asc' | 'desc';
+  /** `sortBy: 'random'` の並びをページ間で固定する種。 */
+  randomSeed?: number;
   offset?: number;
   limit?: number;
 };
@@ -526,6 +528,9 @@ export type UploaderInfo = {
   uploaderName: string | null;
   videoCount: number;
   totalDurationSec: number;
+  /** `"user"` / `"channel"`。オンライン検索で userId と channelId の
+   *  どちらで絞るかがこれで決まる。不明な取り込み済み動画は null。 */
+  uploaderType: string | null;
 };
 
 export async function listLibraryUploaders(limit?: number): Promise<UploaderInfo[]> {

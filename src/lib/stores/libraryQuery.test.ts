@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { normalizeFilter } from './smartPlaylists';
+import { filterToSearchQuery, normalizeFilter } from './smartPlaylists';
 import {
   activeFilterCount,
   addTagFilter,
   buildLibraryQuery,
   canSearchComments,
+  checkSmartPlaylistSave,
   clampPage,
   clearLibraryFilter,
   clearLibraryFilters,
@@ -17,14 +18,17 @@ import {
   LIBRARY_SORT_OPTIONS,
   loadLibraryFilter,
   minutesToSeconds,
+  newRandomSeed,
   normalizeLibraryFilter,
   pageCount,
   parseStartTime,
   patchLibraryFilter,
   removeTagFilter,
+  RANDOM_SEED_MAX,
   resultRangeLabel,
   saveLibraryFilter,
   secondsToMinutes,
+  sortLabel,
   summarizeLibraryFilter,
   toSmartPlaylistFilter,
   type LibraryFilterState,
@@ -195,6 +199,7 @@ describe('タグフィルタ操作', () => {
       q: 'ミク',
       tags: ['VOCALOID'],
       uploaderId: '1',
+      uploaderType: 'user',
       resolution: '1280x720',
       isShort: true,
       minMinutes: '1',
@@ -207,6 +212,7 @@ describe('タグフィルタ操作', () => {
       q: 'ミク',
       tags: [],
       uploaderId: '',
+      uploaderType: '',
       resolution: '',
       isShort: false,
       minMinutes: '',
@@ -243,6 +249,37 @@ describe('activeFilterCount', () => {
   });
 });
 
+describe('ランダム順の種', () => {
+  it('種は sortBy=random のときだけ送る', () => {
+    expect('randomSeed' in buildLibraryQuery(state({ sortBy: 'title', randomSeed: 42 }))).toBe(
+      false,
+    );
+    expect(buildLibraryQuery(state({ sortBy: 'random', randomSeed: 42 })).randomSeed).toBe(42);
+  });
+
+  it('種が未設定 (0) なら送らない', () => {
+    expect('randomSeed' in buildLibraryQuery(state({ sortBy: 'random', randomSeed: 0 }))).toBe(
+      false,
+    );
+  });
+
+  it('newRandomSeed は Rust 側の法に収まる正の整数', () => {
+    for (let i = 0; i < 200; i++) {
+      const seed = newRandomSeed();
+      expect(Number.isInteger(seed)).toBe(true);
+      expect(seed).toBeGreaterThan(0);
+      expect(seed).toBeLessThanOrEqual(RANDOM_SEED_MAX);
+    }
+  });
+
+  it('ページ送りでは種が保たれる (並びが変わらない)', () => {
+    const s = patchLibraryFilter(state({ sortBy: 'random', randomSeed: 777 }), { page: 2 });
+    const q = buildLibraryQuery(s);
+    expect(q.randomSeed).toBe(777);
+    expect(q.offset).toBe(2 * DEFAULT_LIBRARY_FILTER.pageSize);
+  });
+});
+
 describe('toSmartPlaylistFilter', () => {
   it('オンライン検索に無い条件 (解像度・ショート) は渡さない', () => {
     const f = toSmartPlaylistFilter(
@@ -263,6 +300,76 @@ describe('toSmartPlaylistFilter', () => {
       sortBy: 'downloaded_at',
       sortOrder: 'desc',
     });
+  });
+
+  it('投稿者の種別 (channel/user) を引き継ぐ', () => {
+    expect(
+      toSmartPlaylistFilter(state({ q: 'a', uploaderId: 'ch123', uploaderType: 'channel' }))
+        .uploaderType,
+    ).toBe('channel');
+    expect(
+      toSmartPlaylistFilter(state({ q: 'a', uploaderId: 'u1', uploaderType: 'user' })).uploaderType,
+    ).toBe('user');
+  });
+
+  it('種別不明なら渡さない (呼び出し先は user 扱い)', () => {
+    const f = toSmartPlaylistFilter(state({ q: 'a', uploaderId: 'u1', uploaderType: '' }));
+    expect('uploaderType' in f).toBe(false);
+  });
+
+  it('チャンネル投稿は channelId で検索される', () => {
+    const f = normalizeFilter(
+      toSmartPlaylistFilter(state({ q: 'a', uploaderId: 'ch123', uploaderType: 'channel' })),
+    );
+    const query = filterToSearchQuery(f);
+    expect(query.filters).toContainEqual({ field: 'channelId', op: 'eq', value: 'ch123' });
+  });
+
+  it('ユーザ投稿 / 種別不明は userId で検索される', () => {
+    for (const uploaderType of ['user', '']) {
+      const f = normalizeFilter(
+        toSmartPlaylistFilter(state({ q: 'a', uploaderId: '1', uploaderType })),
+      );
+      expect(filterToSearchQuery(f).filters).toContainEqual({
+        field: 'userId',
+        op: 'eq',
+        value: '1',
+      });
+    }
+  });
+});
+
+describe('checkSmartPlaylistSave', () => {
+  it('キーワードかタグが要る (投稿者だけでは保存させない)', () => {
+    expect(checkSmartPlaylistSave(state({ q: 'ミク' })).canSave).toBe(true);
+    expect(checkSmartPlaylistSave(state({ tags: ['東方'] })).canSave).toBe(true);
+    // Snapshot Search は q 必須で、投稿者 ID からは q を組み立てられない
+    expect(checkSmartPlaylistSave(state({ uploaderId: '1234' })).canSave).toBe(false);
+    expect(checkSmartPlaylistSave(DEFAULT_LIBRARY_FILTER).canSave).toBe(false);
+  });
+
+  it('落ちる条件を列挙する (解像度・ショート・ローカル専用の並び順)', () => {
+    const { dropped } = checkSmartPlaylistSave(
+      state({ q: 'ミク', resolution: '1280x720', isShort: true, sortBy: 'downloaded_at' }),
+    );
+    expect(dropped).toEqual(['解像度', 'ショート', '並び順「DL 日時」']);
+  });
+
+  it('オンラインでも使える並び順なら並び順は落ちない', () => {
+    expect(checkSmartPlaylistSave(state({ q: 'ミク', sortBy: 'view_count' })).dropped).toEqual([]);
+  });
+
+  it('ローカル専用の並び順はすべて警告対象', () => {
+    for (const sortBy of [
+      'downloaded_at',
+      'title',
+      'play_count',
+      'last_played_at',
+      'random',
+    ] as const) {
+      const { dropped } = checkSmartPlaylistSave(state({ q: 'ミク', sortBy }));
+      expect(dropped).toEqual([`並び順「${sortLabel(sortBy)}」`]);
+    }
   });
 
   it('ローカル専用の並び順は smartPlaylists 側の正規化で落ちる', () => {
@@ -372,12 +479,14 @@ describe('normalizeLibraryFilter', () => {
       q: 42,
       tags: ['A', '', '  A  ', 7],
       uploaderId: ' 1234 ',
+      uploaderType: 'channel',
       resolution: ' 1280x720 ',
       isShort: 'yes',
       minMinutes: 'abc',
       maxMinutes: 90,
       sortBy: 'DROP TABLE videos',
       sortOrder: 'sideways',
+      randomSeed: -5,
       pageSize: 999,
       page: -3,
     });
@@ -386,15 +495,35 @@ describe('normalizeLibraryFilter', () => {
       q: '',
       tags: ['A'],
       uploaderId: '1234',
+      uploaderType: 'channel',
       resolution: '1280x720',
       isShort: false,
       minMinutes: '',
       maxMinutes: '90',
       sortBy: 'downloaded_at',
       sortOrder: 'desc',
+      randomSeed: 0,
       pageSize: DEFAULT_LIBRARY_FILTER.pageSize,
       page: 0,
     });
+  });
+
+  it('投稿者が選ばれていない / 不明な種別は落とす', () => {
+    expect(normalizeLibraryFilter({ uploaderType: 'channel' }).uploaderType).toBe('');
+    expect(normalizeLibraryFilter({ uploaderId: 'u1', uploaderType: 'both' }).uploaderType).toBe(
+      '',
+    );
+    expect(normalizeLibraryFilter({ uploaderId: 'u1', uploaderType: 'user' }).uploaderType).toBe(
+      'user',
+    );
+  });
+
+  it('ランダム順の種は範囲外を捨てる', () => {
+    expect(normalizeLibraryFilter({ randomSeed: 12345 }).randomSeed).toBe(12345);
+    expect(normalizeLibraryFilter({ randomSeed: 0 }).randomSeed).toBe(0);
+    expect(normalizeLibraryFilter({ randomSeed: -1 }).randomSeed).toBe(0);
+    expect(normalizeLibraryFilter({ randomSeed: RANDOM_SEED_MAX + 1 }).randomSeed).toBe(0);
+    expect(normalizeLibraryFilter({ randomSeed: 'abc' }).randomSeed).toBe(0);
   });
 
   it('null / 非オブジェクトは既定値', () => {

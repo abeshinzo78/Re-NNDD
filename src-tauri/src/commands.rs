@@ -3160,6 +3160,7 @@ pub struct UploaderInfoDto {
     pub uploader_name: Option<String>,
     pub video_count: i64,
     pub total_duration_sec: i64,
+    pub uploader_type: Option<String>,
 }
 
 impl From<query::UploaderInfo> for UploaderInfoDto {
@@ -3169,6 +3170,7 @@ impl From<query::UploaderInfo> for UploaderInfoDto {
             uploader_name: u.uploader_name,
             video_count: u.video_count,
             total_duration_sec: u.total_duration_sec,
+            uploader_type: u.uploader_type,
         }
     }
 }

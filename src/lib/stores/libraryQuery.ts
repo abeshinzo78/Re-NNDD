@@ -12,7 +12,7 @@
  */
 
 import type { LibraryQueryParams } from '$lib/api';
-import type { SmartPlaylistFilter } from './smartPlaylists';
+import { isOnlineSortBy, type SmartPlaylistFilter } from './smartPlaylists';
 
 /** 動画検索 / 保存コメントの横断検索。 */
 export type LibrarySearchMode = 'videos' | 'comments';
@@ -71,6 +71,10 @@ export type LibraryFilterState = {
   tags: string[];
   /** 空文字 = 絞り込みなし。 */
   uploaderId: string;
+  /** 選択中の投稿者が `user` か `channel` か (不明なら空文字)。
+   *  ローカル検索では使わないが、スマートプレイリストへ持ち出す時に
+   *  `userId` / `channelId` のどちらで引くかがこれで決まる。 */
+  uploaderType: string;
   /** 空文字 = 絞り込みなし。`"1280x720"` のような完全一致値。 */
   resolution: string;
   /** true の時だけショート動画に限定 (false は「絞り込みなし」)。 */
@@ -80,6 +84,9 @@ export type LibraryFilterState = {
   maxMinutes: string;
   sortBy: LibrarySortKey;
   sortOrder: 'asc' | 'desc';
+  /** `sortBy === 'random'` の並びをページ間で固定する種。
+   *  0 = 未設定 (毎リクエスト `ORDER BY RANDOM()` のまま)。 */
+  randomSeed: number;
   pageSize: number;
   /** 0 始まりのページ番号。 */
   page: number;
@@ -90,15 +97,26 @@ export const DEFAULT_LIBRARY_FILTER: LibraryFilterState = {
   q: '',
   tags: [],
   uploaderId: '',
+  uploaderType: '',
   resolution: '',
   isShort: false,
   minMinutes: '',
   maxMinutes: '',
   sortBy: 'downloaded_at',
   sortOrder: 'desc',
+  randomSeed: 0,
   pageSize: 48,
   page: 0,
 };
+
+/** ランダム順の種の上限 (Rust 側の法 2^31-1 に合わせる)。 */
+export const RANDOM_SEED_MAX = 2_147_483_646;
+
+/** 新しいランダム順の種を引く。「ランダム」を選び直す / 更新を押すたびに
+ *  引き直すことで、シャッフルし直しつつページ送り中は並びを保てる。 */
+export function newRandomSeed(): number {
+  return Math.floor(Math.random() * RANDOM_SEED_MAX) + 1;
+}
 
 /** 分入力 → 秒。空 / 数値でない / 負値は `undefined` (＝条件なし)。 */
 export function minutesToSeconds(input: string): number | undefined {
@@ -147,6 +165,7 @@ export function clearLibraryFilters(state: LibraryFilterState): LibraryFilterSta
   return patchLibraryFilter(state, {
     tags: [],
     uploaderId: '',
+    uploaderType: '',
     resolution: '',
     isShort: false,
     minMinutes: '',
@@ -175,6 +194,9 @@ export function buildLibraryQuery(state: LibraryFilterState): LibraryQueryParams
     limit: state.pageSize,
     offset: state.page * state.pageSize,
   };
+  // ランダム順は種を渡してページ間で並びを固定する (種なしだとページごとに
+  // 引き直されて、同じ動画が再登場したり抜け落ちたりする)。
+  if (state.sortBy === 'random' && state.randomSeed > 0) params.randomSeed = state.randomSeed;
   const q = state.q.trim();
   if (q) params.q = q;
   if (state.tags.length > 0) params.tags = [...state.tags];
@@ -196,7 +218,13 @@ export function toSmartPlaylistFilter(state: LibraryFilterState): SmartPlaylistF
   const q = state.q.trim();
   if (q) filter.q = q;
   if (state.tags.length > 0) filter.tags = [...state.tags];
-  if (state.uploaderId) filter.uploaderId = state.uploaderId;
+  if (state.uploaderId) {
+    filter.uploaderId = state.uploaderId;
+    // 種別が分かっている時だけ渡す。チャンネル投稿を userId で引くと
+    // 別名前空間になり、無関係な結果 / 0 件になる。
+    if (state.uploaderType === 'channel' || state.uploaderType === 'user')
+      filter.uploaderType = state.uploaderType;
+  }
   const min = minutesToSeconds(state.minMinutes);
   if (min != null) filter.minDuration = min;
   const max = minutesToSeconds(state.maxMinutes);
@@ -204,6 +232,32 @@ export function toSmartPlaylistFilter(state: LibraryFilterState): SmartPlaylistF
   filter.sortBy = state.sortBy;
   filter.sortOrder = state.sortOrder;
   return filter;
+}
+
+/** 並び順キーの表示名。未知のキーはキーそのものを返す。 */
+export function sortLabel(key: string): string {
+  return LIBRARY_SORT_OPTIONS.find((o) => o.value === key)?.label ?? key;
+}
+
+export type SmartPlaylistSaveCheck = {
+  /** Snapshot Search は `q` 必須。キーワードかタグが無いと保存しても
+   *  スマートプレイリスト側で「検索条件が空です」になる
+   *  (投稿者 ID だけでは `q` を組み立てられない)。 */
+  canSave: boolean;
+  /** オンライン検索へ持ち出せず、保存時に落ちる条件の表示名。 */
+  dropped: string[];
+};
+
+/** 現在の検索条件をスマートプレイリストとして保存できるか判定する。 */
+export function checkSmartPlaylistSave(state: LibraryFilterState): SmartPlaylistSaveCheck {
+  const online = toSmartPlaylistFilter(state);
+  const dropped: string[] = [];
+  if (state.resolution) dropped.push('解像度');
+  if (state.isShort) dropped.push('ショート');
+  // ローカル専用の並び順は normalizeFilter で落ち、オンラインでは
+  // 再生数降順にフォールバックする。黙って変わらないよう明示する。
+  if (!isOnlineSortBy(state.sortBy)) dropped.push(`並び順「${sortLabel(state.sortBy)}」`);
+  return { canSave: !!(online.q || online.tags?.length), dropped };
 }
 
 /** コメント検索を投げてよいか (3 文字未満はバックエンドがエラーにする)。 */
@@ -291,17 +345,31 @@ export function normalizeLibraryFilter(raw: unknown): LibraryFilterState {
     : DEFAULT_LIBRARY_FILTER.pageSize;
   const page =
     typeof r.page === 'number' && Number.isFinite(r.page) && r.page >= 0 ? Math.floor(r.page) : 0;
+  const uploaderId = typeof r.uploaderId === 'string' ? r.uploaderId.trim() : '';
+  const randomSeed =
+    typeof r.randomSeed === 'number' &&
+    Number.isFinite(r.randomSeed) &&
+    r.randomSeed > 0 &&
+    r.randomSeed <= RANDOM_SEED_MAX
+      ? Math.floor(r.randomSeed)
+      : 0;
   return {
     mode: r.mode === 'comments' ? 'comments' : 'videos',
     q: typeof r.q === 'string' ? r.q : '',
     tags: toStringArray(r.tags),
-    uploaderId: typeof r.uploaderId === 'string' ? r.uploaderId.trim() : '',
+    uploaderId,
+    // 種別は投稿者が選ばれている時だけ意味を持つ。
+    uploaderType:
+      uploaderId && (r.uploaderType === 'channel' || r.uploaderType === 'user')
+        ? r.uploaderType
+        : '',
     resolution: typeof r.resolution === 'string' ? r.resolution.trim() : '',
     isShort: r.isShort === true,
     minMinutes: toNumericInput(r.minMinutes),
     maxMinutes: toNumericInput(r.maxMinutes),
     sortBy: isLibrarySortKey(r.sortBy) ? r.sortBy : DEFAULT_LIBRARY_FILTER.sortBy,
     sortOrder: r.sortOrder === 'asc' ? 'asc' : 'desc',
+    randomSeed,
     pageSize,
     page,
   };

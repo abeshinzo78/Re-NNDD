@@ -25,12 +25,14 @@
     buildLibraryQuery,
     canSearchComments,
     clampPage,
+    checkSmartPlaylistSave,
     clearLibraryFilters,
     commentHitHref,
     COMMENT_SEARCH_MIN_CHARS,
     LIBRARY_PAGE_SIZES,
     LIBRARY_SORT_OPTIONS,
     loadLibraryFilter,
+    newRandomSeed,
     patchLibraryFilter,
     pageCount,
     removeTagFilter,
@@ -65,7 +67,26 @@
   let filtersOpen = $state(false);
   let tagInput = $state('');
 
+  /** `list_library_uploaders` がまとめて返せる上限 (Rust 側で 200 に丸められる)。 */
+  const UPLOADER_LIST_LIMIT = 200;
+
   let activeFilters = $derived(activeFilterCount(filter));
+  /** 選択中の投稿者が候補一覧に居ない場合 (200 件の枠外 / カードから直接指定)
+   *  でも選択が消えないよう、その ID を候補へ足す。 */
+  let uploaderOptions = $derived(
+    filter.uploaderId && !uploaders.some((u) => u.uploaderId === filter.uploaderId)
+      ? [
+          {
+            uploaderId: filter.uploaderId,
+            uploaderName: null,
+            videoCount: 0,
+            totalDurationSec: 0,
+            uploaderType: filter.uploaderType || null,
+          } satisfies UploaderInfo,
+          ...uploaders,
+        ]
+      : uploaders,
+  );
   let totalPages = $derived(
     pageCount(filter.mode === 'comments' ? commentTotal : totalCount, filter.pageSize),
   );
@@ -75,6 +96,10 @@
       : resultRangeLabel(totalCount, filter.page * filter.pageSize, items.length),
   );
   let commentQueryTooShort = $derived(filter.mode === 'comments' && !canSearchComments(filter.q));
+  // コメント検索はタグ/解像度の絞り込みを受け付けない (バックエンドが本文
+  // クエリしか取らない)。押しても効かないチップを押せる状態にしない。
+  let facetsDisabled = $derived(filter.mode === 'comments');
+  const facetDisabledHint = 'タグ・解像度の絞り込みは「動画」検索でのみ使えます。';
 
   /** 検索条件を更新して即座に再取得する。`page` 以外の変更はページを 0 に戻す。 */
   function update(patch: Partial<LibraryFilterState>) {
@@ -137,15 +162,31 @@
     if (seq !== requestSeq) return;
     commentHits = result.items;
     commentTotal = result.totalCount;
+    // 動画側と同じく、スナップショット削除などでヒット数が減って現在ページが
+    // 範囲外になったら末尾へ寄せて引き直す (空ページ + 「3 / 1」表示の防止)。
+    const clamped = clampPage(filter, result.totalCount);
+    if (clamped !== filter) {
+      filter = clamped;
+      saveLibraryFilter(filter);
+      const retry = await searchLibraryComments(
+        filter.q.trim(),
+        filter.page * filter.pageSize,
+        filter.pageSize,
+      );
+      if (seq !== requestSeq) return;
+      commentHits = retry.items;
+      commentTotal = retry.totalCount;
+    }
   }
 
-  /** タグ / 解像度 / 投稿者の候補と集計。ライブラリ更新のたびに引き直す。 */
+  /** タグ / 解像度 / 投稿者の候補と集計。ライブラリ更新のたびに引き直す。
+   *  投稿者はバックエンドが返せる上限 (200) までまとめて取る。 */
   async function refreshFacets() {
     try {
       const [tags, res, ups, st] = await Promise.all([
         listLibraryTags(),
         listLibraryResolutions(),
-        listLibraryUploaders(100),
+        listLibraryUploaders(UPLOADER_LIST_LIMIT),
         getLibraryStats(),
       ]);
       allTags = tags;
@@ -212,6 +253,42 @@
 
   function toggleSortOrder() {
     update({ sortOrder: filter.sortOrder === 'desc' ? 'asc' : 'desc' });
+  }
+
+  /** カードから直接その投稿者で絞り込む。候補一覧 (上限 200 件) に載らない
+   *  投稿者へも辿り着けるようにするための導線。もう一度押すと解除。 */
+  function filterByUploader(item: LibraryVideoRow, e: MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!item.uploaderId) return;
+    filtersOpen = true;
+    if (filter.uploaderId === item.uploaderId) {
+      update({ uploaderId: '', uploaderType: '' });
+      return;
+    }
+    update({ uploaderId: item.uploaderId, uploaderType: item.uploaderType ?? '' });
+  }
+
+  /** 投稿者の選択。オンライン検索へ持ち出す時に必要な種別も一緒に控える。 */
+  function onUploaderChange(e: Event & { currentTarget: HTMLSelectElement }) {
+    const uploaderId = e.currentTarget.value;
+    const picked = uploaders.find((u) => u.uploaderId === uploaderId);
+    update({ uploaderId, uploaderType: uploaderId ? (picked?.uploaderType ?? '') : '' });
+  }
+
+  /** 並び順の変更。ランダムを選び直したらシャッフルし直す。 */
+  function onSortChange(sortBy: LibrarySortKey) {
+    update(sortBy === 'random' ? { sortBy, randomSeed: newRandomSeed() } : { sortBy });
+  }
+
+  /** 更新ボタン。ランダム順のときは並び直したいので種も引き直す。 */
+  function onManualRefresh() {
+    if (filter.sortBy === 'random' && filter.mode === 'videos') {
+      update({ randomSeed: newRandomSeed() });
+    } else {
+      void refresh();
+    }
+    void refreshFacets();
   }
 
   function goToPage(page: number) {
@@ -305,22 +382,19 @@
   }
 
   /** 現在の検索条件をスマートプレイリスト (＝オンライン検索の保存) にする。
-   *  ローカル専用の条件はオンライン検索に無いので、保存前に明示して確認する。 */
+   *  オンライン検索へ持ち出せない条件は保存前に明示して確認する。 */
   function saveAsSmartPlaylist() {
-    const online = toSmartPlaylistFilter(filter);
-    if (!online.q && !online.tags?.length && !online.uploaderId) {
+    const { canSave, dropped } = checkSmartPlaylistSave(filter);
+    if (!canSave) {
       alert(
         'スマートプレイリストはオンライン検索の条件を保存する機能です。\n' +
-          'キーワード / タグ / 投稿者のいずれかを指定してください。',
+          'キーワードかタグを指定してください (投稿者だけでは検索できません)。',
       );
       return;
     }
-    const dropped: string[] = [];
-    if (filter.resolution) dropped.push('解像度');
-    if (filter.isShort) dropped.push('ショート');
     if (
       dropped.length > 0 &&
-      !confirm(`${dropped.join('・')}の条件はオンライン検索に無いため保存されません。続けますか？`)
+      !confirm(`${dropped.join('・')}はオンライン検索に無いため保存されません。続けますか？`)
     )
       return;
 
@@ -330,7 +404,7 @@
       summary === '条件なし' ? '保存検索' : `検索: ${summary}`,
     );
     if (!name) return;
-    const p = createSmartPlaylist(name, online);
+    const p = createSmartPlaylist(name, toSmartPlaylistFilter(filter));
     void goto(`/playlists/smart/${p.id}`);
   }
 
@@ -391,14 +465,7 @@
         aria-expanded={statsOpen}
         onclick={() => (statsOpen = !statsOpen)}>集計</button
       >
-      <button
-        type="button"
-        class="ghost"
-        onclick={() => {
-          void refresh();
-          void refreshFacets();
-        }}>更新</button
-      >
+      <button type="button" class="ghost" onclick={onManualRefresh}>更新</button>
       {#if filter.mode === 'videos'}
         <button
           type="button"
@@ -454,7 +521,8 @@
                   type="button"
                   class="chip"
                   class:on={filter.tags.includes(t.name)}
-                  title={`タグ「${t.name}」で絞り込む`}
+                  disabled={facetsDisabled}
+                  title={facetsDisabled ? facetDisabledHint : `タグ「${t.name}」で絞り込む`}
                   onclick={() => toggleTagFilter(t.name)}
                 >
                   {t.name}<span class="count">{t.count}</span>
@@ -472,6 +540,8 @@
                   type="button"
                   class="chip"
                   class:on={filter.resolution === r.resolution}
+                  disabled={facetsDisabled}
+                  title={facetsDisabled ? facetDisabledHint : `解像度 ${r.resolution} で絞り込む`}
                   onclick={() => {
                     filtersOpen = true;
                     update({
@@ -484,6 +554,9 @@
               {/each}
             </div>
           </div>
+        {/if}
+        {#if facetsDisabled}
+          <p class="muted small facet-note">{facetDisabledHint}</p>
         {/if}
       {:else}
         <div class="muted">集計を読み込み中…</div>
@@ -516,15 +589,13 @@
 
         <label class="field">
           <span class="field-label">投稿者</span>
-          <select
-            class="text-input"
-            value={filter.uploaderId}
-            onchange={(e) => update({ uploaderId: e.currentTarget.value })}
-          >
+          <select class="text-input" value={filter.uploaderId} onchange={onUploaderChange}>
             <option value="">すべて</option>
-            {#each uploaders as u (u.uploaderId)}
+            {#each uploaderOptions as u (u.uploaderId)}
               <option value={u.uploaderId}>
-                {u.uploaderName ?? `ID:${u.uploaderId}`} ({u.videoCount})
+                {u.uploaderName ?? `ID:${u.uploaderId}`}{u.videoCount > 0
+                  ? ` (${u.videoCount})`
+                  : ''}
               </option>
             {/each}
           </select>
@@ -615,7 +686,7 @@
         <select
           class="text-input"
           value={filter.sortBy}
-          onchange={(e) => update({ sortBy: e.currentTarget.value as LibrarySortKey })}
+          onchange={(e) => onSortChange(e.currentTarget.value as LibrarySortKey)}
         >
           {#each LIBRARY_SORT_OPTIONS as opt (opt.value)}
             <option value={opt.value}>{opt.label}</option>
@@ -782,6 +853,17 @@
               {/if}
             </div>
           </a>
+          {#if item.uploaderId}
+            <button
+              type="button"
+              class="uploader-btn"
+              class:on={filter.uploaderId === item.uploaderId}
+              title={filter.uploaderId === item.uploaderId
+                ? '投稿者の絞り込みを外す'
+                : `「${item.uploaderName ?? item.uploaderId}」の動画だけ表示`}
+              onclick={(e) => filterByUploader(item, e)}>👤</button
+            >
+          {/if}
           <button
             type="button"
             class="del-btn"
@@ -1172,6 +1254,33 @@
   .del-btn:disabled {
     opacity: 0.5;
     cursor: wait;
+  }
+  /* 投稿者フィルタはサムネ左上。候補セレクトの上限を超える投稿者にも
+     ここから辿り着ける。絞り込み中のカードは常時表示にして状態が分かるように。 */
+  .uploader-btn {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    z-index: 2;
+    background: var(--theme-overlay-strong);
+    color: var(--theme-on-overlay);
+    border: 1px solid var(--theme-border-strong);
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 12px;
+    line-height: 1;
+    padding: 0;
+    opacity: 0;
+    transition: opacity 0.1s;
+  }
+  .card-wrap:hover .uploader-btn,
+  .uploader-btn.on {
+    opacity: 1;
+  }
+  .uploader-btn.on {
+    border-color: var(--theme-accent);
   }
   /* プラグインアクションメニューはサムネ右下に。寄与 0 件のとき VideoActionMenu
      自体が何もレンダリングしないので、この div も空のままで邪魔にならない。 */

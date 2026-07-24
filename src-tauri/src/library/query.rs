@@ -44,6 +44,13 @@ pub struct LibraryQuery {
     /// Sort column. Defaults to `"downloaded_at"`.
     pub sort_by: Option<String>,
 
+    /// `sort_by = "random"` のときの並びを固定する種。
+    ///
+    /// 素の `ORDER BY RANDOM()` はリクエストごとに並びが変わるので、ページを
+    /// めくると同じ動画が再登場したり抜け落ちたりする。種が与えられた場合は
+    /// rowid から決まる決定的な擬似ランダム順にして、ページ間で一貫させる。
+    pub random_seed: Option<i64>,
+
     /// `"asc"` or `"desc"`. Defaults to `"desc"`.
     pub sort_order: Option<String>,
 
@@ -88,6 +95,45 @@ fn sort_order(order: &str) -> Result<&'static str, LibraryError> {
         ))),
     }
 }
+
+/// ユーザ入力を FTS5 の **文字列リテラル** に包む。
+///
+/// `comments_fts MATCH ?` に生の入力を渡すと FTS5 のクエリ構文として解釈され、
+/// `foo-bar` は `no such column: bar`、`AND` / `(` / 未対の `"` は syntax error
+/// になる。UI は「コメント本文をそのまま検索する」体なので、常に 1 つの
+/// フレーズとして扱う (trigram tokenizer なので部分一致になる)。
+///
+/// FTS5 の文字列リテラルは二重引用符で囲み、内側の `"` は `""` で表す。
+fn fts_phrase(text: &str) -> String {
+    format!("\"{}\"", text.replace('"', "\"\""))
+}
+
+/// ランダム順の種を、実際に SQL へ渡す乗数へ変換する。
+///
+/// 法が素数なので `1..=法-1` の乗数なら `(rowid * 乗数) % 法` は単射になり、
+/// 「ページをまたいで同じ動画が出る / 消える」が起きない。ただし乗数が小さい
+/// と小さい rowid では剰余が一度も巻き戻らず rowid 昇順のままになるので、
+/// Lehmer (MINSTD) で 2 段撹拌したうえで上位半分に寄せて、行数の少ない
+/// ライブラリでも順序がばらけるようにする。1 段だと小さい種同士 (1, 7, 42…)
+/// が似た乗数に落ちて同じ並びになってしまうため 2 段回す。
+fn normalize_random_seed(seed: i64) -> i64 {
+    let m = RANDOM_ORDER_MODULUS;
+    let first = (seed.rem_euclid(m) + 1) * MINSTD_MULTIPLIER % m;
+    let mut a = (first + 1) * MINSTD_MULTIPLIER % m;
+    if a == 0 {
+        a = MINSTD_MULTIPLIER;
+    }
+    if a < m / 2 {
+        a += m / 2;
+    }
+    a
+}
+
+/// 2^31-1 (メルセンヌ素数)。rowid × 乗数が i64 に収まる範囲でもある。
+const RANDOM_ORDER_MODULUS: i64 = 2_147_483_647;
+
+/// MINSTD (Lehmer) の乗数。種の撹拌にだけ使う。
+const MINSTD_MULTIPLIER: i64 = 48_271;
 
 // ---------------------------------------------------------------------------
 // Result types (Rust → front-end)
@@ -187,7 +233,7 @@ pub fn query_videos(conn: &Connection, q: &LibraryQuery) -> Result<QueryResult, 
             params.push(Box::new(pattern.clone()));
             if fts_ok {
                 let p2 = params.len() + 1;
-                params.push(Box::new(text.clone()));
+                params.push(Box::new(fts_phrase(text)));
                 sql_where.push(format!(
                     "(v.title LIKE ?{p} OR EXISTS (\
                        SELECT 1 FROM tags t WHERE t.video_id = v.id AND t.name LIKE ?{p}\
@@ -278,14 +324,25 @@ pub fn query_videos(conn: &Connection, q: &LibraryQuery) -> Result<QueryResult, 
     )?;
 
     // Data query with pagination — rebuild params to add limit/offset.
-    let lim_p = params.len() + 1;
-    let off_p = params.len() + 2;
-
+    // ランダム順の種はページングの前に積む (LIMIT/OFFSET より前の位置)。
     let order_clause = if sort_by == "random" {
-        "ORDER BY RANDOM()".to_string()
+        match q.random_seed {
+            // rowid は行ごとに異なり、法 2^31-1 は素数なので
+            // `(rowid * seed) % p` は seed ≢ 0 の限り単射 = 並びが重複しない。
+            // 同じ種なら毎回同じ順序になるのでページ送りしても取りこぼさない。
+            Some(seed) => {
+                let seed_p = params.len() + 1;
+                params.push(Box::new(normalize_random_seed(seed)));
+                format!("ORDER BY ((v.rowid * ?{seed_p}) % {RANDOM_ORDER_MODULUS}), v.id")
+            }
+            None => "ORDER BY RANDOM()".to_string(),
+        }
     } else {
         format!("ORDER BY v.{sort_by} {order_sql}, v.id DESC")
     };
+
+    let lim_p = params.len() + 1;
+    let off_p = params.len() + 2;
 
     let data_sql = format!(
         "SELECT v.id, v.title, v.description, v.uploader_id, v.uploader_name, \
@@ -558,6 +615,8 @@ pub fn search_comments(
     limit: u32,
 ) -> Result<CommentSearchResult, LibraryError> {
     let limit = limit.min(200);
+    // 入力はコメント本文の literal 検索。FTS5 構文として解釈させない。
+    let match_arg = fts_phrase(query);
 
     let count_sql = "\
         SELECT COUNT(*) \
@@ -568,7 +627,7 @@ pub fn search_comments(
         WHERE v.video_path IS NOT NULL \
           AND comments_fts MATCH ?1";
 
-    let total_count: i64 = conn.query_row(count_sql, [query], |row| row.get(0))?;
+    let total_count: i64 = conn.query_row(count_sql, [&match_arg], |row| row.get(0))?;
 
     let data_sql = "\
         SELECT v.id, v.title, c.no, c.vpos_ms, c.content, c.user_hash, c.posted_at \
@@ -583,7 +642,7 @@ pub fn search_comments(
 
     let mut stmt = conn.prepare(data_sql)?;
     let items: Vec<CommentSearchHit> = stmt
-        .query_map(rusqlite::params![query, limit, offset], |row| {
+        .query_map(rusqlite::params![match_arg, limit, offset], |row| {
             Ok(CommentSearchHit {
                 video_id: row.get(0)?,
                 video_title: row.get(1)?,
@@ -615,6 +674,9 @@ pub struct UploaderInfo {
     pub uploader_name: Option<String>,
     pub video_count: i64,
     pub total_duration_sec: i64,
+    /// `"user"` / `"channel"`。オンライン検索へ条件を持ち出す時に
+    /// `userId` と `channelId` のどちらで絞るかがこれで決まる。
+    pub uploader_type: Option<String>,
 }
 
 /// List all uploaders with video counts, ordered by count desc.
@@ -622,7 +684,8 @@ pub fn list_uploaders(conn: &Connection, limit: u32) -> Result<Vec<UploaderInfo>
     let limit = limit.min(200);
     let mut stmt = conn.prepare(
         "SELECT uploader_id, uploader_name, COUNT(*) AS cnt, \
-                COALESCE(SUM(duration_sec), 0) AS total_dur \
+                COALESCE(SUM(duration_sec), 0) AS total_dur, \
+                MAX(uploader_type) AS uploader_type \
          FROM videos \
          WHERE video_path IS NOT NULL AND uploader_id IS NOT NULL \
          GROUP BY uploader_id \
@@ -636,6 +699,7 @@ pub fn list_uploaders(conn: &Connection, limit: u32) -> Result<Vec<UploaderInfo>
                 uploader_name: row.get(1)?,
                 video_count: row.get(2)?,
                 total_duration_sec: row.get(3)?,
+                uploader_type: row.get(4)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -1279,6 +1343,165 @@ mod tests {
         let result = search_comments(&conn, "何か", 0, 10).unwrap();
         assert_eq!(result.total_count, 0);
         assert!(result.items.is_empty());
+    }
+
+    #[test]
+    fn seeded_random_sort_is_stable_across_pages() {
+        let mut conn = setup();
+        seed_library(&mut conn);
+
+        let page = |offset: u32| {
+            query_videos(
+                &conn,
+                &LibraryQuery {
+                    sort_by: Some("random".into()),
+                    random_seed: Some(20_260_724),
+                    limit: Some(2),
+                    offset: Some(offset),
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+            .items
+            .into_iter()
+            .map(|v| v.id)
+            .collect::<Vec<_>>()
+        };
+
+        // 同じ種ならページをまたいでも重複・欠落なく全件を辿れる。
+        let mut seen: Vec<String> = Vec::new();
+        for offset in [0, 2, 4] {
+            seen.extend(page(offset));
+        }
+        let unique: std::collections::HashSet<&String> = seen.iter().collect();
+        assert_eq!(seen.len(), 5);
+        assert_eq!(unique.len(), 5, "ページ間で重複した: {seen:?}");
+
+        // 同じ種の再実行は同じ順序。
+        assert_eq!(page(0), page(0));
+    }
+
+    #[test]
+    fn random_seed_edge_values_still_order_deterministically() {
+        let mut conn = setup();
+        seed_library(&mut conn);
+        // 種 0 / 法の倍数 / 負値でも「全行が同じキー」にはならず全件返る。
+        let ids = |seed: i64| {
+            query_videos(
+                &conn,
+                &LibraryQuery {
+                    sort_by: Some("random".into()),
+                    random_seed: Some(seed),
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+            .items
+            .into_iter()
+            .map(|v| v.id)
+            .collect::<Vec<_>>()
+        };
+        for seed in [0, RANDOM_ORDER_MODULUS, -1, i64::MIN] {
+            assert_eq!(ids(seed).len(), 5, "seed={seed}");
+        }
+        assert_eq!(ids(0), ids(RANDOM_ORDER_MODULUS));
+    }
+
+    #[test]
+    fn different_seeds_produce_different_orders() {
+        let mut conn = setup();
+        seed_library(&mut conn);
+        let ids = |seed: i64| {
+            query_videos(
+                &conn,
+                &LibraryQuery {
+                    sort_by: Some("random".into()),
+                    random_seed: Some(seed),
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+            .items
+            .into_iter()
+            .map(|v| v.id)
+            .collect::<Vec<_>>()
+        };
+        // 小さい種でも rowid 昇順のままにならない (乗数を撹拌しているため)。
+        let downloaded_order = query_videos(&conn, &LibraryQuery::default())
+            .unwrap()
+            .items
+            .into_iter()
+            .map(|v| v.id)
+            .collect::<Vec<_>>();
+        let orders: Vec<Vec<String>> = [1, 7, 999, 20_260_724].iter().map(|s| ids(*s)).collect();
+        assert!(
+            orders.iter().any(|o| *o != downloaded_order),
+            "どの種でも既定順と同じ並びになっている: {orders:?}"
+        );
+        assert!(
+            orders.windows(2).any(|w| w[0] != w[1]),
+            "種を変えても並びが変わらない: {orders:?}"
+        );
+    }
+
+    #[test]
+    fn fts_syntax_characters_are_searched_literally() {
+        let mut conn = setup();
+        seed_library(&mut conn);
+        // FTS5 のクエリ構文として解釈されると、以下はいずれも SQLite の
+        // エラーになっていた (`no such column: bar` / syntax error 等)。
+        for q in ["foo-bar", "AND", "(paren", "\"quote", "うぽつ OR ", "a*b"] {
+            let comments = search_comments(&conn, q, 0, 10);
+            assert!(
+                comments.is_ok(),
+                "search_comments({q:?}) が失敗: {comments:?}"
+            );
+            let videos = query_videos(
+                &conn,
+                &LibraryQuery {
+                    q: Some(q.to_string()),
+                    ..Default::default()
+                },
+            );
+            assert!(videos.is_ok(), "query_videos(q={q:?}) が失敗: {videos:?}");
+        }
+    }
+
+    #[test]
+    fn fts_phrase_quotes_and_escapes() {
+        assert_eq!(fts_phrase("foo-bar"), "\"foo-bar\"");
+        assert_eq!(fts_phrase("say \"hi\""), "\"say \"\"hi\"\"\"");
+    }
+
+    #[test]
+    fn literal_search_still_matches_stored_comments() {
+        let mut conn = setup();
+        seed_library(&mut conn);
+        // 引用符で包んでもフレーズ (部分一致) 検索として機能する。
+        let result = search_comments(&conn, "すごい弾幕", 0, 10).unwrap();
+        assert_eq!(result.total_count, 1);
+        assert_eq!(result.items[0].video_id, "sm1");
+    }
+
+    #[test]
+    fn list_uploaders_reports_uploader_type() {
+        let mut conn = setup();
+        conn.execute(
+            "UPDATE videos SET uploader_type = 'channel' WHERE uploader_id = 'u3'",
+            [],
+        )
+        .unwrap();
+        seed_library(&mut conn);
+        conn.execute(
+            "UPDATE videos SET uploader_type = 'channel' WHERE uploader_id = 'u3'",
+            [],
+        )
+        .unwrap();
+        let uploaders = list_uploaders(&conn, 50).unwrap();
+        let u3 = uploaders.iter().find(|u| u.uploader_id == "u3").unwrap();
+        assert_eq!(u3.uploader_type.as_deref(), Some("channel"));
+        let u2 = uploaders.iter().find(|u| u.uploader_id == "u2").unwrap();
+        assert_eq!(u2.uploader_type, None);
     }
 
     #[test]
