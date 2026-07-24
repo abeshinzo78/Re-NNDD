@@ -26,6 +26,7 @@
   import { formatDate, formatDuration, formatNumber, videoUrl } from '$lib/format';
   import type { PlayerComment } from '$lib/player/types';
   import { filterComments, listNgRules, subscribeNgRules, type NgRule } from '$lib/stores/ngRules';
+  import { parseStartTime } from '$lib/stores/libraryQuery';
   import { addHistory } from '$lib/stores/history';
   import { getBool, getStr, loadSettings } from '$lib/stores/settings.svelte';
   import { sanitizeDescriptionHtml } from '$lib/sanitize';
@@ -156,6 +157,9 @@
   async function load(id: string) {
     if (!id) return;
     loadingFor = id;
+    // 別動画を読み込み直したら「?t= を消費済み」の記録は捨てる。同じ動画へ
+    // 戻ってきた時に再び頭出しできるようにするため。
+    consumedStartAt = null;
     pending = true;
     error = null;
     local = null;
@@ -219,6 +223,25 @@
 
   $effect(() => {
     if (videoId) setQueueIndexByVideoId(videoId);
+  });
+
+  /** `?t=秒` の頭出し位置。コメント横断検索 (ライブラリ) からの遷移で付く。 */
+  let startAtSec = $derived(parseStartTime(page.url.searchParams.get('t')));
+  /** 同じ (動画, 位置) へ二重にシークしないための消費済みキー。
+   *  スナップショット切替などで Player が作り直された時に、ユーザが
+   *  動かした再生位置を URL の t で巻き戻さないためのガード。 */
+  let consumedStartAt: string | null = null;
+
+  $effect(() => {
+    const t = startAtSec;
+    const id = videoId;
+    if (t == null || !id) return;
+    const key = `${id}@${t}`;
+    if (consumedStartAt === key) return;
+    consumedStartAt = key;
+    // 再生準備前は resumePosition 経由で頭出しし、既に Player が居れば直接シーク。
+    if (playerRef) playerRef.seek(t);
+    else _pendingResumeTime = t;
   });
 
   function handleSeek(t: number) {
