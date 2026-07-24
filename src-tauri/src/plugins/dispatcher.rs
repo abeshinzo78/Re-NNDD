@@ -363,6 +363,8 @@ async fn handle_library_list(
         resolution: None,
         is_short: None,
         sort_by: Some("downloaded_at".into()),
+        // downloaded_at 固定なのでランダム順の種は使わない。
+        random_seed: None,
         sort_order: Some("desc".into()),
         offset: Some(offset),
         limit: Some(limit),
@@ -576,6 +578,8 @@ async fn handle_library_search(
         resolution: None,
         is_short: None,
         sort_by: Some("downloaded_at".into()),
+        // downloaded_at 固定なのでランダム順の種は使わない。
+        random_seed: None,
         sort_order: Some("desc".into()),
         offset: Some(offset),
         limit: Some(limit),
