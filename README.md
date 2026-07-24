@@ -60,7 +60,7 @@ Discord鯖はこちらです　https://discord.gg/cDhnfZ6HMa
 - ランキングの閲覧（ジャンル・期間別、ショートランキング対応）
 - ユーザーの投稿動画・マイリスト・シリーズ一覧、チャンネルの投稿動画一覧の取得
 - 関連動画の表示
-- 再生履歴の記録・一覧・削除
+- 視聴履歴の記録・一覧・削除（動画ページを開いた時点で記録）
 
 **アカウント**
 
@@ -80,7 +80,7 @@ Discord鯖はこちらです　https://discord.gg/cDhnfZ6HMa
 
 **ライブラリ**
 
-- 検索/整列/集計、タグ・解像度・投稿者での絞り込み、保存コメントの横断検索
+- ライブラリ内の動画検索（キーワード・ショート動画での絞り込み）
 - プレイリストと、検索条件を保存して自動でオンライン取得するスマートプレイリスト
 - コメントスナップショットの複数管理（一覧・切り替え・削除・メモ・再取得）
 - コメントを映像へ焼き込んだ MP4 のエクスポート（`@xpadev-net/niconicomments` で本物どおりに描画し ffmpeg で合成）
@@ -130,6 +130,7 @@ Phase 1（1.0〜1.9）はすべて実装済みです。現在は v0.2.x 系と�
 ## 今後の予定
 
 - Phase 2.0: 仕上げ（安定化・ドキュメント・運用調整）
+- ライブラリ検索 UI の拡充（整列・集計、タグ/解像度/投稿者での絞り込み、保存コメントの横断検索はクエリ層まで実装済みで、UI 接続はこれから）
 
 ## 必要環境
 
@@ -185,10 +186,10 @@ npm run lint
 npm test
 ```
 
-実アプリを起動する E2E スモークテスト（要: デバッグビルド、`tauri-driver`。Linux はさらに `webkit2gtk-driver` と `xvfb` が必要）:
+実アプリを起動する E2E スモークテストもあります。X サーバ経由で実行する仕組みのため、現状は Linux（Debian/Ubuntu 系）専用です:
 
 ```bash
-sudo apt-get install webkit2gtk-driver xvfb   # Linux (Debian/Ubuntu 系) のみ
+sudo apt-get install webkit2gtk-driver xvfb   # 追加の実行依存
 npx tauri build --debug --no-bundle
 cargo install tauri-driver --locked           # 初回のみ
 xvfb-run -a npm run test:e2e
