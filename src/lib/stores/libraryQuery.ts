@@ -202,9 +202,10 @@ export function buildLibraryQuery(state: LibraryFilterState): LibraryQueryParams
   if (state.tags.length > 0) params.tags = [...state.tags];
   if (state.uploaderId) {
     params.uploaderId = state.uploaderId;
-    // 種別が分かっているなら一緒に送る。ユーザ ID とチャンネル ID は別名前空間
-    // なので、同じ数値の別投稿者が結果に混ざるのを防げる。
-    if (state.uploaderType) params.uploaderType = state.uploaderType;
+    // 投稿者は (ID, 種別) で 1 人。ユーザ ID とチャンネル ID は別名前空間なので
+    // 種別まで送らないと同じ数値の別投稿者が混ざる。空文字は「種別不明 (NULL)」
+    // のグループを指す (Rust 側で `uploader_type IS NULL` になる)。
+    params.uploaderType = state.uploaderType;
   }
   if (state.resolution) params.resolution = state.resolution;
   if (state.isShort) params.isShort = true;
@@ -373,7 +374,8 @@ export function normalizeLibraryFilter(raw: unknown): LibraryFilterState {
     q: typeof r.q === 'string' ? r.q : '',
     tags: toStringArray(r.tags),
     uploaderId,
-    // 種別は投稿者が選ばれている時だけ意味を持つ。
+    // 種別は投稿者が選ばれている時だけ意味を持つ。空文字は「種別不明」の
+    // グループを指すので、既知の値でなければ空文字へ倒す。
     uploaderType:
       uploaderId && (r.uploaderType === 'channel' || r.uploaderType === 'user')
         ? r.uploaderType

@@ -33,6 +33,7 @@ pub struct LibraryQuery {
     ///
     /// ユーザ ID とチャンネル ID は別名前空間なので数値が衝突しうる。
     /// `uploader_id` と併せて指定すると、同じ ID の別種別を混ぜずに絞れる。
+    /// 空文字は「種別不明 (`uploader_type IS NULL`) のグループ」を意味する。
     pub uploader_type: Option<String>,
 
     /// Minimum duration in seconds (inclusive).
@@ -240,6 +241,9 @@ pub fn query_videos(conn: &Connection, q: &LibraryQuery) -> Result<QueryResult, 
             if fts_ok {
                 let p2 = params.len() + 1;
                 params.push(Box::new(fts_phrase(text)));
+                // コメント側は「コメント」タブの検索と同じく最新スナップショット
+                // だけを見る。旧スナップショットにしか無い語で動画がヒットすると、
+                // 開いた先 (最新スナップショット) にそのコメントが無い。
                 sql_where.push(format!(
                     "(v.title LIKE ?{p} OR EXISTS (\
                        SELECT 1 FROM tags t WHERE t.video_id = v.id AND t.name LIKE ?{p}\
@@ -247,7 +251,8 @@ pub fn query_videos(conn: &Connection, q: &LibraryQuery) -> Result<QueryResult, 
                        SELECT 1 FROM comments_fts fts \
                        JOIN comments c ON c.id = fts.rowid \
                        JOIN comment_snapshots cs ON cs.id = c.snapshot_id \
-                       WHERE cs.video_id = v.id AND comments_fts MATCH ?{p2}\
+                       WHERE cs.video_id = v.id AND {LATEST_SNAPSHOT_ONLY} \
+                         AND comments_fts MATCH ?{p2}\
                      ))",
                 ));
             } else {
@@ -298,10 +303,16 @@ pub fn query_videos(conn: &Connection, q: &LibraryQuery) -> Result<QueryResult, 
 
     // 種別も指定された時だけ足す。ユーザ ID とチャンネル ID は別名前空間で
     // 数値が衝突しうるので、両方指定できると混ざらない。
+    // 空文字は「種別不明 (NULL) のグループ」を指す — 投稿者一覧が種別ごとに
+    // 束ねている以上、その行を選んだら他の名前空間まで拾ってはいけない。
     if let Some(ref utype) = q.uploader_type {
-        let p = params.len() + 1;
-        params.push(Box::new(utype.clone()));
-        sql_where.push(format!("v.uploader_type = ?{p}"));
+        if utype.is_empty() {
+            sql_where.push("v.uploader_type IS NULL".to_string());
+        } else {
+            let p = params.len() + 1;
+            params.push(Box::new(utype.clone()));
+            sql_where.push(format!("v.uploader_type = ?{p}"));
+        }
     }
 
     if let Some(min) = q.min_duration {
@@ -409,8 +420,13 @@ pub fn query_videos(conn: &Connection, q: &LibraryQuery) -> Result<QueryResult, 
         let placeholders = std::iter::repeat_n("?", ids.len())
             .collect::<Vec<_>>()
             .join(",");
+        // DISTINCT が要る: tags の主キーは (video_id, name, source) なので、
+        // official と local の両方に同じタグが入っている動画では名前が重複する。
+        // UI (ライブラリのカード) はタグ名をキーにして each するため、重複すると
+        // Svelte が each_key_duplicate で落ちてグリッドごと描画されなくなる。
         let tag_sql = format!(
-            "SELECT video_id, name FROM tags WHERE video_id IN ({placeholders}) ORDER BY video_id, name"
+            "SELECT DISTINCT video_id, name FROM tags WHERE video_id IN ({placeholders}) \
+             ORDER BY video_id, name"
         );
         let mut tag_stmt = conn.prepare(&tag_sql)?;
         let tag_params: Vec<&dyn rusqlite::types::ToSql> = ids
@@ -1602,6 +1618,125 @@ mod tests {
         assert!(!tags.contains(&"幽霊タグ".to_string()));
         // unique_tags も同じスコープ (幽霊タグを除いた実数)。
         assert_eq!(stats.unique_tags as usize, tags.len());
+    }
+
+    #[test]
+    fn duplicate_tag_sources_are_deduped_in_results() {
+        let mut conn = setup();
+        seed_library(&mut conn);
+        // 同じタグ名が official と local の両方にある状態 (主キーは
+        // (video_id, name, source) なので両立する)。UI はタグ名をキーに
+        // each するため、重複したまま返すと描画ごと落ちる。
+        conn.execute(
+            "INSERT INTO tags (video_id, name, is_locked, source) \
+             VALUES ('sm2', 'VOCALOID', 0, 'local')",
+            [],
+        )
+        .unwrap();
+
+        let result = query_videos(&conn, &LibraryQuery::default()).unwrap();
+        let sm2 = result.items.iter().find(|v| v.id == "sm2").expect("sm2");
+        let unique: std::collections::HashSet<&String> = sm2.tags.iter().collect();
+        assert_eq!(
+            sm2.tags.len(),
+            unique.len(),
+            "タグ名が重複した: {:?}",
+            sm2.tags
+        );
+        assert!(sm2.tags.contains(&"VOCALOID".to_string()));
+    }
+
+    #[test]
+    fn video_text_search_also_uses_only_the_latest_snapshot() {
+        let mut conn = setup();
+        seed_library(&mut conn);
+        // sm1 を再取得。旧スナップショットの「弾幕」は最新には無い。
+        crate::library::snapshots::take_snapshot(
+            &mut conn,
+            "sm1",
+            &[CommentRecord {
+                no: 2,
+                vpos_ms: 100,
+                content: "新しいコメントだけ".into(),
+                mail: None,
+                user_hash: None,
+                is_owner: false,
+                posted_at: Some(1_700_000_020),
+            }],
+            None,
+        )
+        .unwrap();
+
+        // 「コメント」タブと同じ結果になる (旧版のコメントでは動画も出ない)。
+        let by_old = query_videos(
+            &conn,
+            &LibraryQuery {
+                q: Some("すごい弾幕".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(by_old.total_count, 0);
+        assert_eq!(
+            search_comments(&conn, "すごい弾幕", 0, 10)
+                .unwrap()
+                .total_count,
+            0
+        );
+
+        // 最新スナップショットのコメントでは両方ヒットする。
+        let by_new = query_videos(
+            &conn,
+            &LibraryQuery {
+                q: Some("コメントだけ".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(by_new.total_count, 1);
+        assert_eq!(by_new.items[0].id, "sm1");
+    }
+
+    #[test]
+    fn empty_uploader_type_selects_the_unknown_group() {
+        let mut conn = setup();
+        seed_library(&mut conn);
+        // 同じ ID で「種別不明 (NULL)」と「user」が混在する状態を作る。
+        conn.execute(
+            "UPDATE videos SET uploader_type = 'user' WHERE uploader_id = 'u2'",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO videos (id, title, duration_sec, status, video_path, uploader_id) \
+             VALUES ('sm102', '種別不明', 90, 'active', 'videos/sm102/video.mp4', 'u2')",
+            [],
+        )
+        .unwrap();
+
+        // 空文字 = NULL グループだけ (他の名前空間まで拾わない)。
+        let unknown = query_videos(
+            &conn,
+            &LibraryQuery {
+                uploader_id: Some("u2".into()),
+                uploader_type: Some(String::new()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(unknown.total_count, 1);
+        assert_eq!(unknown.items[0].id, "sm102");
+
+        // 種別未指定 (None) なら従来どおり ID 全体。
+        let all = query_videos(
+            &conn,
+            &LibraryQuery {
+                uploader_id: Some("u2".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(all.total_count, 3);
     }
 
     #[test]

@@ -356,6 +356,13 @@
     }
   }
 
+  /** タグ名で each するので重複は潰す。バックエンド側でも DISTINCT している
+   *  が、tags の主キーが (video_id, name, source) である以上、別経路で重複が
+   *  来ると each_key_duplicate でグリッドごと落ちるため UI 側でも防ぐ。 */
+  function uniqueTags(tags: string[]): string[] {
+    return Array.from(new Set(tags));
+  }
+
   function thumbSrc(item: LibraryVideoRow): string | undefined {
     if (item.localThumbnailPath) return convertFileSrc(item.localThumbnailPath);
     return item.thumbnailUrl ?? undefined;
@@ -865,12 +872,13 @@
                 {/if}
               </div>
               {#if item.tags.length > 0}
+                {@const tags = uniqueTags(item.tags)}
                 <div class="tags">
-                  {#each item.tags.slice(0, 4) as tag (tag)}
+                  {#each tags.slice(0, 4) as tag (tag)}
                     <span class="tag">{tag}</span>
                   {/each}
-                  {#if item.tags.length > 4}
-                    <span class="tag muted">+{item.tags.length - 4}</span>
+                  {#if tags.length > 4}
+                    <span class="tag muted">+{tags.length - 4}</span>
                   {/if}
                 </div>
               {/if}

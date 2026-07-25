@@ -104,6 +104,8 @@ describe('buildLibraryQuery', () => {
       q: 'ミク',
       tags: ['VOCALOID', '初音ミク'],
       uploaderId: '1234',
+      // 投稿者を指定したら種別も必ず送る (空文字 = 種別不明グループ)
+      uploaderType: '',
       resolution: '1280x720',
       isShort: true,
       minDuration: 120,
@@ -386,8 +388,18 @@ describe('checkSmartPlaylistSave', () => {
     const q = buildLibraryQuery(state({ uploaderId: '2632720', uploaderType: 'channel' }));
     expect(q.uploaderId).toBe('2632720');
     expect(q.uploaderType).toBe('channel');
-    // 種別不明なら送らない (従来どおり ID だけで引く)
-    expect('uploaderType' in buildLibraryQuery(state({ uploaderId: '1' }))).toBe(false);
+  });
+
+  it('種別不明の投稿者は空文字を送る (Rust 側で uploader_type IS NULL になる)', () => {
+    // 一覧が種別ごとに束ねている以上、種別不明の行を選んだ時に他の名前空間の
+    // 動画まで出てはいけない。
+    const q = buildLibraryQuery(state({ uploaderId: '123', uploaderType: '' }));
+    expect(q.uploaderId).toBe('123');
+    expect(q.uploaderType).toBe('');
+  });
+
+  it('投稿者未指定なら種別も送らない', () => {
+    expect('uploaderType' in buildLibraryQuery(state({ uploaderType: 'channel' }))).toBe(false);
   });
 
   it('ローカル専用の並び順はすべて警告対象', () => {
