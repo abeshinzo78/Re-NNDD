@@ -29,6 +29,12 @@ pub struct LibraryQuery {
     /// Uploader id filter.
     pub uploader_id: Option<String>,
 
+    /// Uploader kind filter (`"user"` / `"channel"`)。
+    ///
+    /// ユーザ ID とチャンネル ID は別名前空間なので数値が衝突しうる。
+    /// `uploader_id` と併せて指定すると、同じ ID の別種別を混ぜずに絞れる。
+    pub uploader_type: Option<String>,
+
     /// Minimum duration in seconds (inclusive).
     pub min_duration: Option<i64>,
 
@@ -290,6 +296,14 @@ pub fn query_videos(conn: &Connection, q: &LibraryQuery) -> Result<QueryResult, 
         sql_where.push(format!("v.uploader_id = ?{p}"));
     }
 
+    // 種別も指定された時だけ足す。ユーザ ID とチャンネル ID は別名前空間で
+    // 数値が衝突しうるので、両方指定できると混ざらない。
+    if let Some(ref utype) = q.uploader_type {
+        let p = params.len() + 1;
+        params.push(Box::new(utype.clone()));
+        sql_where.push(format!("v.uploader_type = ?{p}"));
+    }
+
     if let Some(min) = q.min_duration {
         let p = params.len() + 1;
         params.push(Box::new(min));
@@ -460,13 +474,24 @@ pub fn get_stats(conn: &Connection) -> Result<LibraryStats, LibraryError> {
         )
         .unwrap_or(0);
 
+    // タグ集計も「DL 済み動画」に揃える。video_path が外れた動画のタグまで
+    // 数えると、検索しても絶対に出てこない件数を表示してしまう。
     let unique_tags: i64 = conn
-        .query_row("SELECT COUNT(DISTINCT name) FROM tags", [], |r| r.get(0))
+        .query_row(
+            "SELECT COUNT(DISTINCT t.name) FROM tags t \
+             JOIN videos v ON v.id = t.video_id \
+             WHERE v.video_path IS NOT NULL",
+            [],
+            |r| r.get(0),
+        )
         .unwrap_or(0);
 
     // Top 50 tags by frequency.
     let mut tag_stmt = conn.prepare(
-        "SELECT name, COUNT(*) AS cnt FROM tags GROUP BY name ORDER BY cnt DESC, name LIMIT 50",
+        "SELECT t.name, COUNT(*) AS cnt FROM tags t \
+         JOIN videos v ON v.id = t.video_id \
+         WHERE v.video_path IS NOT NULL \
+         GROUP BY t.name ORDER BY cnt DESC, t.name LIMIT 50",
     )?;
     let top_tags: Vec<TagCount> = tag_stmt
         .query_map([], |row| {
@@ -504,8 +529,16 @@ pub fn get_stats(conn: &Connection) -> Result<LibraryStats, LibraryError> {
 }
 
 /// Fetch all distinct tag names in the library, ordered alphabetically.
+///
+/// 絞り込み候補として使うので、`get_stats` のタグ集計と同じく DL 済み動画に
+/// 付いているタグだけを返す (選んでも 0 件になる候補を出さない)。
 pub fn list_all_tags(conn: &Connection) -> Result<Vec<String>, LibraryError> {
-    let mut stmt = conn.prepare("SELECT DISTINCT name FROM tags ORDER BY name")?;
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT t.name FROM tags t \
+         JOIN videos v ON v.id = t.video_id \
+         WHERE v.video_path IS NOT NULL \
+         ORDER BY t.name",
+    )?;
     let tags: Vec<String> = stmt
         .query_map([], |row| row.get::<_, String>(0))?
         .collect::<Result<Vec<_>, _>>()?;
@@ -604,6 +637,18 @@ pub struct CommentSearchResult {
     pub limit: u32,
 }
 
+/// 各動画の **最新スナップショットだけ** に絞る述語。
+///
+/// 再取得で複数スナップショットが積まれた動画は、これが無いと同じコメントが
+/// 何度も出てきたり、最新では消えたコメントが混ざったりして件数も膨らむ。
+/// 「最新」の定義は `snapshots::list_snapshots` (taken_at DESC, id DESC) と
+/// 揃えてあるので、ヒットから開いた動画ページが最初に選ぶスナップショットと
+/// 一致する。
+const LATEST_SNAPSHOT_ONLY: &str = "cs.id = (\
+     SELECT cs2.id FROM comment_snapshots cs2 \
+     WHERE cs2.video_id = cs.video_id \
+     ORDER BY cs2.taken_at DESC, cs2.id DESC LIMIT 1)";
+
 /// Search local library comments via FTS5 trigram index.
 ///
 /// `query` must be ≥ 3 characters (FTS5 trigram tokenizer requirement).
@@ -618,29 +663,33 @@ pub fn search_comments(
     // 入力はコメント本文の literal 検索。FTS5 構文として解釈させない。
     let match_arg = fts_phrase(query);
 
-    let count_sql = "\
-        SELECT COUNT(*) \
-        FROM comments_fts fts \
-        JOIN comments c ON c.id = fts.rowid \
-        JOIN comment_snapshots cs ON cs.id = c.snapshot_id \
-        JOIN videos v ON v.id = cs.video_id \
-        WHERE v.video_path IS NOT NULL \
-          AND comments_fts MATCH ?1";
+    let count_sql = format!(
+        "SELECT COUNT(*) \
+         FROM comments_fts fts \
+         JOIN comments c ON c.id = fts.rowid \
+         JOIN comment_snapshots cs ON cs.id = c.snapshot_id \
+         JOIN videos v ON v.id = cs.video_id \
+         WHERE v.video_path IS NOT NULL \
+           AND {LATEST_SNAPSHOT_ONLY} \
+           AND comments_fts MATCH ?1"
+    );
 
-    let total_count: i64 = conn.query_row(count_sql, [&match_arg], |row| row.get(0))?;
+    let total_count: i64 = conn.query_row(&count_sql, [&match_arg], |row| row.get(0))?;
 
-    let data_sql = "\
-        SELECT v.id, v.title, c.no, c.vpos_ms, c.content, c.user_hash, c.posted_at \
-        FROM comments_fts fts \
-        JOIN comments c ON c.id = fts.rowid \
-        JOIN comment_snapshots cs ON cs.id = c.snapshot_id \
-        JOIN videos v ON v.id = cs.video_id \
-        WHERE v.video_path IS NOT NULL \
-          AND comments_fts MATCH ?1 \
-        ORDER BY c.posted_at DESC \
-        LIMIT ?2 OFFSET ?3";
+    let data_sql = format!(
+        "SELECT v.id, v.title, c.no, c.vpos_ms, c.content, c.user_hash, c.posted_at \
+         FROM comments_fts fts \
+         JOIN comments c ON c.id = fts.rowid \
+         JOIN comment_snapshots cs ON cs.id = c.snapshot_id \
+         JOIN videos v ON v.id = cs.video_id \
+         WHERE v.video_path IS NOT NULL \
+           AND {LATEST_SNAPSHOT_ONLY} \
+           AND comments_fts MATCH ?1 \
+         ORDER BY c.posted_at DESC \
+         LIMIT ?2 OFFSET ?3"
+    );
 
-    let mut stmt = conn.prepare(data_sql)?;
+    let mut stmt = conn.prepare(&data_sql)?;
     let items: Vec<CommentSearchHit> = stmt
         .query_map(rusqlite::params![match_arg, limit, offset], |row| {
             Ok(CommentSearchHit {
@@ -682,13 +731,15 @@ pub struct UploaderInfo {
 /// List all uploaders with video counts, ordered by count desc.
 pub fn list_uploaders(conn: &Connection, limit: u32) -> Result<Vec<UploaderInfo>, LibraryError> {
     let limit = limit.min(200);
+    // ユーザとチャンネルは ID の名前空間が別なので、数値が同じでも別の投稿者。
+    // 種別も込みで束ねないと 1 行に混ざり、種別のラベルも当てずっぽうになる。
     let mut stmt = conn.prepare(
         "SELECT uploader_id, uploader_name, COUNT(*) AS cnt, \
                 COALESCE(SUM(duration_sec), 0) AS total_dur, \
-                MAX(uploader_type) AS uploader_type \
+                uploader_type \
          FROM videos \
          WHERE video_path IS NOT NULL AND uploader_id IS NOT NULL \
-         GROUP BY uploader_id \
+         GROUP BY uploader_id, uploader_type \
          ORDER BY cnt DESC \
          LIMIT ?1",
     )?;
@@ -1481,6 +1532,128 @@ mod tests {
         let result = search_comments(&conn, "すごい弾幕", 0, 10).unwrap();
         assert_eq!(result.total_count, 1);
         assert_eq!(result.items[0].video_id, "sm1");
+    }
+
+    #[test]
+    fn comment_search_uses_only_the_latest_snapshot() {
+        let mut conn = setup();
+        seed_library(&mut conn);
+        // sm1 を再取得した体で 2 つ目のスナップショットを積む。1 件目にあった
+        // コメントは消え、新しいコメントだけが載っている状態。
+        crate::library::snapshots::take_snapshot(
+            &mut conn,
+            "sm1",
+            &[CommentRecord {
+                no: 2,
+                vpos_ms: 100,
+                content: "新しい弾幕コメント".into(),
+                mail: None,
+                user_hash: Some("h2".into()),
+                is_owner: false,
+                posted_at: Some(1_700_000_020),
+            }],
+            None,
+        )
+        .unwrap();
+
+        // 旧スナップショットにしか無いコメントはヒットしない。
+        let old = search_comments(&conn, "すごい弾幕", 0, 10).unwrap();
+        assert_eq!(old.total_count, 0);
+
+        // 最新スナップショットのコメントは 1 件だけ (重複しない)。
+        let latest = search_comments(&conn, "弾幕コメント", 0, 10).unwrap();
+        assert_eq!(latest.total_count, 1);
+        assert_eq!(latest.items[0].content, "新しい弾幕コメント");
+    }
+
+    #[test]
+    fn tag_aggregates_only_count_downloaded_videos() {
+        let mut conn = setup();
+        seed_library(&mut conn);
+        // ローカルファイルが失われた動画 (video_path=NULL) のタグは、
+        // 検索で絶対に出てこないので集計にも候補にも出さない。
+        conn.execute(
+            "INSERT INTO videos (id, title, duration_sec, status) \
+             VALUES ('sm99', '未 DL', 100, 'active')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO tags (video_id, name, is_locked, source) \
+             VALUES ('sm99', '幽霊タグ', 0, 'official')",
+            [],
+        )
+        .unwrap();
+
+        let stats = get_stats(&conn).unwrap();
+        assert!(
+            !stats.top_tags.iter().any(|t| t.name == "幽霊タグ"),
+            "top_tags に未 DL 動画のタグが混ざった: {:?}",
+            stats.top_tags
+        );
+        let tags = list_all_tags(&conn).unwrap();
+        assert!(!tags.contains(&"幽霊タグ".to_string()));
+        // unique_tags も同じスコープ (幽霊タグを除いた実数)。
+        assert_eq!(stats.unique_tags as usize, tags.len());
+    }
+
+    #[test]
+    fn uploader_id_and_type_are_separate_namespaces() {
+        let mut conn = setup();
+        seed_library(&mut conn);
+        // 同じ数値 ID のチャンネル動画を足す (ユーザ ID とは別名前空間)。
+        conn.execute(
+            "UPDATE videos SET uploader_type = 'user' WHERE uploader_id = 'u2'",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO videos (id, title, duration_sec, status, video_path, \
+                                 uploader_id, uploader_name, uploader_type) \
+             VALUES ('sm100', 'チャンネル動画', 120, 'active', 'videos/sm100/video.mp4', \
+                     'u2', 'チャンネル', 'channel')",
+            [],
+        )
+        .unwrap();
+
+        // 一覧はユーザとチャンネルを別行として返す。
+        let uploaders = list_uploaders(&conn, 50).unwrap();
+        let same_id: Vec<_> = uploaders.iter().filter(|u| u.uploader_id == "u2").collect();
+        assert_eq!(
+            same_id.len(),
+            2,
+            "ID が同じでも種別が違えば別行: {same_id:?}"
+        );
+        assert!(same_id
+            .iter()
+            .any(|u| u.uploader_type.as_deref() == Some("user")));
+        assert!(same_id
+            .iter()
+            .any(|u| u.uploader_type.as_deref() == Some("channel")));
+
+        // 絞り込みも種別込みで効く。
+        let channel_only = query_videos(
+            &conn,
+            &LibraryQuery {
+                uploader_id: Some("u2".into()),
+                uploader_type: Some("channel".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(channel_only.total_count, 1);
+        assert_eq!(channel_only.items[0].id, "sm100");
+
+        // 種別を指定しなければ従来どおり ID だけで引く。
+        let both = query_videos(
+            &conn,
+            &LibraryQuery {
+                uploader_id: Some("u2".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(both.total_count, 3);
     }
 
     #[test]

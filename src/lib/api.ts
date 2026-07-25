@@ -415,6 +415,9 @@ export type LibraryQueryParams = {
   tags?: string[];
   tagsAny?: string[];
   uploaderId?: string;
+  /** `"user"` / `"channel"`。ID の名前空間が別なので、種別まで分かって
+   *  いる時は一緒に送ると同じ数値 ID の別投稿者が混ざらない。 */
+  uploaderType?: string;
   minDuration?: number;
   maxDuration?: number;
   resolution?: string;

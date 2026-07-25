@@ -200,7 +200,12 @@ export function buildLibraryQuery(state: LibraryFilterState): LibraryQueryParams
   const q = state.q.trim();
   if (q) params.q = q;
   if (state.tags.length > 0) params.tags = [...state.tags];
-  if (state.uploaderId) params.uploaderId = state.uploaderId;
+  if (state.uploaderId) {
+    params.uploaderId = state.uploaderId;
+    // 種別が分かっているなら一緒に送る。ユーザ ID とチャンネル ID は別名前空間
+    // なので、同じ数値の別投稿者が結果に混ざるのを防げる。
+    if (state.uploaderType) params.uploaderType = state.uploaderType;
+  }
   if (state.resolution) params.resolution = state.resolution;
   if (state.isShort) params.isShort = true;
   const min = minutesToSeconds(state.minMinutes);
@@ -246,6 +251,8 @@ export type SmartPlaylistSaveCheck = {
   canSave: boolean;
   /** オンライン検索へ持ち出せず、保存時に落ちる条件の表示名。 */
   dropped: string[];
+  /** 条件は保存されるが、オンラインでは意味が変わる点の注意書き。 */
+  notes: string[];
 };
 
 /** 現在の検索条件をスマートプレイリストとして保存できるか判定する。 */
@@ -254,10 +261,18 @@ export function checkSmartPlaylistSave(state: LibraryFilterState): SmartPlaylist
   const dropped: string[] = [];
   if (state.resolution) dropped.push('解像度');
   if (state.isShort) dropped.push('ショート');
+  // 「最長 0 分」はローカルでは duration_sec <= 0 (メタ欠落動画) を指すが、
+  // normalizeFilter が 0 を「未指定」として落とすので保存されない。
+  if (minutesToSeconds(state.maxMinutes) === 0) dropped.push('最長 0 分');
   // ローカル専用の並び順は normalizeFilter で落ち、オンラインでは
   // 再生数降順にフォールバックする。黙って変わらないよう明示する。
   if (!isOnlineSortBy(state.sortBy)) dropped.push(`並び順「${sortLabel(state.sortBy)}」`);
-  return { canSave: !!(online.q || online.tags?.length), dropped };
+
+  const notes: string[] = [];
+  // ローカルはタイトル/タグ/保存コメントを見るが、Snapshot Search の
+  // キーワードはタイトルとタグだけ。コメント一致で出ていた動画は落ちる。
+  if (online.q) notes.push('キーワードの対象はタイトルとタグのみ (保存コメントは対象外)');
+  return { canSave: !!(online.q || online.tags?.length), dropped, notes };
 }
 
 /** コメント検索を投げてよいか (3 文字未満はバックエンドがエラーにする)。 */

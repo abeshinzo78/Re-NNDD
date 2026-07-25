@@ -74,7 +74,12 @@
   /** 選択中の投稿者が候補一覧に居ない場合 (200 件の枠外 / カードから直接指定)
    *  でも選択が消えないよう、その ID を候補へ足す。 */
   let uploaderOptions = $derived(
-    filter.uploaderId && !uploaders.some((u) => u.uploaderId === filter.uploaderId)
+    filter.uploaderId &&
+      !uploaders.some(
+        (u) =>
+          u.uploaderId === filter.uploaderId &&
+          (u.uploaderType ?? '') === (filter.uploaderType ?? ''),
+      )
       ? [
           {
             uploaderId: filter.uploaderId,
@@ -271,9 +276,26 @@
 
   /** 投稿者の選択。オンライン検索へ持ち出す時に必要な種別も一緒に控える。 */
   function onUploaderChange(e: Event & { currentTarget: HTMLSelectElement }) {
-    const uploaderId = e.currentTarget.value;
-    const picked = uploaders.find((u) => u.uploaderId === uploaderId);
-    update({ uploaderId, uploaderType: uploaderId ? (picked?.uploaderType ?? '') : '' });
+    const key = e.currentTarget.value;
+    if (!key) {
+      update({ uploaderId: '', uploaderType: '' });
+      return;
+    }
+    const sep = key.indexOf(':');
+    update({ uploaderType: key.slice(0, sep), uploaderId: key.slice(sep + 1) });
+  }
+
+  /** 投稿者セレクトの値。ユーザ ID とチャンネル ID は別名前空間で数値が
+   *  衝突しうるので、種別込みの複合キー (`user:123` / `:123`) で扱う。 */
+  function uploaderKey(uploaderId: string, uploaderType: string | null | undefined): string {
+    return uploaderId ? `${uploaderType ?? ''}:${uploaderId}` : '';
+  }
+
+  /** 投稿者の表示名。種別が分かるものはチャンネルだと分かるようにする。 */
+  function uploaderLabel(u: UploaderInfo): string {
+    const name = u.uploaderName ?? `ID:${u.uploaderId}`;
+    const kind = u.uploaderType === 'channel' ? '[ch] ' : '';
+    return u.videoCount > 0 ? `${kind}${name} (${u.videoCount})` : `${kind}${name}`;
   }
 
   /** 並び順の変更。ランダムを選び直したらシャッフルし直す。 */
@@ -384,7 +406,7 @@
   /** 現在の検索条件をスマートプレイリスト (＝オンライン検索の保存) にする。
    *  オンライン検索へ持ち出せない条件は保存前に明示して確認する。 */
   function saveAsSmartPlaylist() {
-    const { canSave, dropped } = checkSmartPlaylistSave(filter);
+    const { canSave, dropped, notes } = checkSmartPlaylistSave(filter);
     if (!canSave) {
       alert(
         'スマートプレイリストはオンライン検索の条件を保存する機能です。\n' +
@@ -392,10 +414,11 @@
       );
       return;
     }
-    if (
-      dropped.length > 0 &&
-      !confirm(`${dropped.join('・')}はオンライン検索に無いため保存されません。続けますか？`)
-    )
+    const warnings = [
+      ...(dropped.length > 0 ? [`保存されない条件: ${dropped.join('・')}`] : []),
+      ...notes,
+    ];
+    if (warnings.length > 0 && !confirm(`${warnings.join('\n')}\n\nこの内容で保存しますか？`))
       return;
 
     const summary = summarizeLibraryFilter(filter);
@@ -589,14 +612,14 @@
 
         <label class="field">
           <span class="field-label">投稿者</span>
-          <select class="text-input" value={filter.uploaderId} onchange={onUploaderChange}>
+          <select
+            class="text-input"
+            value={uploaderKey(filter.uploaderId, filter.uploaderType)}
+            onchange={onUploaderChange}
+          >
             <option value="">すべて</option>
-            {#each uploaderOptions as u (u.uploaderId)}
-              <option value={u.uploaderId}>
-                {u.uploaderName ?? `ID:${u.uploaderId}`}{u.videoCount > 0
-                  ? ` (${u.videoCount})`
-                  : ''}
-              </option>
+            {#each uploaderOptions as u (uploaderKey(u.uploaderId, u.uploaderType))}
+              <option value={uploaderKey(u.uploaderId, u.uploaderType)}>{uploaderLabel(u)}</option>
             {/each}
           </select>
         </label>

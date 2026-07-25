@@ -355,8 +355,39 @@ describe('checkSmartPlaylistSave', () => {
     expect(dropped).toEqual(['解像度', 'ショート', '並び順「DL 日時」']);
   });
 
+  it('最長 0 分は保存されないので落ちる条件に挙げる', () => {
+    // normalizeFilter は 0 を「未指定」として捨てるため、黙って全再生時間が
+    // 対象になってしまう (ローカルでは duration_sec <= 0 の絞り込み)。
+    const { dropped } = checkSmartPlaylistSave(
+      state({ q: 'ミク', maxMinutes: '0', sortBy: 'view_count' }),
+    );
+    expect(dropped).toEqual(['最長 0 分']);
+    // 最短 0 分はローカルでも条件として無意味なので警告しない。
+    expect(
+      checkSmartPlaylistSave(state({ q: 'ミク', minMinutes: '0', sortBy: 'view_count' })).dropped,
+    ).toEqual([]);
+  });
+
+  it('キーワードの対象範囲が変わる点を注意書きにする', () => {
+    // ローカルはタイトル/タグ/保存コメント、オンラインはタイトル/タグのみ。
+    const { notes } = checkSmartPlaylistSave(state({ q: 'ミク', sortBy: 'view_count' }));
+    expect(notes).toEqual(['キーワードの対象はタイトルとタグのみ (保存コメントは対象外)']);
+    // キーワード無し (タグのみ) なら注意書きは要らない。
+    expect(checkSmartPlaylistSave(state({ tags: ['東方'], sortBy: 'view_count' })).notes).toEqual(
+      [],
+    );
+  });
+
   it('オンラインでも使える並び順なら並び順は落ちない', () => {
     expect(checkSmartPlaylistSave(state({ q: 'ミク', sortBy: 'view_count' })).dropped).toEqual([]);
+  });
+
+  it('投稿者の種別はローカル検索にも渡す (ID の名前空間が別のため)', () => {
+    const q = buildLibraryQuery(state({ uploaderId: '2632720', uploaderType: 'channel' }));
+    expect(q.uploaderId).toBe('2632720');
+    expect(q.uploaderType).toBe('channel');
+    // 種別不明なら送らない (従来どおり ID だけで引く)
+    expect('uploaderType' in buildLibraryQuery(state({ uploaderId: '1' }))).toBe(false);
   });
 
   it('ローカル専用の並び順はすべて警告対象', () => {
