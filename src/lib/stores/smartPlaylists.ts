@@ -25,6 +25,9 @@ export type SmartPlaylistFilter = {
   /** OR: いずれかのタグを含む。 */
   tagsAny?: string[];
   uploaderId?: string;
+  /** `uploaderId` がユーザ ID かチャンネル ID か。未指定は `'user'` 扱い
+   *  (チャンネル動画を `userId` で引くと別人の結果になってしまうため)。 */
+  uploaderType?: 'user' | 'channel';
   minDuration?: number;
   maxDuration?: number;
   sortBy?: string;
@@ -144,7 +147,12 @@ export function normalizeFilter(f: SmartPlaylistFilter): SmartPlaylistFilter {
     const cleaned = Array.from(new Set(f.tagsAny.map((t) => t.trim()).filter((t) => t.length > 0)));
     if (cleaned.length > 0) out.tagsAny = cleaned;
   }
-  if (f.uploaderId && f.uploaderId.trim()) out.uploaderId = f.uploaderId.trim();
+  if (f.uploaderId && f.uploaderId.trim()) {
+    out.uploaderId = f.uploaderId.trim();
+    // 種別は uploaderId とセットでのみ意味を持つ。
+    if (f.uploaderType === 'channel' || f.uploaderType === 'user')
+      out.uploaderType = f.uploaderType;
+  }
   if (Number.isFinite(f.minDuration) && (f.minDuration as number) > 0)
     out.minDuration = Math.floor(f.minDuration as number);
   if (Number.isFinite(f.maxDuration) && (f.maxDuration as number) > 0)
@@ -228,7 +236,10 @@ export function filterToSearchQuery(f: SmartPlaylistFilter): SearchQuery {
   // 何も無い場合は searchQ='' のまま返す → 呼び出し側がエラー表示。
 
   if (f.uploaderId) {
-    filters.push({ field: 'userId', op: 'eq', value: f.uploaderId });
+    // チャンネル投稿は userId では引けない (別名前空間)。取り込み時に
+    // uploader_type=channel と分かっているものは channelId で絞る。
+    const field: SearchField = f.uploaderType === 'channel' ? 'channelId' : 'userId';
+    filters.push({ field, op: 'eq', value: f.uploaderId });
   }
   if (f.minDuration != null) {
     filters.push({ field: 'lengthSeconds', op: 'gte', value: String(f.minDuration) });
@@ -279,7 +290,8 @@ export function summarizeFilter(f: SmartPlaylistFilter): string {
   if (f.q) parts.push(`"${f.q}"`);
   if (f.tags?.length) parts.push(`タグAND: ${f.tags.join(', ')}`);
   if (f.tagsAny?.length) parts.push(`タグOR: ${f.tagsAny.join(', ')}`);
-  if (f.uploaderId) parts.push(`投稿者:${f.uploaderId}`);
+  if (f.uploaderId)
+    parts.push(`${f.uploaderType === 'channel' ? 'チャンネル' : '投稿者'}:${f.uploaderId}`);
   if (f.minDuration != null) parts.push(`${f.minDuration}s〜`);
   if (f.maxDuration != null) parts.push(`〜${f.maxDuration}s`);
   if (isOnlineSortBy(f.sortBy)) parts.push(`順:${f.sortBy} ${f.sortOrder ?? 'desc'}`);

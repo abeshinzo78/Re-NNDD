@@ -415,12 +415,17 @@ export type LibraryQueryParams = {
   tags?: string[];
   tagsAny?: string[];
   uploaderId?: string;
+  /** `"user"` / `"channel"`。ID の名前空間が別なので、種別まで分かって
+   *  いる時は一緒に送ると同じ数値 ID の別投稿者が混ざらない。 */
+  uploaderType?: string;
   minDuration?: number;
   maxDuration?: number;
   resolution?: string;
   isShort?: boolean;
   sortBy?: string;
   sortOrder?: 'asc' | 'desc';
+  /** `sortBy: 'random'` の並びをページ間で固定する種。 */
+  randomSeed?: number;
   offset?: number;
   limit?: number;
 };
@@ -526,6 +531,9 @@ export type UploaderInfo = {
   uploaderName: string | null;
   videoCount: number;
   totalDurationSec: number;
+  /** `"user"` / `"channel"`。オンライン検索で userId と channelId の
+   *  どちらで絞るかがこれで決まる。不明な取り込み済み動画は null。 */
+  uploaderType: string | null;
 };
 
 export async function listLibraryUploaders(limit?: number): Promise<UploaderInfo[]> {

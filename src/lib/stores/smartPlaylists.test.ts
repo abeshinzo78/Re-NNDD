@@ -125,6 +125,16 @@ describe('normalizeFilter', () => {
     const f = normalizeFilter({ sortBy: 'posted_at' });
     expect(f.sortBy).toBe('posted_at');
   });
+
+  test('uploaderType は uploaderId とセットの時だけ残る', () => {
+    expect(normalizeFilter({ uploaderId: 'ch1', uploaderType: 'channel' }).uploaderType).toBe(
+      'channel',
+    );
+    expect(normalizeFilter({ uploaderType: 'channel' }).uploaderType).toBeUndefined();
+    expect(
+      normalizeFilter({ uploaderId: '1', uploaderType: 'group' as unknown as 'user' }).uploaderType,
+    ).toBeUndefined();
+  });
 });
 
 describe('summarizeFilter', () => {
@@ -178,6 +188,24 @@ describe('filterToSearchQuery (online snapshot search)', () => {
     expect(q.filters).toContainEqual({ field: 'userId', op: 'eq', value: '12345' });
     expect(q.filters).toContainEqual({ field: 'lengthSeconds', op: 'gte', value: '60' });
     expect(q.filters).toContainEqual({ field: 'lengthSeconds', op: 'lte', value: '600' });
+  });
+
+  test('channel uploaders filter on channelId, not userId', () => {
+    // チャンネル ID を userId で引くと別名前空間になり 0 件 / 無関係な結果になる。
+    const q = filterToSearchQuery({ q: 'a', uploaderId: 'ch2632720', uploaderType: 'channel' });
+    expect(q.filters).toContainEqual({ field: 'channelId', op: 'eq', value: 'ch2632720' });
+    expect(q.filters).not.toContainEqual({ field: 'userId', op: 'eq', value: 'ch2632720' });
+  });
+
+  test('user / unknown uploader kind keeps userId (既存プレイリスト互換)', () => {
+    expect(
+      filterToSearchQuery({ q: 'a', uploaderId: '1', uploaderType: 'user' }).filters,
+    ).toContainEqual({ field: 'userId', op: 'eq', value: '1' });
+    expect(filterToSearchQuery({ q: 'a', uploaderId: '1' }).filters).toContainEqual({
+      field: 'userId',
+      op: 'eq',
+      value: '1',
+    });
   });
 
   test('sort maps to snapshot search field names', () => {

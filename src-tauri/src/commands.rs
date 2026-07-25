@@ -2340,8 +2340,10 @@ pub async fn list_library_videos(
         let placeholders = std::iter::repeat_n("?", ids.len())
             .collect::<Vec<_>>()
             .join(",");
+        // 同じタグが official / local の両方にあると名前が重複する。UI は
+        // タグ名をキーに each するので DISTINCT で潰しておく (query.rs と同じ)。
         let sql = format!(
-            "SELECT video_id, name FROM tags WHERE video_id IN ({placeholders}) \
+            "SELECT DISTINCT video_id, name FROM tags WHERE video_id IN ({placeholders}) \
              ORDER BY video_id, name"
         );
         let mut stmt = conn
@@ -2497,8 +2499,13 @@ pub async fn prepare_local_playback(
     };
 
     // タグ
+    // 名前で束ねる (source 違いの重複を潰す)。ロックはどれか 1 つでも
+    // 付いていればロック扱い。動画ページもタグ名をキーに each している。
     let mut tag_stmt = conn
-        .prepare("SELECT name, is_locked FROM tags WHERE video_id = ?1")
+        .prepare(
+            "SELECT name, MAX(is_locked) FROM tags WHERE video_id = ?1 \
+             GROUP BY name ORDER BY name",
+        )
         .map_err(|e| AppError::Other(format!("prepare tags: {e}")))?;
     let tags: Vec<LibraryTag> = tag_stmt
         .query_map(rusqlite::params![video_id], |row| {
@@ -3160,6 +3167,7 @@ pub struct UploaderInfoDto {
     pub uploader_name: Option<String>,
     pub video_count: i64,
     pub total_duration_sec: i64,
+    pub uploader_type: Option<String>,
 }
 
 impl From<query::UploaderInfo> for UploaderInfoDto {
@@ -3169,6 +3177,7 @@ impl From<query::UploaderInfo> for UploaderInfoDto {
             uploader_name: u.uploader_name,
             video_count: u.video_count,
             total_duration_sec: u.total_duration_sec,
+            uploader_type: u.uploader_type,
         }
     }
 }
