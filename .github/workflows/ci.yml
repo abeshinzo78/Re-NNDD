@@ -54,24 +54,44 @@ jobs:
       - name: svelte-kit sync
         run: npx svelte-kit sync
 
-      # Case-insensitive filename collision check (Windows / macOS では `.svelte`
-      # と `.svelte.ts` の case 差だけのペアが import 解決を壊して release build
-      # が `[MISSING_EXPORT]` でコケる。Linux runner 単独では検出できないので
-      # 静的に潰す)
-      - name: Check Svelte filename case collisions
-        run: bash scripts/check-case-collisions.sh
+      # 互いに独立した 4 つのチェックを並列で回す (`parallel:` = グループ内を
+      # 全部 background 実行し、末尾で暗黙 wait する糖衣構文)。
+      #
+      # 並列化の安全性 = 「同じファイルを同時に書かないこと」で担保している。
+      # このグループで `.svelte-kit/` を書き換えるのは vitest だけ
+      # (vite.config.ts が sveltekit() プラグインを噛ませているので、vitest の
+      # config 解決時に `svelte-kit sync` が走る)。他の 3 つは read-only:
+      #   - case collision チェック: `git ls-files` を舐めるだけ
+      #   - prettier: .prettierignore で `.svelte-kit` / `build` を除外済み
+      #   - eslint:   eslint.config.js の ignores で同上。型情報も使わない
+      #               (parserOptions.project 未設定) ので `.svelte-kit/tsconfig.json`
+      #               すら読まない
+      # よって write 競合は起きない。
+      #
+      # svelte-check (`svelte-kit sync && svelte-check`) と vite build も
+      # `.svelte-kit/` の writer なので、vitest とも互いとも競合する。
+      # このグループには入れず、後段で直列に回す。
+      - parallel:
+          # Case-insensitive filename collision check (Windows / macOS では `.svelte`
+          # と `.svelte.ts` の case 差だけのペアが import 解決を壊して release build
+          # が `[MISSING_EXPORT]` でコケる。Linux runner 単独では検出できないので
+          # 静的に潰す)
+          - name: Check Svelte filename case collisions
+            run: bash scripts/check-case-collisions.sh
 
-      - name: Prettier (format check)
-        run: npx prettier --check .
+          - name: Prettier (format check)
+            run: npx prettier --check .
 
-      - name: ESLint
-        run: npm run lint
+          - name: ESLint
+            run: npm run lint
 
+          - name: Vitest (unit / component tests)
+            run: npm test -- --reporter=verbose
+
+      # ここから下は 2 つとも内部で `svelte-kit sync` を走らせる
+      # (= `.svelte-kit/` を書き換える) ので、直列を維持する。
       - name: svelte-check (type check)
         run: npm run check
-
-      - name: Vitest (unit / component tests)
-        run: npm test -- --reporter=verbose
 
       - name: Vite production build
         run: npm run build
@@ -95,7 +115,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      # WebKitGTK 一式の apt 取得/展開は 1〜2 分かかるが、Rust 側の準備
+      # (rustup / cache 復元 / stub / fmt) とは完全に独立している。
+      # background で先行させ、その裏で下の 4 step を進める。
+      # 並走する step はいずれも apt も C コンパイルも触らないので競合しない
+      # (rustup は自前 DL、rust-cache は tar 展開、stub は touch、
+      #  cargo fmt は rustfmt がソースを読むだけで target/ にも system lib にも
+      #  触らない)。
+      # 実際に system lib を要求するのは build script を走らせる
+      # clippy / test / build / doc なので、その直前で wait する。
       - name: Install system dependencies for Tauri 2 (Linux)
+        id: system-deps
+        background: true
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -139,6 +170,14 @@ jobs:
       - name: cargo fmt --check
         run: cargo fmt --all -- --check
 
+      # ここから先は build script が webkit2gtk / libsoup 等を要求するので
+      # apt の完了を待つ。apt が失敗していればこの wait で job が落ちる。
+      - wait: system-deps
+
+      # clippy / test / build / doc は並列化しない。同じ `target/` を使う
+      # cargo 呼び出しは build directory のファイルロックで自動的に直列化
+      # されるため、background にしても待ち時間が変わらない (むしろログが
+      # 読みにくくなるだけ)。
       - name: cargo clippy (workspace, all-targets, deny warnings)
         run: cargo clippy --workspace --all-targets -- -D warnings
 

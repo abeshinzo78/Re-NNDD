@@ -82,34 +82,39 @@ jobs:
           shared-key: tauri-dryrun-${{ matrix.platform.target }}
           cache-on-failure: true
 
-      - name: Install Linux deps (Tauri 2)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libwebkit2gtk-4.1-dev \
-            libsoup-3.0-dev \
-            libjavascriptcoregtk-4.1-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            libgtk-3-dev \
-            libssl-dev \
-            build-essential \
-            pkg-config \
-            patchelf
+      # release.yml と同じ理由で並列化する。apt (Linux, 1〜2 分) / npm ci /
+      # サイドカー DL (100MB 級) は書き込み先が /usr, node_modules/,
+      # src-tauri/binaries/ と分かれていて互いに独立。`parallel:` 末尾の
+      # 暗黙 wait で 3 つ揃ってから下の `tauri build` に進む。
+      - parallel:
+          - name: Install Linux deps (Tauri 2)
+            if: runner.os == 'Linux'
+            run: |
+              sudo apt-get update
+              sudo apt-get install -y --no-install-recommends \
+                libwebkit2gtk-4.1-dev \
+                libsoup-3.0-dev \
+                libjavascriptcoregtk-4.1-dev \
+                libayatana-appindicator3-dev \
+                librsvg2-dev \
+                libgtk-3-dev \
+                libssl-dev \
+                build-essential \
+                pkg-config \
+                patchelf
 
-      - name: Install npm dependencies
-        run: npm ci --no-audit --no-fund
+          - name: Install npm dependencies
+            run: npm ci --no-audit --no-fund
 
-      - name: Fetch sidecar binaries (yt-dlp / ffmpeg)
-        if: runner.os != 'Windows'
-        shell: bash
-        run: bash scripts/fetch-binaries.sh
+          - name: Fetch sidecar binaries (yt-dlp / ffmpeg)
+            if: runner.os != 'Windows'
+            shell: bash
+            run: bash scripts/fetch-binaries.sh
 
-      - name: Fetch sidecar binaries (Windows / Git Bash)
-        if: runner.os == 'Windows'
-        shell: bash
-        run: bash scripts/fetch-binaries.sh
+          - name: Fetch sidecar binaries (Windows / Git Bash)
+            if: runner.os == 'Windows'
+            shell: bash
+            run: bash scripts/fetch-binaries.sh
 
       # tauri-action を使わず CLI 直叩き = GitHub Release への upload を伴わない。
       # release.yml と同じく `--target` を渡してビルドする。
