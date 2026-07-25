@@ -238,10 +238,14 @@
     if (t == null || !id) return;
     const key = `${id}@${t}`;
     if (consumedStartAt === key) return;
+    // Player がマウントされるまで待つ (playerRef は $state なので現れた時に
+    // この effect が再実行される)。resumePosition 経由にしないのは、Player 側の
+    // 「終端近くの resume は先頭へ戻す」ガードに ?t= まで弾かれるため。
+    // seek() は metadata 未ロードなら pendingSeek に退避され、resume 復元の
+    // 後に範囲内へクランプして適用されるので、終端近くのコメントにも飛べる。
+    if (!playerRef) return;
     consumedStartAt = key;
-    // 再生準備前は resumePosition 経由で頭出しし、既に Player が居れば直接シーク。
-    if (playerRef) playerRef.seek(t);
-    else _pendingResumeTime = t;
+    playerRef.seek(t);
   });
 
   function handleSeek(t: number) {

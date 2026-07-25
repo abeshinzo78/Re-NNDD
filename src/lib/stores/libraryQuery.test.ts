@@ -380,6 +380,25 @@ describe('checkSmartPlaylistSave', () => {
     );
   });
 
+  it('種別不明の投稿者は userId 扱いになる旨を注意書きにする', () => {
+    const { notes } = checkSmartPlaylistSave(
+      state({ tags: ['東方'], uploaderId: '123', uploaderType: '', sortBy: 'view_count' }),
+    );
+    expect(notes).toEqual(['投稿者の種別が不明のため、ユーザー ID (userId) として検索します']);
+    // 種別が分かっていれば注意書きは出ない。
+    for (const uploaderType of ['user', 'channel']) {
+      expect(
+        checkSmartPlaylistSave(
+          state({ tags: ['東方'], uploaderId: '123', uploaderType, sortBy: 'view_count' }),
+        ).notes,
+      ).toEqual([]);
+    }
+    // 投稿者未指定なら関係ない。
+    expect(checkSmartPlaylistSave(state({ tags: ['東方'], sortBy: 'view_count' })).notes).toEqual(
+      [],
+    );
+  });
+
   it('オンラインでも使える並び順なら並び順は落ちない', () => {
     expect(checkSmartPlaylistSave(state({ q: 'ミク', sortBy: 'view_count' })).dropped).toEqual([]);
   });

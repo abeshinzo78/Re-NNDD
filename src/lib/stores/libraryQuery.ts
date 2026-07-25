@@ -273,6 +273,10 @@ export function checkSmartPlaylistSave(state: LibraryFilterState): SmartPlaylist
   // ローカルはタイトル/タグ/保存コメントを見るが、Snapshot Search の
   // キーワードはタイトルとタグだけ。コメント一致で出ていた動画は落ちる。
   if (online.q) notes.push('キーワードの対象はタイトルとタグのみ (保存コメントは対象外)');
+  // 種別不明の投稿者はオンラインでは userId 扱いになる。実はチャンネルだった
+  // 場合は別名前空間を引いて 0 件になるので、黙って確定させない。
+  if (state.uploaderId && state.uploaderType !== 'user' && state.uploaderType !== 'channel')
+    notes.push('投稿者の種別が不明のため、ユーザー ID (userId) として検索します');
   return { canSave: !!(online.q || online.tags?.length), dropped, notes };
 }
 

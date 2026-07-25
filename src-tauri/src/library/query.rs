@@ -708,7 +708,7 @@ pub fn search_comments(
          WHERE v.video_path IS NOT NULL \
            AND {LATEST_SNAPSHOT_ONLY} \
            AND comments_fts MATCH ?1 \
-         ORDER BY c.posted_at DESC \
+         ORDER BY c.posted_at DESC, c.id DESC \
          LIMIT ?2 OFFSET ?3"
     );
 
@@ -1555,6 +1555,37 @@ mod tests {
         let result = search_comments(&conn, "すごい弾幕", 0, 10).unwrap();
         assert_eq!(result.total_count, 1);
         assert_eq!(result.items[0].video_id, "sm1");
+    }
+
+    #[test]
+    fn comment_paging_is_stable_across_posted_at_ties() {
+        let mut conn = setup();
+        seed_library(&mut conn);
+        // posted_at が同一 (秒精度では普通に起こる) のコメントを複数積む。
+        // タイブレークが無いと OFFSET ページングで同じ行が 2 回出たり
+        // 取りこぼしたりする。
+        let ties: Vec<CommentRecord> = (0..6)
+            .map(|i| CommentRecord {
+                no: 10 + i,
+                vpos_ms: i * 1000,
+                content: format!("同時刻の弾幕 {i}"),
+                mail: None,
+                user_hash: None,
+                is_owner: false,
+                posted_at: Some(1_700_000_100),
+            })
+            .collect();
+        crate::library::snapshots::take_snapshot(&mut conn, "sm2", &ties, None).unwrap();
+
+        let mut seen: Vec<i64> = Vec::new();
+        for page in 0..6u32 {
+            let r = search_comments(&conn, "同時刻の弾幕", page, 1).unwrap();
+            assert_eq!(r.total_count, 6);
+            seen.extend(r.items.iter().map(|h| h.comment_no));
+        }
+        let unique: std::collections::HashSet<&i64> = seen.iter().collect();
+        assert_eq!(seen.len(), 6);
+        assert_eq!(unique.len(), 6, "ページ間で重複/欠落した: {seen:?}");
     }
 
     #[test]
