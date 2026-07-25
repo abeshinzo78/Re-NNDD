@@ -466,9 +466,13 @@ pub fn get_stats(conn: &Connection) -> Result<LibraryStats, LibraryError> {
         )
         .unwrap_or(0);
 
+    // 投稿者の同一性は (ID, 種別)。ユーザとチャンネルは ID の名前空間が別なので、
+    // list_uploaders / 絞り込みと数え方を揃える。
     let unique_uploaders: i64 = conn
         .query_row(
-            "SELECT COUNT(DISTINCT uploader_id) FROM videos WHERE video_path IS NOT NULL AND uploader_id IS NOT NULL",
+            "SELECT COUNT(*) FROM (\
+               SELECT DISTINCT uploader_id, uploader_type FROM videos \
+               WHERE video_path IS NOT NULL AND uploader_id IS NOT NULL)",
             [],
             |r| r.get(0),
         )
@@ -487,8 +491,11 @@ pub fn get_stats(conn: &Connection) -> Result<LibraryStats, LibraryError> {
         .unwrap_or(0);
 
     // Top 50 tags by frequency.
+    // 数えるのは「動画数」。tags の主キーは (video_id, name, source) なので、
+    // 同じタグが official と local の両方に入っている動画を COUNT(*) で数えると
+    // 2 件に膨らみ、チップの件数と実際の絞り込み結果がズレる。
     let mut tag_stmt = conn.prepare(
-        "SELECT t.name, COUNT(*) AS cnt FROM tags t \
+        "SELECT t.name, COUNT(DISTINCT t.video_id) AS cnt FROM tags t \
          JOIN videos v ON v.id = t.video_id \
          WHERE v.video_path IS NOT NULL \
          GROUP BY t.name ORDER BY cnt DESC, t.name LIMIT 50",
@@ -1595,6 +1602,62 @@ mod tests {
         assert!(!tags.contains(&"幽霊タグ".to_string()));
         // unique_tags も同じスコープ (幽霊タグを除いた実数)。
         assert_eq!(stats.unique_tags as usize, tags.len());
+    }
+
+    #[test]
+    fn top_tags_count_videos_not_tag_rows() {
+        let mut conn = setup();
+        seed_library(&mut conn);
+        // tags の主キーは (video_id, name, source)。同じタグが別 source でも
+        // 入っている動画を 2 件と数えると、チップの件数と絞り込み結果がズレる。
+        conn.execute(
+            "INSERT INTO tags (video_id, name, is_locked, source) \
+             VALUES ('sm2', 'VOCALOID', 0, 'local')",
+            [],
+        )
+        .unwrap();
+
+        let stats = get_stats(&conn).unwrap();
+        let vocaloid = stats
+            .top_tags
+            .iter()
+            .find(|t| t.name == "VOCALOID")
+            .expect("VOCALOID タグ");
+        // 実際に VOCALOID タグで絞り込める動画数と一致する。
+        let filtered = query_videos(
+            &conn,
+            &LibraryQuery {
+                tags: Some(vec!["VOCALOID".into()]),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(vocaloid.count, filtered.total_count);
+    }
+
+    #[test]
+    fn unique_uploaders_counts_namespaces_separately() {
+        let mut conn = setup();
+        seed_library(&mut conn);
+        let before = get_stats(&conn).unwrap().unique_uploaders;
+        // 同じ数値 ID のチャンネル動画は別の投稿者として数える。
+        conn.execute(
+            "UPDATE videos SET uploader_type = 'user' WHERE uploader_id IS NOT NULL",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO videos (id, title, duration_sec, status, video_path, \
+                                 uploader_id, uploader_type) \
+             VALUES ('sm101', 'ch 動画', 60, 'active', 'videos/sm101/video.mp4', \
+                     'u2', 'channel')",
+            [],
+        )
+        .unwrap();
+        let after = get_stats(&conn).unwrap().unique_uploaders;
+        assert_eq!(after, before + 1, "同じ ID でも種別が違えば別の投稿者");
+        // list_uploaders の行数とも一致する。
+        assert_eq!(after as usize, list_uploaders(&conn, 200).unwrap().len());
     }
 
     #[test]

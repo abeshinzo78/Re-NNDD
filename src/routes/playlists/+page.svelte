@@ -144,6 +144,9 @@
   let editorTagsAnd = $state('');
   let editorTagsOr = $state('');
   let editorUploaderId = $state('');
+  // ユーザ ID とチャンネル ID は別名前空間 (数値が衝突しうる)。ライブラリから
+  // 保存したチャンネル条件を編集で開いても取り違えないよう、種別も持ち回る。
+  let editorUploaderType = $state<'user' | 'channel'>('user');
   let editorMinDuration = $state<number | null>(null);
   let editorMaxDuration = $state<number | null>(null);
   // 既定 sort: オンライン (snapshot search) で唯一の "目利き" 系である再生数降順。
@@ -164,6 +167,7 @@
     editorTagsAnd = (f.tags ?? []).join(', ');
     editorTagsOr = (f.tagsAny ?? []).join(', ');
     editorUploaderId = f.uploaderId ?? '';
+    editorUploaderType = f.uploaderType === 'channel' ? 'channel' : 'user';
     editorMinDuration = f.minDuration ?? null;
     editorMaxDuration = f.maxDuration ?? null;
     // 旧仕様 (downloaded_at / play_count 等) が保存されていた場合は
@@ -205,6 +209,7 @@
       tags: parseCsv(editorTagsAnd),
       tagsAny: parseCsv(editorTagsOr),
       uploaderId: editorUploaderId,
+      uploaderType: editorUploaderType,
       minDuration: editorMinDuration ?? undefined,
       maxDuration: editorMaxDuration ?? undefined,
       sortBy: editorSortBy,
@@ -482,6 +487,14 @@
               <label class="field">
                 <span>投稿者 ID</span>
                 <input type="text" bind:value={editorUploaderId} placeholder="数字 ID" />
+              </label>
+
+              <label class="field">
+                <span>投稿者の種別</span>
+                <select bind:value={editorUploaderType} disabled={!editorUploaderId.trim()}>
+                  <option value="user">ユーザー (userId)</option>
+                  <option value="channel">チャンネル (channelId)</option>
+                </select>
               </label>
 
               <div class="row-2">
