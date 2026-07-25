@@ -41,15 +41,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Setup Node.js ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v6
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-
       # WebKitGTK dev stack + the WebDriver (WebKitWebDriver) + Xvfb. Mirrors the
       # Rust job's deps and adds webkit2gtk-driver / xvfb for the live-app run.
+      #
+      # apt は 1〜2 分かかるが Node / Rust / npm の準備とは独立なので background
+      # で先行させ、その裏で setup-node / rustup / cache 復元 / npm ci / stub を
+      # 進める。並走する step はどれも apt も C コンパイルも触らない。
+      # system lib を実際に要求する cargo install / tauri build の前で wait する。
       - name: Install system dependencies (Tauri 2 + WebDriver + Xvfb)
+        id: system-deps
+        background: true
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -64,6 +65,12 @@ jobs:
             pkg-config \
             webkit2gtk-driver \
             xvfb
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
 
       - name: Setup Rust toolchain (stable)
         uses: dtolnay/rust-toolchain@stable
@@ -91,6 +98,12 @@ jobs:
             chmod +x "$f"
           done
           ls -la src-tauri/binaries
+
+      # ここから先は Rust をコンパイルする (= system lib / ヘッダを参照する)
+      # ので apt の完了を待つ。apt が失敗していればこの wait で job が落ちる。
+      # cargo install も背後で走らせれば更に縮むが、apt が libssl-dev 等を
+      # 差し替えている最中にリンクを走らせることになるため、ここでは重ねない。
+      - wait: system-deps
 
       - name: Install tauri-driver
         run: cargo install tauri-driver --locked

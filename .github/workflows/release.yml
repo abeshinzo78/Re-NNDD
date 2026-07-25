@@ -85,34 +85,42 @@ jobs:
           shared-key: tauri-release-${{ matrix.platform.target }}
           cache-on-failure: true
 
-      - name: Install Linux deps (Tauri 2)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libwebkit2gtk-4.1-dev \
-            libsoup-3.0-dev \
-            libjavascriptcoregtk-4.1-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            libgtk-3-dev \
-            libssl-dev \
-            build-essential \
-            pkg-config \
-            patchelf
+      # Linux の apt (1〜2 分) / npm ci / サイドカー DL (yt-dlp + ffmpeg で
+      # 100MB 級) は互いに独立しているので並列で回す。書き込み先がそれぞれ
+      # /usr, node_modules/, src-tauri/binaries/ と分かれており競合しない。
+      # fetch-binaries.sh も job env の TARGET_TRIPLE を使うので rustc に
+      # 依存せず、npm ci の完了も待たない。
+      # 下の `tauri build` は 3 つ全部を要求するが、`parallel:` グループ末尾の
+      # 暗黙 wait で揃ってから走るので順序は保たれる。
+      - parallel:
+          - name: Install Linux deps (Tauri 2)
+            if: runner.os == 'Linux'
+            run: |
+              sudo apt-get update
+              sudo apt-get install -y --no-install-recommends \
+                libwebkit2gtk-4.1-dev \
+                libsoup-3.0-dev \
+                libjavascriptcoregtk-4.1-dev \
+                libayatana-appindicator3-dev \
+                librsvg2-dev \
+                libgtk-3-dev \
+                libssl-dev \
+                build-essential \
+                pkg-config \
+                patchelf
 
-      - name: Install npm dependencies
-        run: npm ci --no-audit --no-fund
+          - name: Install npm dependencies
+            run: npm ci --no-audit --no-fund
 
-      - name: Fetch sidecar binaries (yt-dlp / ffmpeg)
-        if: runner.os != 'Windows'
-        shell: bash
-        run: bash scripts/fetch-binaries.sh
+          - name: Fetch sidecar binaries (yt-dlp / ffmpeg)
+            if: runner.os != 'Windows'
+            shell: bash
+            run: bash scripts/fetch-binaries.sh
 
-      - name: Fetch sidecar binaries (Windows / Git Bash)
-        if: runner.os == 'Windows'
-        shell: bash
-        run: bash scripts/fetch-binaries.sh
+          - name: Fetch sidecar binaries (Windows / Git Bash)
+            if: runner.os == 'Windows'
+            shell: bash
+            run: bash scripts/fetch-binaries.sh
 
       # tag push → inputs.tag は空 (= ref_name のタグ)
       # workflow_dispatch → inputs.tag は required で必ず値が入る
