@@ -32,7 +32,7 @@ jobs:
           find docs/assets -name '*.png' -exec sh -c 'pngquant --force --quality=65-85 --output "$1.tmp" "$1" && mv "$1.tmp" "$1"' _ {} \; 2>/dev/null || true
 
       - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: docs
 
