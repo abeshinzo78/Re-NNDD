@@ -1,0 +1,39 @@
+# actionlint (ci.yml の `actionlint` ジョブ) 用の設定。
+#
+# ■ なぜ ignore が要るのか
+#   2026-06-25 の GitHub Actions アップデートで、step を並列実行する
+#   `background:` / `wait:` / `wait-all:` / `cancel:` / `parallel:` が GA した。
+#   https://github.blog/changelog/2026-06-25-actions-steps-can-now-be-run-in-parallel/
+#
+#   一方 actionlint は現行最新の v1.7.12 (ci.yml でピン留めしている版) でも
+#   この構文をまだ知らず、正しいワークフローに対して次の 2 種類の偽陽性を出す:
+#
+#     1. `unexpected key "background" for step to run shell command. ...`
+#        → `background:` を step のキーとして知らないため。
+#     2. `step must run script with "run" section or run action with "uses" section`
+#        → `- wait: <id>` / `- parallel:` のような同期用 step は `run` も `uses`
+#          も持たないため。
+#
+#   どちらもワークフロー側は仕様どおりで、actionlint 側が追いついていないだけ。
+#   よってこの 2 パターンだけをピンポイントで黙らせる。
+#
+# ■ ここで失われるチェック
+#   1. は「新構文の 5 キーに限った」抑止なので、`iff:` のような普通のタイポは
+#      引き続き検出される (キー名を正規表現で列挙しているため)。
+#   2. は「run も uses も無い step」全般の検出が効かなくなる。actionlint の
+#      メッセージにキー名が含まれないので、これ以上絞り込めない。
+#      ただし expression / runner-label / shellcheck / action ref など他の
+#      チェックは全て通常どおり効く。
+#
+# ■ 撤去条件
+#   actionlint が `background` / `wait` / `wait-all` / `cancel` / `parallel` に
+#   対応したら (v1.7.12 より新しいリリース)、ci.yml の docker タグを上げて
+#   このファイルごと削除すること。
+paths:
+  .github/workflows/*.yml:
+    ignore:
+      # 新しい並列 step キーそのものが未知扱いされる件 (上記 1.)
+      - 'unexpected key "(background|wait|wait-all|cancel|parallel)" for '
+      # `- wait: <id>` / `- wait-all:` / `- parallel:` / `- cancel: <id>` は
+      # run/uses を持たない同期専用 step (上記 2.)
+      - '^step must run script with "run" section or run action with "uses" section$'

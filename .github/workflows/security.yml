@@ -56,7 +56,13 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      # apt (1〜2 分) は rustup の導入とも lockfile 生成とも独立なので
+      # background で先行させる。`cargo generate-lockfile` は依存解決だけで
+      # ビルドしない (= system lib を要求しない) ため apt と並走して安全。
+      # cargo-deny の直前で wait する。
       - name: Install Linux deps for Tauri 2
+        id: system-deps
+        background: true
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -74,6 +80,9 @@ jobs:
 
       - name: Generate Cargo.lock (gitignored in this repo)
         run: cargo generate-lockfile
+
+      # apt が失敗していればこの wait で job が落ちる。
+      - wait: system-deps
 
       # EmbarkStudios/cargo-deny-action v2.0.17 (commit pin)
       - name: cargo-deny check
