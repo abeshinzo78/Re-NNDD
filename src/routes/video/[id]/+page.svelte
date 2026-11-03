@@ -5,7 +5,13 @@
   import Player from '$lib/player/Player.svelte';
   import CommentList from '$lib/player/CommentList.svelte';
   import QueueBanner from '$lib/QueueBanner.svelte';
-  import { fetchVideoComments, issueHlsUrl, preparePlayback, type SearchHit } from '$lib/api';
+  import {
+    fetchVideoComments,
+    issueHlsUrl,
+    preparePlayback,
+    recordWatchView,
+    type SearchHit,
+  } from '$lib/api';
   import { quickDownload } from '$lib/quickDownload';
   import { formatDate, formatDuration, formatNumber, videoUrl } from '$lib/format';
   import type { PlaybackPayload, PlayerComment } from '$lib/player/types';
@@ -52,6 +58,11 @@
 
   function tagSearchHref(tag: string): string {
     return `/search?q=${encodeURIComponent(tag)}&targets=tagsExact`;
+  }
+
+  // シリーズの前後の動画へ。`from=series` で戻り先をシリーズにする。
+  function seriesVideoHref(id: string, seriesId: number, seriesTitle: string): string {
+    return `/video/${encodeURIComponent(id)}?from=series&seriesId=${seriesId}&seriesTitle=${encodeURIComponent(seriesTitle)}`;
   }
 
   let backHref = $state('/search');
@@ -186,9 +197,23 @@
     }
   });
 
+  // 再生開始を niconico に 1 回だけ記録する (Web プレイヤーが送る side-effect と同じ)。
+  // nvapi v4 の視聴データ取得は副作用が無いので、送らないと視聴履歴に残らない。
+  let viewRecordedFor: string | null = null;
+  function maybeRecordView(p: PlaybackPayload) {
+    if (viewRecordedFor === p.videoId) return;
+    viewRecordedFor = p.videoId;
+    if (!getBool('playback.record_niconico_view')) return;
+    if (!p.actionTrackId) return;
+    void recordWatchView(p.videoId, p.actionTrackId, p.isGuest).catch((e) => {
+      console.warn('record watch view failed', e);
+    });
+  }
+
   async function load(id: string) {
     if (!id) return;
     loadingFor = id;
+    viewRecordedFor = null;
     pending = true;
     error = null;
     payload = null;
@@ -553,11 +578,18 @@
   {:else if error}
     <div class="error">エラー: {error}</div>
     <p class="muted">
-      ログインが必要な動画の場合は <a href="/settings">設定</a> で <code>user_session</code> Cookie
-      を入れてください。 DL 済みなら <a href={`/library/${videoId}`}>ローカル再生</a> に切り替えてください。
+      ログインが必要な動画の場合は <a href="/settings">設定</a> からログインしてください。 DL
+      済みなら
+      <a href={`/library/${videoId}`}>ローカル再生</a> に切り替えてください。
     </p>
   {:else if payload}
     {@const p = payload}
+    {#if payload.sessionExpired}
+      <div class="session-note" role="status">
+        ログインの有効期限が切れているため、ゲストとして再生しています。
+        <a href="/settings">設定</a> からログインし直してください。
+      </div>
+    {/if}
     <div class="player-frame">
       <div class="viewer-toolbar">
         <div class="viewer-toolbar-meta">
@@ -654,6 +686,7 @@
               refreshHlsUrl={() => issueHlsUrl(p.videoId)}
               onTime={handleTimeUpdate}
               onEnded={handleEnded}
+              onPlaybackStart={() => maybeRecordView(p)}
               resumePosition={getResumePosition(p.videoId)}
               {loop}
               onLoopChange={(v) => {
@@ -797,6 +830,33 @@
             </div>
             <span class="series-arrow" aria-hidden="true">›</span>
           </a>
+          {#if payload.series.prevVideo || payload.series.nextVideo}
+            {@const s = payload.series}
+            <nav class="series-nav" aria-label="シリーズの前後の動画">
+              {#if s.prevVideo}
+                <a
+                  class="series-nav-link"
+                  href={seriesVideoHref(s.prevVideo.id, s.id, s.title)}
+                  title={s.prevVideo.title}
+                >
+                  <span class="series-nav-dir">‹ 前の動画</span>
+                  <span class="series-nav-title">{s.prevVideo.title}</span>
+                </a>
+              {:else}
+                <span class="series-nav-link empty" aria-hidden="true"></span>
+              {/if}
+              {#if s.nextVideo}
+                <a
+                  class="series-nav-link next"
+                  href={seriesVideoHref(s.nextVideo.id, s.id, s.title)}
+                  title={s.nextVideo.title}
+                >
+                  <span class="series-nav-dir">次の動画 ›</span>
+                  <span class="series-nav-title">{s.nextVideo.title}</span>
+                </a>
+              {/if}
+            </nav>
+          {/if}
         {/if}
         {#if payload.video.tags && payload.video.tags.length > 0}
           <div class="tags" aria-label="タグ">
@@ -1296,6 +1356,53 @@
   }
   .series-card:hover .series-arrow {
     color: var(--theme-accent-soft);
+  }
+  .series-nav {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 6px;
+  }
+  .series-nav-link {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    padding: 6px 10px;
+    border: 1px solid var(--theme-border-strong);
+    border-radius: 6px;
+    text-decoration: none;
+    color: inherit;
+    background: var(--theme-surface-2);
+  }
+  .series-nav-link.next {
+    text-align: right;
+  }
+  .series-nav-link.empty {
+    visibility: hidden;
+  }
+  .series-nav-link:hover {
+    border-color: var(--theme-accent-border);
+    background: var(--theme-accent-bg);
+  }
+  .series-nav-dir {
+    font-size: 11px;
+    color: var(--theme-accent-soft);
+    font-weight: 600;
+  }
+  .series-nav-title {
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .session-note {
+    margin: 0 0 8px;
+    padding: 6px 10px;
+    font-size: 12px;
+    border: 1px solid var(--theme-accent-border);
+    border-radius: 6px;
+    background: var(--theme-accent-bg);
   }
   details {
     margin-top: 12px;

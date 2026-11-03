@@ -1,0 +1,9 @@
+{
+  "meta": {
+    "status": 404,
+    "errorCode": "NOT_FOUND"
+  },
+  "data": {
+    "reasonCode": "NOT_FOUND"
+  }
+}

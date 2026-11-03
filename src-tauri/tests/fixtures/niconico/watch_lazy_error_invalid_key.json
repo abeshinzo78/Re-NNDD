@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "status": 400,
+    "errorCode": "INVALID_KEY"
+  }
+}

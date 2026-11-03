@@ -1,0 +1,130 @@
+{
+  "meta": {
+    "status": 200
+  },
+  "data": {
+    "owner": {
+      "type": "user",
+      "visibility": "visible",
+      "id": 108373,
+      "nickname": "おやつ",
+      "icon": {
+        "url": "https://img.nicoprofile.nimg.jp/usericon/10/108373.jpg?1572750025"
+      },
+      "follow": null,
+      "ownedChannel": null,
+      "currentLive": null,
+      "upcomingVideoLive": null
+    },
+    "ranking": {
+      "teiban": null
+    },
+    "series": {
+      "id": 425178,
+      "title": "AI実況シリーズ",
+      "description": "",
+      "thumbnailUrl": "https://resource.video.nimg.jp/series/tmb/0/108373/425178.1710763256",
+      "video": {
+        "prev": null,
+        "next": {
+          "type": "essential",
+          "id": "sm42887445",
+          "contentType": "long",
+          "title": "【AI実況】FF7をAIと一緒に実況してみた【ゆっくり実況】",
+          "registeredAt": "2023-10-16T18:00:00+09:00",
+          "count": {
+            "view": 216737,
+            "comment": 4098,
+            "mylist": 272,
+            "like": 4211
+          },
+          "thumbnail": {
+            "url": "https://nicovideo.cdn.nimg.jp/thumbnails/42887445/42887445.8619244",
+            "middleUrl": "https://nicovideo.cdn.nimg.jp/thumbnails/42887445/42887445.8619244.M",
+            "largeUrl": "https://nicovideo.cdn.nimg.jp/thumbnails/42887445/42887445.8619244.L",
+            "listingUrl": "https://nicovideo.cdn.nimg.jp/thumbnails/42887445/42887445.8619244.M",
+            "nHdUrl": "https://img.cdn.nimg.jp/s/nicovideo/thumbnails/42887445/42887445.8619244.original/r640x360l?key=cd1f5184470e04492177f0825cd533f34216e4a4681f4aa74a00085e799a2d2a",
+            "shortUrl": null
+          },
+          "duration": 600,
+          "shortDescription": "挑戦シリーズ114回目。今回はリメイクじゃない方のFF7をAIと一緒に実況します。HDリマスター版で",
+          "latestCommentSummary": "うぽつ それはそう うぽつ www www ！？ それはそう うぽつ うぽつ 次回も楽しみ それはそう うぽつ うぽつ きゅうにｗｗ 何年前のでも実況動画で視聴者がネタバレするのは単純に迷惑だよね… うぽつ ここの語録感すき うぽつ ！？ あー、あれ...",
+          "isChannelVideo": false,
+          "isPaymentRequired": false,
+          "playbackPosition": null,
+          "owner": {
+            "ownerType": "user",
+            "type": "user",
+            "visibility": "visible",
+            "id": "108373",
+            "name": "おやつ",
+            "iconUrl": "https://img.nicoprofile.nimg.jp/usericon/10/108373.jpg?1572750025"
+          },
+          "requireSensitiveMasking": false,
+          "videoLive": null,
+          "isMuted": false,
+          "9d091f87": false,
+          "acf68865": false
+        },
+        "first": {
+          "type": "essential",
+          "id": "sm41984256",
+          "contentType": "long",
+          "title": "【AI実況】ロマサガ3をAIと一緒に実況してみた【ゆっくり実況】",
+          "registeredAt": "2023-03-26T18:00:00+09:00",
+          "count": {
+            "view": 307473,
+            "comment": 4652,
+            "mylist": 639,
+            "like": 6031
+          },
+          "thumbnail": {
+            "url": "https://nicovideo.cdn.nimg.jp/thumbnails/41984256/41984256.8873668",
+            "middleUrl": "https://nicovideo.cdn.nimg.jp/thumbnails/41984256/41984256.8873668.M",
+            "largeUrl": "https://nicovideo.cdn.nimg.jp/thumbnails/41984256/41984256.8873668.L",
+            "listingUrl": "https://nicovideo.cdn.nimg.jp/thumbnails/41984256/41984256.8873668.M",
+            "nHdUrl": "https://img.cdn.nimg.jp/s/nicovideo/thumbnails/41984256/41984256.8873668.original/r640x360l?key=ad80647060a891557669c693f1fcd46f319dc8e74df9d96f6428cf0c5ceae39a",
+            "shortUrl": null
+          },
+          "duration": 686,
+          "shortDescription": "挑戦シリーズ110回目。今回はいま流行りのAIと一緒にロマンシングサガ3の実況に挑戦してみました。A",
+          "latestCommentSummary": "うぽつ おつ やったぜ。 うぽつ こんなに好戦的だなんて、将来有望だな wwwww おつ www なにわらってんねん 草 警戒心えぐい笑 終わってません笑w くさくさ RS3Rでもみえそう うわでた おつ うぽつ おまシャブ ロマサガ3リメイク記念カ...",
+          "isChannelVideo": false,
+          "isPaymentRequired": false,
+          "playbackPosition": null,
+          "owner": {
+            "ownerType": "user",
+            "type": "user",
+            "visibility": "visible",
+            "id": "108373",
+            "name": "おやつ",
+            "iconUrl": "https://img.nicoprofile.nimg.jp/usericon/10/108373.jpg?1572750025"
+          },
+          "requireSensitiveMasking": false,
+          "videoLive": null,
+          "isMuted": false,
+          "9d091f87": false,
+          "acf68865": false
+        }
+      }
+    },
+    "waku": {
+      "information": null,
+      "bgImages": [],
+      "addContents": null,
+      "addVideo": null,
+      "tagRelatedBanner": null,
+      "tagRelatedMarquee": null,
+      "pcHeaderCustomBanner": {
+        "imageUrl": "https://wktk.nimg.jp/wktk/8323/banner/0m3lYwojkb.png",
+        "backgroundType": "none",
+        "backgroundColorCode": null,
+        "backgroundPatternImageUrl": null,
+        "linkUrl": "https://douga-awards.nicovideo.jp/",
+        "linkType": "link",
+        "linkOrigin": "https://douga-awards.nicovideo.jp/",
+        "isNewWindow": false
+      }
+    }
+  }
+}

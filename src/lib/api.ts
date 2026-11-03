@@ -149,7 +149,9 @@ export async function sessionCookieStatus(): Promise<boolean> {
 export type LoginResult =
   | { kind: 'success' }
   | { kind: 'mfa'; mfaSession?: string }
-  | { kind: 'invalid_credentials' };
+  | { kind: 'invalid_credentials' }
+  /** niconico 側のログイン方式が変わり、この経路ではログインできない。 */
+  | { kind: 'unsupported'; message: string };
 
 export async function loginPassword(email: string, password: string): Promise<LoginResult> {
   return invoke<LoginResult>('login_password', { email, password });
@@ -160,6 +162,62 @@ export async function loginMfa(mfaSession: string, oneTimePassword: string): Pro
     mfaSession,
     oneTimePassword,
   });
+}
+
+export type AccountInfo = {
+  id: string;
+  nickname: string;
+  isPremium: boolean;
+  iconUrl?: string;
+};
+
+/** 保存中のセッションの状態 (`nvapi /v1/users/me` で確かめた結果)。 */
+export type AccountState =
+  | { state: 'logged_out' }
+  | { state: 'valid'; account: AccountInfo }
+  /** Cookie はあるが niconico に拒否された (期限切れ・ログアウト済み)。 */
+  | { state: 'expired' }
+  /** 通信エラーなどで判定できなかった。 */
+  | { state: 'unknown'; message: string };
+
+export async function getAccountState(): Promise<AccountState> {
+  return invoke<AccountState>('get_account_state');
+}
+
+export type LoginWindowResult =
+  | { kind: 'success'; account?: AccountInfo }
+  | { kind: 'canceled' }
+  | { kind: 'timed_out' };
+
+/**
+ * niconico のログインページを別ウィンドウで開き、ログインが済むまで待つ。
+ * 2026 年のログイン方式変更 (Turnstile 付き SPA) 以降はこれが正規のログイン手段。
+ * 二段階認証や外部アカウントでのログインもそのウィンドウで行える。
+ */
+export async function openLoginWindow(): Promise<LoginWindowResult> {
+  return invoke<LoginWindowResult>('open_login_window');
+}
+
+/**
+ * 再生開始を niconico に記録する (ログイン中は視聴履歴、ゲストでも再生数)。
+ * v4 の視聴データ取得は副作用が無いので、記録したい時だけ明示的に呼ぶ。
+ */
+export async function recordWatchView(
+  videoId: string,
+  actionTrackId: string,
+  isGuest?: boolean,
+): Promise<void> {
+  await invoke('record_watch_view', { videoId, actionTrackId, isGuest: isGuest ?? null });
+}
+
+export type VideoTagInfo = {
+  name: string;
+  isLocked: boolean;
+};
+
+/** 動画のタグ (ロック状態付き)。ランキング NG のタグ判定用。 */
+export async function fetchVideoTags(videoId: string): Promise<VideoTagInfo[]> {
+  return invoke<VideoTagInfo[]>('fetch_video_tags', { videoId });
 }
 
 /**
@@ -197,6 +255,8 @@ export type UserVideosResponse = {
   seriesTitle?: string;
   seriesDescription?: string;
   seriesThumbnailUrl?: string;
+  /** 投稿者 (チャンネル) の表示名が一覧から分かった時だけ入る。 */
+  ownerName?: string;
 };
 
 export async function extractOnlineFrame(hlsUrl: string, seekSec: number): Promise<string | null> {

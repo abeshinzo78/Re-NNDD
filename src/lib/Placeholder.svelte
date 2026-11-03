@@ -1,9 +1,10 @@
 <script lang="ts">
-  let { title, phase, description } = $props<{
+  type Props = {
     title: string;
     phase: string;
     description: string;
-  }>();
+  };
+  let { title, phase, description }: Props = $props();
 </script>
 
 <section>

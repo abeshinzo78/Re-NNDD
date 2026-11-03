@@ -20,7 +20,10 @@
   let kind = $derived<'user' | 'channel'>(
     page.url.searchParams.get('kind') === 'channel' ? 'channel' : 'user',
   );
-  let nickname = $derived(page.url.searchParams.get('name') ?? '');
+  let nameParam = $derived(page.url.searchParams.get('name') ?? '');
+  // 名前付きで遷移してこなかった時は、一覧の取得で分かった名前 (チャンネル名) を使う。
+  let fetchedName = $state('');
+  let nickname = $derived(nameParam || fetchedName);
   let iconUrl = $derived(page.url.searchParams.get('icon') || null);
 
   type Tab = 'videos' | 'mylists' | 'series';
@@ -67,6 +70,7 @@
         items = [...items, ...resp.items];
       }
       totalCount = resp.totalCount;
+      if (resp.ownerName) fetchedName = resp.ownerName;
       currentPage = (reset ? 1 : currentPage) + 1;
     } catch (e) {
       error = String(e);
@@ -166,6 +170,7 @@
   // 再取得される。読み取りは userId/kind のみなので他の効果とは競合しない。
   $effect(() => {
     void [userId, kind];
+    fetchedName = '';
     expandedMylistId = null;
     mylistVideos = [];
     expandedSeriesId = null;

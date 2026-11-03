@@ -106,7 +106,7 @@ fi
 # === ffmpeg ===
 # 静的ビルドの取り出し場所がプラットフォーム毎に違う。
 # Linux  : https://johnvansickle.com/ffmpeg/  (.tar.xz, ffmpeg/ 内)
-# macOS  : https://evermeet.cx/ffmpeg/        (.zip, ffmpeg を直含)
+# macOS  : https://ffmpeg.martin-riedl.de/    (.zip, ffmpeg を直含。arm64 / amd64 別)
 # Windows: https://www.gyan.dev/ffmpeg/builds/ (.7z 多いが zip もあり)
 if [[ -x "$FFMPEG_DST" ]] && [[ ! -L "$FFMPEG_DST" ]]; then
   echo "==> ffmpeg: 既に存在 ($FFMPEG_DST) — skip"
@@ -138,9 +138,20 @@ else
       cp "$(find "$TMP" -type f -name ffmpeg -executable | head -n 1)" "$FFMPEG_DST"
       chmod +x "$FFMPEG_DST"
       ;;
-    osx64|osxarm64)
-      URL="https://evermeet.cx/ffmpeg/getrelease/zip"
-      echo "==> ffmpeg(macOS): 取得中..."
+    osx64)
+      # Martin Riedl のビルドサーバーがスクリプト向けに案内している latest
+      # リダイレクト URL。evermeet.cx は DL API (getrelease) を廃止して 410 を
+      # 返すようになった上、Intel 版しか配っていない。
+      URL="https://ffmpeg.martin-riedl.de/redirect/latest/macos/amd64/release/ffmpeg.zip"
+      echo "==> ffmpeg(osx64): 取得中 (martin-riedl.de)..."
+      fetch "$URL" "$TMP/ffmpeg.zip"
+      unzip -q "$TMP/ffmpeg.zip" -d "$TMP"
+      cp "$TMP/ffmpeg" "$FFMPEG_DST"
+      chmod +x "$FFMPEG_DST"
+      ;;
+    osxarm64)
+      URL="https://ffmpeg.martin-riedl.de/redirect/latest/macos/arm64/release/ffmpeg.zip"
+      echo "==> ffmpeg(osxarm64): 取得中 (martin-riedl.de)..."
       fetch "$URL" "$TMP/ffmpeg.zip"
       unzip -q "$TMP/ffmpeg.zip" -d "$TMP"
       cp "$TMP/ffmpeg" "$FFMPEG_DST"

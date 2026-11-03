@@ -1,0 +1,662 @@
+{
+  "meta": {
+    "status": 200
+  },
+  "data": {
+    "responseType": "normal",
+    "client": {
+      "nicosid": "1700000000.0000000000",
+      "watchId": "so46975082",
+      "watchTrackId": "Redacted00_1700000000000"
+    },
+    "comment": {
+      "threads": [
+        {
+          "id": 1793163455,
+          "fork": 1,
+          "forkLabel": "owner",
+          "videoId": "so46975082",
+          "isPostTarget": false,
+          "isOwnerThread": true,
+          "is184Forced": false,
+          "label": "owner",
+          "postNgReason": null,
+          "syncBufferTime": 300
+        },
+        {
+          "id": 1793163455,
+          "fork": 0,
+          "forkLabel": "main",
+          "videoId": "so46975082",
+          "isPostTarget": false,
+          "isOwnerThread": false,
+          "is184Forced": false,
+          "label": "default",
+          "postNgReason": null,
+          "syncBufferTime": 300
+        },
+        {
+          "id": 1793163456,
+          "fork": 0,
+          "forkLabel": "main",
+          "videoId": "so46975082",
+          "isPostTarget": true,
+          "isOwnerThread": false,
+          "is184Forced": true,
+          "label": "community",
+          "postNgReason": null,
+          "syncBufferTime": 300
+        },
+        {
+          "id": 1793163456,
+          "fork": 2,
+          "forkLabel": "easy",
+          "videoId": "so46975082",
+          "isPostTarget": false,
+          "isOwnerThread": false,
+          "is184Forced": true,
+          "label": "easy",
+          "postNgReason": null,
+          "syncBufferTime": 300
+        }
+      ],
+      "layers": [
+        {
+          "index": 0,
+          "isTranslucent": false,
+          "components": [
+            {
+              "threadId": 1793163455,
+              "fork": 1,
+              "forkLabel": "owner"
+            }
+          ]
+        },
+        {
+          "index": 1,
+          "isTranslucent": false,
+          "components": [
+            {
+              "threadId": 1793163456,
+              "fork": 0,
+              "forkLabel": "main"
+            },
+            {
+              "threadId": 1793163456,
+              "fork": 2,
+              "forkLabel": "easy"
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "isTranslucent": true,
+          "components": [
+            {
+              "threadId": 1793163455,
+              "fork": 0,
+              "forkLabel": "main"
+            }
+          ]
+        }
+      ],
+      "ng": {
+        "ngScore": {
+          "isDisabled": false
+        },
+        "owner": [],
+        "viewer": null
+      },
+      "isAttentionRequired": false,
+      "nvComment": {
+        "threadKey": "redacted.thread.key",
+        "server": "https://public.nvcomment.nicovideo.jp",
+        "params": {
+          "targets": [
+            {
+              "id": "1793163455",
+              "fork": "owner"
+            },
+            {
+              "id": "1793163455",
+              "fork": "main"
+            },
+            {
+              "id": "1793163456",
+              "fork": "main"
+            },
+            {
+              "id": "1793163456",
+              "fork": "easy"
+            }
+          ],
+          "language": "ja-jp"
+        }
+      },
+      "assist": {
+        "sectionDurationSec": 6,
+        "minMatchCharacters": 15,
+        "ignorePostElapsedTimeSec": 0,
+        "ignoreCommentNgScoreThreshold": -1000,
+        "commentCountThresholdList": [
+          [
+            4,
+            6
+          ],
+          [
+            14,
+            18
+          ],
+          [
+            26,
+            1500
+          ]
+        ],
+        "buttonDisplayDurationSec": 6,
+        "buttonDisplayOffsetSec": 2
+      }
+    },
+    "media": {
+      "contents": {
+        "videos": [
+          {
+            "id": "video-h264-1080p",
+            "isAvailable": false,
+            "qualityLevel": 4,
+            "label": "1080p",
+            "bitRate": 4032598,
+            "width": 1920,
+            "height": 1080
+          },
+          {
+            "id": "video-h264-720p",
+            "isAvailable": true,
+            "qualityLevel": 3,
+            "label": "720p",
+            "bitRate": 2014609,
+            "width": 1280,
+            "height": 720
+          },
+          {
+            "id": "video-h264-480p",
+            "isAvailable": true,
+            "qualityLevel": 2,
+            "label": "480p",
+            "bitRate": 1604353,
+            "width": 854,
+            "height": 480
+          },
+          {
+            "id": "video-h264-360p",
+            "isAvailable": true,
+            "qualityLevel": 1,
+            "label": "360p",
+            "bitRate": 607281,
+            "width": 640,
+            "height": 360
+          },
+          {
+            "id": "video-h264-144p",
+            "isAvailable": true,
+            "qualityLevel": 0,
+            "label": "144p",
+            "bitRate": 152533,
+            "width": 256,
+            "height": 144
+          }
+        ],
+        "audios": [
+          {
+            "id": "audio-aac-320kbps",
+            "isAvailable": false,
+            "qualityLevel": 2,
+            "bitRate": 324738,
+            "samplingRate": 48000,
+            "integratedLoudness": -24.021608,
+            "truePeak": -3.858131,
+            "loudnessCollection": [
+              {
+                "type": "video",
+                "value": 1
+              },
+              {
+                "type": "pureAdPreroll",
+                "value": 0.2505645345378031
+              },
+              {
+                "type": "houseAdPreroll",
+                "value": 0.2505645345378031
+              },
+              {
+                "type": "networkAdPreroll",
+                "value": 0.2505645345378031
+              },
+              {
+                "type": "pureAdMidroll",
+                "value": 0.2505645345378031
+              },
+              {
+                "type": "houseAdMidroll",
+                "value": 0.2505645345378031
+              },
+              {
+                "type": "networkAdMidroll",
+                "value": 0.2505645345378031
+              },
+              {
+                "type": "pureAdPostroll",
+                "value": 0.2505645345378031
+              },
+              {
+                "type": "houseAdPostroll",
+                "value": 0.2505645345378031
+              },
+              {
+                "type": "networkAdPostroll",
+                "value": 0.2505645345378031
+              },
+              {
+                "type": "nicoadVideoIntroduce",
+                "value": 0.3154420598240177
+              },
+              {
+                "type": "nicoadBillboard",
+                "value": 0.706186807321567
+              },
+              {
+                "type": "marquee",
+                "value": 0.39711802506115174
+              }
+            ],
+            "label": {
+              "quality": "高音質",
+              "bitrate": "320kbps"
+            }
+          },
+          {
+            "id": "audio-aac-192kbps",
+            "isAvailable": true,
+            "qualityLevel": 1,
+            "bitRate": 180754,
+            "samplingRate": 48000,
+            "integratedLoudness": -24.021608,
+            "truePeak": -3.858131,
+            "loudnessCollection": [
+              {
+                "type": "video",
+                "value": 1
+              },
+              {
+                "type": "pureAdPreroll",
+                "value": 0.2505645345378031
+              },
+              {
+                "type": "houseAdPreroll",
+                "value": 0.2505645345378031
+              },
+              {
+                "type": "networkAdPreroll",
+                "value": 0.2505645345378031
+              },
+              {
+                "type": "pureAdMidroll",
+                "value": 0.2505645345378031
+              },
+              {
+                "type": "houseAdMidroll",
+                "value": 0.2505645345378031
+              },
+              {
+                "type": "networkAdMidroll",
+                "value": 0.2505645345378031
+              },
+              {
+                "type": "pureAdPostroll",
+                "value": 0.2505645345378031
+              },
+              {
+                "type": "houseAdPostroll",
+                "value": 0.2505645345378031
+              },
+              {
+                "type": "networkAdPostroll",
+                "value": 0.2505645345378031
+              },
+              {
+                "type": "nicoadVideoIntroduce",
+                "value": 0.3154420598240177
+              },
+              {
+                "type": "nicoadBillboard",
+                "value": 0.706186807321567
+              },
+              {
+                "type": "marquee",
+                "value": 0.39711802506115174
+              }
+            ],
+            "label": {
+              "quality": "標準音質",
+              "bitrate": "192kbps"
+            }
+          },
+          {
+            "id": "audio-aac-64kbps",
+            "isAvailable": true,
+            "qualityLevel": 0,
+            "bitRate": 68748,
+            "samplingRate": 48000,
+            "integratedLoudness": -24.021608,
+            "truePeak": -3.858131,
+            "loudnessCollection": [
+              {
+                "type": "video",
+                "value": 1
+              },
+              {
+                "type": "pureAdPreroll",
+                "value": 0.2505645345378031
+              },
+              {
+                "type": "houseAdPreroll",
+                "value": 0.2505645345378031
+              },
+              {
+                "type": "networkAdPreroll",
+                "value": 0.2505645345378031
+              },
+              {
+                "type": "pureAdMidroll",
+                "value": 0.2505645345378031
+              },
+              {
+                "type": "houseAdMidroll",
+                "value": 0.2505645345378031
+              },
+              {
+                "type": "networkAdMidroll",
+                "value": 0.2505645345378031
+              },
+              {
+                "type": "pureAdPostroll",
+                "value": 0.2505645345378031
+              },
+              {
+                "type": "houseAdPostroll",
+                "value": 0.2505645345378031
+              },
+              {
+                "type": "networkAdPostroll",
+                "value": 0.2505645345378031
+              },
+              {
+                "type": "nicoadVideoIntroduce",
+                "value": 0.3154420598240177
+              },
+              {
+                "type": "nicoadBillboard",
+                "value": 0.706186807321567
+              },
+              {
+                "type": "marquee",
+                "value": 0.39711802506115174
+              }
+            ],
+            "label": {
+              "quality": "低音質",
+              "bitrate": "64kbps"
+            }
+          }
+        ]
+      },
+      "isStoryboardAvailable": false,
+      "accessRightKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ2IjpbInZpZGVvLWgyNjQtNzIwcCIsInZpZGVvLWgyNjQtNDgwcCIsInZpZGVvLWgyNjQtMzYwcCIsInZpZGVvLWgyNjQtMTQ0cCJdLCJhIjpbImF1ZGlvLWFhYy0xOTJrYnBzIiwiYXVkaW8tYWFjLTY0a2JwcyJdLCJ2aWQiOiJzbzQ2OTc1MDgyIiwidHlwIjoiQWNjZXNzLVJpZ2h0LUtleSIsImV4cCI6MTcwMDAwMDAwMH0.redacted-signature",
+      "hls": {
+        "url": "https://delivery.domand.nicovideo.jp/hlsbid/000000000000000000000000/playlists/variants/redacted.m3u8?session=redacted&Expires=1700000000&Signature=redacted&Key-Pair-Id=redacted",
+        "outputs": [
+          {
+            "assetUnitNames": [
+              "video-h264-720p",
+              "audio-aac-192kbps"
+            ]
+          },
+          {
+            "assetUnitNames": [
+              "video-h264-480p",
+              "audio-aac-192kbps"
+            ]
+          },
+          {
+            "assetUnitNames": [
+              "video-h264-360p",
+              "audio-aac-192kbps"
+            ]
+          },
+          {
+            "assetUnitNames": [
+              "video-h264-144p",
+              "audio-aac-192kbps"
+            ]
+          }
+        ],
+        "createdAt": "2026-10-31T04:01:16+00:00",
+        "expiredAt": "2026-11-01T04:01:16+00:00"
+      },
+      "lowDataMode": {
+        "videoUpperLimit": 1,
+        "audioUpperLimit": 1
+      }
+    },
+    "player": {
+      "comment": {
+        "isDefaultInvisible": false
+      },
+      "initialPlayback": null,
+      "layerMode": 0
+    },
+    "video": {
+      "id": "so46975082",
+      "contentType": "long",
+      "title": "追放されたチート付与魔術師は気ままなセカンドライフを謳歌する。 ～俺は武器だけじゃなく、あらゆるものに『強化ポイント』を付与できるし、俺の意思でいつでも効果を解除できるけど、残った人たち大丈夫？～ 第4話「ここまで二回も全裸になってしまった俺だからこそ分かったことがひとつあるんだ...全裸は二度噛まれるってね。」",
+      "description": "<br>各陣営の思惑が交錯する中、レインとリリィ、マーガレット、そしてコーネリアスとミラベルは光竜の遺跡に足を踏み入れる。<br>凶悪なゴブリンたちの攻撃を切り抜け、少しずつ打ち解けるリリィとマーガレットだったが、遺跡内で謎の遺書を拾って―—！？<br><br><br><u><a href=\"https://anime.nicovideo.jp/index.html?from=video_watch_anime\" target=\"_blank\">無料動画や最新情報・生放送・マンガ・イラストは Nアニメ</a></u><br><strong><u><a href=\"https://anime.nicovideo.jp/detail/chiifuyo/index.html?from=video_watch_anime\" target=\"_blank\">追放されたチート付与魔術師は気ままなセカンドライフを謳歌する。 ～俺は武器だけじゃなく、あらゆるものに『強化ポイント』を付与できるし、俺の意思でいつでも効果を解除できるけど、残った人たち大丈夫？～</a></u></strong><br><u><a href=\"https://anime.nicovideo.jp/period/2026-autumn.html?from=video_watch_anime\" target=\"_blank\">2026秋アニメ</a></u> <u><a href=\"https://anime.nicovideo.jp/free/index.html?from=video_watch_anime\" target=\"_blank\">アニメ無料動画</a></u> <u><a href=\"https://anime.nicovideo.jp/ranking/view-daily.html?from=video_watch_anime\" target=\"_blank\">アニメランキング</a></u><br><u><a href=\"https://anime.nicovideo.jp/voice/?from=video_watch_anime\" target=\"_blank\">声優情報</a></u> <br>",
+      "supplements": [],
+      "count": {
+        "view": 27966,
+        "comment": 4411,
+        "mylist": 84,
+        "like": 853
+      },
+      "duration": 1420,
+      "thumbnail": {
+        "normal": "https://nicovideo.cdn.nimg.jp/thumbnails/46975082/46975082.73988420",
+        "middle": "https://nicovideo.cdn.nimg.jp/thumbnails/46975082/46975082.73988420.M",
+        "large": "https://nicovideo.cdn.nimg.jp/thumbnails/46975082/46975082.73988420.L",
+        "player": "https://img.cdn.nimg.jp/s/nicovideo/thumbnails/46975082/46975082.73988420.original/a960x540l?key=e1f1331fece673d71af230945044dfbc443d934cf60ce238bb242772a157b63b",
+        "ogp": "https://img.cdn.nimg.jp/s/nicovideo/thumbnails/46975082/46975082.73988420.original/r1280x720l?key=6513cdc10a2b8cd0a146d6eb55bf66625708271ddd862651f9ea7b938732420c",
+        "short": null
+      },
+      "registeredAt": "2026-10-31T00:30:00+09:00",
+      "permission": {
+        "isPrivate": false,
+        "isDeleted": false,
+        "isAuthenticationRequired": false,
+        "isEmbedPlayerAllowed": true,
+        "isGiftAllowed": false,
+        "isNgForVocacolleApp": true,
+        "rating": {
+          "isAdult": false
+        }
+      },
+      "hasLyrics": false,
+      "isHighRiskVideo": false,
+      "isChannelVideo": true,
+      "isOwnedByViewer": false,
+      "showOwnerMenu": false,
+      "isLikedByViewer": false
+    },
+    "genre": {
+      "key": "anime",
+      "label": "アニメ",
+      "isImmoral": false,
+      "isDisabled": false,
+      "isNotSet": false
+    },
+    "tags": {
+      "items": [
+        {
+          "name": "アニメ",
+          "isLocked": true
+        },
+        {
+          "name": "2026年秋アニメ",
+          "isLocked": true
+        },
+        {
+          "name": "チー付与",
+          "isLocked": true
+        },
+        {
+          "name": "全グレ",
+          "isLocked": false
+        },
+        {
+          "name": "ポロリもあるよ!",
+          "isLocked": false
+        },
+        {
+          "name": "4億の叫び",
+          "isLocked": false
+        },
+        {
+          "name": "異世界の果てまでイッテQ!",
+          "isLocked": false
+        },
+        {
+          "name": "バタフライエフェクト",
+          "isLocked": false
+        },
+        {
+          "name": "これもう仲良しやん！！",
+          "isLocked": false
+        },
+        {
+          "name": "裸王",
+          "isLocked": false
+        }
+      ],
+      "hasR18Tag": false,
+      "isPublishedNicoscript": false,
+      "edit": {
+        "isEditable": false,
+        "uneditableReason": "PREMIUM_ONLY",
+        "editKey": "redacted"
+      }
+    },
+    "lazy": {
+      "authKey": "redacted-lazy-auth-key"
+    },
+    "system": {
+      "serverTime": "2026-10-31T13:01:16+09:00",
+      "isStellaAlive": true,
+      "channelGtmContainerId": "GTM-K8M6VGZ"
+    },
+    "viewer": null,
+    "videoAds": {
+      "additionalParams": {
+        "videoId": "so46975082",
+        "videoDuration": 1420,
+        "isAdultRatingNG": false,
+        "isAuthenticationRequired": false,
+        "isR18": false,
+        "nicosid": "redacted",
+        "lang": "ja-jp",
+        "watchTrackId": "redacted",
+        "channelId": "ch2650183",
+        "genre": "anime"
+      },
+      "items": [
+        {
+          "type": "preroll",
+          "timingMs": null,
+          "additionalParams": {
+            "linearType": "preroll",
+            "adIdx": 0,
+            "skipType": 3,
+            "pod": 1
+          }
+        },
+        {
+          "type": "midroll",
+          "timingMs": 675000,
+          "additionalParams": {
+            "linearType": "midroll",
+            "adIdx": 0,
+            "skipType": 3,
+            "pod": 2
+          }
+        },
+        {
+          "type": "postroll",
+          "timingMs": null,
+          "additionalParams": {
+            "linearType": "postroll",
+            "adIdx": 0,
+            "skipType": 3,
+            "pod": 3
+          }
+        }
+      ],
+      "reason": "non_premium_user_ads"
+    },
+    "videoLive": null,
+    "payment": {
+      "ppv": {
+        "isEnabled": false,
+        "showPromotion": false
+      },
+      "admission": {
+        "isEnabled": false,
+        "showPromotion": false
+      },
+      "continuationBenefit": {
+        "isEnabled": false,
+        "showPromotion": false
+      },
+      "premium": {
+        "isEnabled": false,
+        "showPromotion": false
+      },
+      "watchableUserType": "all",
+      "commentableUserType": "all",
+      "billingType": "free"
+    },
+    "baseVideo": {
+      "baseVideoId": null,
+      "contentType": null,
+      "title": null,
+      "thumbnail": null
+    },
+    "metadata": {
+      "jsonLd": {
+        "owner": {
+          "id": "ch2650183",
+          "type": "channel",
+          "name": "追放されたチート付与魔術師は気ままなセカンドライフを謳歌する。 俺は武器だけじゃなく、あらゆるものに『強化ポイント』を付与できるし、俺の意思でいつでも効果を解除できるけど、残った人たち大丈夫？",
+          "description": "強化付与魔術師のレインは、ある日突然ギルドを追放される。\r\n追放されたレインは、これまで付与してきた大量の「強化ポイント」を回収して、冒険者として新たな道を歩き始める。\r\n\r\n彼のもとに集まるのは、仲間を殺され心を閉ざした天才冒険者、家族を奪われた戦士、人殺しとして育てられた暗殺者――誰もが、簡単には消えない傷を抱えた者ばかり。\r\nこれは、居場所を失った者たちが、自分の生き方を掴み取っていく物語。\r\nレインとその仲間たちの、破天荒で気ままなセカンドライフが、今始まる――!!",
+          "iconUrl": "https://secure-dcdn.cdn.nimg.jp/comch/channel-icon/128x128/ch2650183.jpg?1790211873"
+        },
+        "videoObject": {
+          "regionsAllowed": "JP",
+          "expiresAt": "2038-01-01T00:00:00+09:00"
+        }
+      },
+      "gtm": {
+        "channel": {
+          "id": "ch2650183",
+          "isMember": false
+        }
+      }
+    },
+    "okReason": "PURELY"
+  }
+}

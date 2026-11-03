@@ -30,24 +30,26 @@
     | 'mylistCount'
     | 'likeCount';
 
+  // 表示名は niconico 公式ランキングの現行のラベル
+  // (`$getTeibanRankingFeaturedKeys`、2026-10 確認) に合わせている。
   const GENRES: { value: GenreName; label: string }[] = [
     { value: 'all', label: '総合' },
     { value: 'game', label: 'ゲーム' },
     { value: 'anime', label: 'アニメ' },
-    { value: 'vocaloid', label: 'VOCALOID' },
-    { value: 'voicesynth', label: '音声合成' },
+    { value: 'vocaloid', label: 'ボカロ' },
+    { value: 'voicesynth', label: '音声合成実況・解説・劇場' },
     { value: 'entertainment', label: 'エンタメ' },
-    { value: 'music', label: '音楽・サウンド' },
+    { value: 'music', label: '音楽' },
     { value: 'sing', label: '歌ってみた' },
     { value: 'dance', label: '踊ってみた' },
     { value: 'play', label: '演奏してみた' },
-    { value: 'commentary', label: '解説' },
+    { value: 'commentary', label: '解説・講座' },
     { value: 'cooking', label: '料理' },
-    { value: 'travel', label: '旅行' },
+    { value: 'travel', label: '旅行・アウトドア' },
     { value: 'nature', label: '自然' },
     { value: 'vehicle', label: '乗り物' },
-    { value: 'technology', label: 'テクノロジー' },
-    { value: 'society', label: '社会' },
+    { value: 'technology', label: '技術・工作' },
+    { value: 'society', label: '社会・政治・時事' },
     { value: 'mmd', label: 'MMD' },
     { value: 'vtuber', label: 'VTuber' },
     { value: 'radio', label: 'ラジオ' },
@@ -61,7 +63,7 @@
     { value: '24h', label: '24時間' },
     { value: 'week', label: '週間' },
     { value: 'month', label: '月間' },
-    { value: 'total', label: '合計' },
+    { value: 'total', label: '全期間' },
   ];
 
   // ショートランキング (nvapi /v2/search/video) で指定できるソートキー。

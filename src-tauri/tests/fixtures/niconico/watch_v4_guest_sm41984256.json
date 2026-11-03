@@ -1,0 +1,549 @@
+{
+  "meta": {
+    "status": 200
+  },
+  "data": {
+    "responseType": "normal",
+    "client": {
+      "nicosid": "1700000000.0000000000",
+      "watchId": "sm41984256",
+      "watchTrackId": "Redacted00_1700000000000"
+    },
+    "comment": {
+      "threads": [
+        {
+          "id": 1679681823,
+          "fork": 1,
+          "forkLabel": "owner",
+          "videoId": "sm41984256",
+          "isPostTarget": false,
+          "isOwnerThread": true,
+          "is184Forced": false,
+          "label": "owner",
+          "postNgReason": null,
+          "syncBufferTime": 300
+        },
+        {
+          "id": 1679681823,
+          "fork": 0,
+          "forkLabel": "main",
+          "videoId": "sm41984256",
+          "isPostTarget": true,
+          "isOwnerThread": false,
+          "is184Forced": false,
+          "label": "default",
+          "postNgReason": null,
+          "syncBufferTime": 300
+        },
+        {
+          "id": 1679681823,
+          "fork": 2,
+          "forkLabel": "easy",
+          "videoId": "sm41984256",
+          "isPostTarget": false,
+          "isOwnerThread": false,
+          "is184Forced": false,
+          "label": "easy",
+          "postNgReason": null,
+          "syncBufferTime": 300
+        }
+      ],
+      "layers": [
+        {
+          "index": 0,
+          "isTranslucent": false,
+          "components": [
+            {
+              "threadId": 1679681823,
+              "fork": 1,
+              "forkLabel": "owner"
+            }
+          ]
+        },
+        {
+          "index": 1,
+          "isTranslucent": false,
+          "components": [
+            {
+              "threadId": 1679681823,
+              "fork": 0,
+              "forkLabel": "main"
+            },
+            {
+              "threadId": 1679681823,
+              "fork": 2,
+              "forkLabel": "easy"
+            }
+          ]
+        }
+      ],
+      "ng": {
+        "ngScore": {
+          "isDisabled": false
+        },
+        "owner": [],
+        "viewer": null
+      },
+      "isAttentionRequired": false,
+      "nvComment": {
+        "threadKey": "redacted.thread.key",
+        "server": "https://public.nvcomment.nicovideo.jp",
+        "params": {
+          "targets": [
+            {
+              "id": "1679681823",
+              "fork": "owner"
+            },
+            {
+              "id": "1679681823",
+              "fork": "main"
+            },
+            {
+              "id": "1679681823",
+              "fork": "easy"
+            }
+          ],
+          "language": "ja-jp"
+        }
+      },
+      "assist": {
+        "sectionDurationSec": 6,
+        "minMatchCharacters": 15,
+        "ignorePostElapsedTimeSec": 0,
+        "ignoreCommentNgScoreThreshold": -1000,
+        "commentCountThresholdList": [
+          [
+            4,
+            6
+          ],
+          [
+            14,
+            18
+          ],
+          [
+            26,
+            1500
+          ]
+        ],
+        "buttonDisplayDurationSec": 6,
+        "buttonDisplayOffsetSec": 2
+      }
+    },
+    "media": {
+      "contents": {
+        "videos": [
+          {
+            "id": "video-h264-720p",
+            "isAvailable": true,
+            "qualityLevel": 3,
+            "label": "720p",
+            "bitRate": 1321083,
+            "width": 1280,
+            "height": 720
+          },
+          {
+            "id": "video-h264-480p",
+            "isAvailable": true,
+            "qualityLevel": 2,
+            "label": "480p",
+            "bitRate": 767773,
+            "width": 854,
+            "height": 480
+          },
+          {
+            "id": "video-h264-360p",
+            "isAvailable": true,
+            "qualityLevel": 1,
+            "label": "360p",
+            "bitRate": 531716,
+            "width": 640,
+            "height": 360
+          },
+          {
+            "id": "video-h264-360p-lowest",
+            "isAvailable": true,
+            "qualityLevel": 0,
+            "label": "低画質",
+            "bitRate": 300841,
+            "width": 640,
+            "height": 360
+          }
+        ],
+        "audios": [
+          {
+            "id": "audio-aac-192kbps",
+            "isAvailable": true,
+            "qualityLevel": 1,
+            "bitRate": 173432,
+            "samplingRate": 48000,
+            "integratedLoudness": -11.2,
+            "truePeak": 0.3,
+            "loudnessCollection": [
+              {
+                "type": "video",
+                "value": 0.6456542290346555
+              },
+              {
+                "type": "pureAdPreroll",
+                "value": 0.7079457843841379
+              },
+              {
+                "type": "houseAdPreroll",
+                "value": 0.7079457843841379
+              },
+              {
+                "type": "networkAdPreroll",
+                "value": 0.7079457843841379
+              },
+              {
+                "type": "pureAdMidroll",
+                "value": 0.7079457843841379
+              },
+              {
+                "type": "houseAdMidroll",
+                "value": 0.7079457843841379
+              },
+              {
+                "type": "networkAdMidroll",
+                "value": 0.7079457843841379
+              },
+              {
+                "type": "pureAdPostroll",
+                "value": 0.7079457843841379
+              },
+              {
+                "type": "houseAdPostroll",
+                "value": 0.7079457843841379
+              },
+              {
+                "type": "networkAdPostroll",
+                "value": 0.7079457843841379
+              },
+              {
+                "type": "nicoadVideoIntroduce",
+                "value": 0.8912509381337456
+              },
+              {
+                "type": "nicoadBillboard",
+                "value": 1
+              },
+              {
+                "type": "marquee",
+                "value": 1
+              }
+            ],
+            "label": {
+              "quality": "標準音質",
+              "bitrate": "192kbps"
+            }
+          },
+          {
+            "id": "audio-aac-64kbps",
+            "isAvailable": true,
+            "qualityLevel": 0,
+            "bitRate": 76307,
+            "samplingRate": 48000,
+            "integratedLoudness": -11.2,
+            "truePeak": 0.3,
+            "loudnessCollection": [
+              {
+                "type": "video",
+                "value": 0.6456542290346555
+              },
+              {
+                "type": "pureAdPreroll",
+                "value": 0.7079457843841379
+              },
+              {
+                "type": "houseAdPreroll",
+                "value": 0.7079457843841379
+              },
+              {
+                "type": "networkAdPreroll",
+                "value": 0.7079457843841379
+              },
+              {
+                "type": "pureAdMidroll",
+                "value": 0.7079457843841379
+              },
+              {
+                "type": "houseAdMidroll",
+                "value": 0.7079457843841379
+              },
+              {
+                "type": "networkAdMidroll",
+                "value": 0.7079457843841379
+              },
+              {
+                "type": "pureAdPostroll",
+                "value": 0.7079457843841379
+              },
+              {
+                "type": "houseAdPostroll",
+                "value": 0.7079457843841379
+              },
+              {
+                "type": "networkAdPostroll",
+                "value": 0.7079457843841379
+              },
+              {
+                "type": "nicoadVideoIntroduce",
+                "value": 0.8912509381337456
+              },
+              {
+                "type": "nicoadBillboard",
+                "value": 1
+              },
+              {
+                "type": "marquee",
+                "value": 1
+              }
+            ],
+            "label": {
+              "quality": "低音質",
+              "bitrate": "64kbps"
+            }
+          }
+        ]
+      },
+      "isStoryboardAvailable": false,
+      "accessRightKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ2IjpbInZpZGVvLWgyNjQtNzIwcCIsInZpZGVvLWgyNjQtNDgwcCIsInZpZGVvLWgyNjQtMzYwcCIsInZpZGVvLWgyNjQtMzYwcC1sb3dlc3QiXSwiYSI6WyJhdWRpby1hYWMtMTkya2JwcyIsImF1ZGlvLWFhYy02NGticHMiXSwidmlkIjoic200MTk4NDI1NiIsInR5cCI6IkFjY2Vzcy1SaWdodC1LZXkiLCJleHAiOjE3MDAwMDAwMDB9.redacted-signature",
+      "hls": {
+        "url": "https://delivery.domand.nicovideo.jp/hlsbid/000000000000000000000000/playlists/variants/redacted.m3u8?session=redacted&Expires=1700000000&Signature=redacted&Key-Pair-Id=redacted",
+        "outputs": [
+          {
+            "assetUnitNames": [
+              "video-h264-720p",
+              "audio-aac-192kbps"
+            ]
+          },
+          {
+            "assetUnitNames": [
+              "video-h264-480p",
+              "audio-aac-192kbps"
+            ]
+          },
+          {
+            "assetUnitNames": [
+              "video-h264-360p",
+              "audio-aac-192kbps"
+            ]
+          },
+          {
+            "assetUnitNames": [
+              "video-h264-360p-lowest",
+              "audio-aac-192kbps"
+            ]
+          }
+        ],
+        "createdAt": "2026-10-31T04:01:15+00:00",
+        "expiredAt": "2026-11-01T04:01:15+00:00"
+      },
+      "lowDataMode": {
+        "videoUpperLimit": 1,
+        "audioUpperLimit": 1
+      }
+    },
+    "player": {
+      "comment": {
+        "isDefaultInvisible": false
+      },
+      "initialPlayback": null,
+      "layerMode": 0
+    },
+    "video": {
+      "id": "sm41984256",
+      "contentType": "long",
+      "title": "【AI実況】ロマサガ3をAIと一緒に実況してみた【ゆっくり実況】",
+      "description": "挑戦シリーズ110回目。<br>今回はいま流行りのAIと一緒にロマンシングサガ3の実況に挑戦してみました。<br>AI拓也は無関係です。<br><br>使用したAIは「AIのべりすと」が無料で提供している「チャット用プロンプトv2」です→<a href=\"https://onl.tw/Cby2nKH\" target=\"_blank\" rel=\"noopener nofollow\">https://onl.tw/Cby2nKH</a><br><br>他の挑戦シリーズとか→<a href=\"https://www.nicovideo.jp/mylist/3220744\" target=\"_blank\" rel=\"noopener\">mylist/3220744</a>&nbsp;<br>YouTube版→<a href=\"https://goo.gl/oey5Y7\" target=\"_blank\" rel=\"noopener nofollow\">https://goo.gl/oey5Y7</a><br>ニコニコニュースのインタビュー記事→<a href=\"https://originalnews.nico/284602\" target=\"_blank\" rel=\"noopener nofollow\">https://originalnews.nico/284602</a><br><br>© 1995, 2019 SQUARE ENIX CO., LTD. All Rights Reserved.　Planned &amp; Developed by ArtePiazza　ILLUSTRATION: TOMOMI KOBAYASHI　当該作品の転載・配布は禁止いたします。",
+      "supplements": [],
+      "count": {
+        "view": 307473,
+        "comment": 4652,
+        "mylist": 639,
+        "like": 6031
+      },
+      "duration": 686,
+      "thumbnail": {
+        "normal": "https://nicovideo.cdn.nimg.jp/thumbnails/41984256/41984256.8873668",
+        "middle": "https://nicovideo.cdn.nimg.jp/thumbnails/41984256/41984256.8873668.M",
+        "large": "https://nicovideo.cdn.nimg.jp/thumbnails/41984256/41984256.8873668.L",
+        "player": "https://img.cdn.nimg.jp/s/nicovideo/thumbnails/41984256/41984256.8873668.original/a960x540l?key=69681722f81f0393b68b73a2d68c8258730510d74d8c63c1407162847a7892c7",
+        "ogp": "https://img.cdn.nimg.jp/s/nicovideo/thumbnails/41984256/41984256.8873668.original/r1280x720l?key=87f679b1c46735a46ac3aa26e1b4233a9f4095acba1ef0eb20bad055c96eb8cd",
+        "short": null
+      },
+      "registeredAt": "2023-03-26T18:00:00+09:00",
+      "permission": {
+        "isPrivate": false,
+        "isDeleted": false,
+        "isAuthenticationRequired": false,
+        "isEmbedPlayerAllowed": true,
+        "isGiftAllowed": true,
+        "isNgForVocacolleApp": false,
+        "rating": {
+          "isAdult": false
+        }
+      },
+      "hasLyrics": false,
+      "isHighRiskVideo": false,
+      "isChannelVideo": false,
+      "isOwnedByViewer": false,
+      "showOwnerMenu": false,
+      "isLikedByViewer": false
+    },
+    "genre": {
+      "key": "game",
+      "label": "ゲーム",
+      "isImmoral": false,
+      "isDisabled": false,
+      "isNotSet": false
+    },
+    "tags": {
+      "items": [
+        {
+          "name": "ロマンシングサガ3",
+          "isLocked": false
+        },
+        {
+          "name": "ゆっくり実況プレイ",
+          "isLocked": false
+        },
+        {
+          "name": "ガワだけAIタクヤ",
+          "isLocked": false
+        },
+        {
+          "name": "ポンコツ",
+          "isLocked": false
+        },
+        {
+          "name": "チャット用プロンプトv2",
+          "isLocked": false
+        },
+        {
+          "name": "クソアホAI",
+          "isLocked": false
+        },
+        {
+          "name": "AI実況",
+          "isLocked": false
+        },
+        {
+          "name": "ロマサガ3",
+          "isLocked": false
+        },
+        {
+          "name": "敵を倒したい(AI)",
+          "isLocked": false
+        },
+        {
+          "name": "人工知能がね…",
+          "isLocked": false
+        },
+        {
+          "name": "おやつの人",
+          "isLocked": false
+        }
+      ],
+      "hasR18Tag": false,
+      "isPublishedNicoscript": false,
+      "edit": {
+        "isEditable": false,
+        "uneditableReason": "NEED_LOGIN",
+        "editKey": "redacted"
+      }
+    },
+    "lazy": {
+      "authKey": "redacted-lazy-auth-key"
+    },
+    "system": {
+      "serverTime": "2026-10-31T13:01:15+09:00",
+      "isStellaAlive": true,
+      "channelGtmContainerId": "GTM-K8M6VGZ"
+    },
+    "viewer": null,
+    "videoAds": {
+      "additionalParams": {
+        "videoId": "sm41984256",
+        "videoDuration": 686,
+        "isAdultRatingNG": false,
+        "isAuthenticationRequired": false,
+        "isR18": false,
+        "nicosid": "redacted",
+        "lang": "ja-jp",
+        "watchTrackId": "redacted",
+        "genre": "game"
+      },
+      "items": [
+        {
+          "type": "preroll",
+          "timingMs": null,
+          "additionalParams": {
+            "linearType": "preroll",
+            "adIdx": 0,
+            "skipType": 1,
+            "pod": 1
+          }
+        },
+        {
+          "type": "postroll",
+          "timingMs": null,
+          "additionalParams": {
+            "linearType": "postroll",
+            "adIdx": 0,
+            "skipType": 1,
+            "pod": 2
+          }
+        }
+      ],
+      "reason": "non_premium_user_ads"
+    },
+    "videoLive": null,
+    "payment": {
+      "ppv": {
+        "isEnabled": false,
+        "showPromotion": false
+      },
+      "admission": {
+        "isEnabled": false,
+        "showPromotion": false
+      },
+      "continuationBenefit": {
+        "isEnabled": false,
+        "showPromotion": false
+      },
+      "premium": {
+        "isEnabled": false,
+        "showPromotion": false
+      },
+      "watchableUserType": "all",
+      "commentableUserType": "all",
+      "billingType": "free"
+    },
+    "baseVideo": {
+      "baseVideoId": null,
+      "contentType": null,
+      "title": null,
+      "thumbnail": null
+    },
+    "metadata": {
+      "jsonLd": {
+        "owner": {
+          "id": "108373",
+          "type": "user",
+          "name": "おやつ",
+          "description": "主にサガシリーズ、FFシリーズの制限プレイ/TAS/RTA等を投稿しています。\n挑戦シリーズ一覧：https://www.nicovideo.jp/my/mylist/3220744\nサブ垢：https://www.nicovideo.jp/user/4571555/video\nTwitter：https://twitter.com/Oyatsu_Co\nYouTube：https://goo.gl/oey5Y7\nニコニコニュースのインタビュー記事：https://originalnews.nico/284602\n不動産投資ブログ：https://oyatsu-fudousan.com",
+          "iconUrl": "https://img.nicoprofile.nimg.jp/usericon/10/108373.jpg?1572750025"
+        },
+        "videoObject": {
+          "regionsAllowed": null,
+          "expiresAt": null
+        }
+      },
+      "gtm": {
+        "channel": null
+      }
+    },
+    "okReason": "PURELY"
+  }
+}

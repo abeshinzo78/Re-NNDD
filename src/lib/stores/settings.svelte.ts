@@ -83,6 +83,16 @@ export const SETTING_DEFS = [
     order: 36,
   },
   {
+    key: 'playback.record_niconico_view',
+    label: 'ニコニコに視聴を記録する',
+    description:
+      'オンライン再生を始めた時、ニコニコの視聴履歴 (ログイン中) と再生数に記録する。niconico 側の仕様変更で、記録は明示的に送らないと残らなくなった',
+    section: 'playback',
+    default: true,
+    kind: 'bool',
+    order: 38,
+  },
+  {
     key: 'playback.default_rate',
     label: 'デフォルト再生速度',
     description: '動画を開いた直後の再生倍率',

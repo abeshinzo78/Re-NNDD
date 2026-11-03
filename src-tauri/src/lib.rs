@@ -4,6 +4,7 @@ pub mod downloader;
 pub mod error;
 pub mod library;
 pub mod local_server;
+pub mod login_window;
 pub mod plugins;
 
 use std::sync::Arc;
@@ -115,7 +116,10 @@ pub fn run() {
             commands::session_cookie_status,
             commands::login_password,
             commands::login_mfa,
+            login_window::open_login_window,
+            commands::get_account_state,
             commands::prepare_playback,
+            commands::record_watch_view,
             commands::fetch_video_comments,
             commands::issue_hls_url,
             commands::fetch_hls_resource,
@@ -171,6 +175,7 @@ pub fn run() {
             commands::fetch_ranking_html,
             commands::search_short_ranking,
             commands::fetch_video_html,
+            commands::fetch_video_tags,
             commands::fetch_related_videos,
             commands::resolve_thumbnail_url,
             // ----- yt-dlp アップデート追従 -----

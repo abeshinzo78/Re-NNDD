@@ -12,7 +12,7 @@
 [![Tauri 2](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white)](https://tauri.app/)
 [![Rust stable / edition 2021](https://img.shields.io/badge/Rust-stable%20%2F%20edition%202021-DEA584?logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![Svelte 5](https://img.shields.io/badge/Svelte-5-FF3E00?logo=svelte&logoColor=white)](https://svelte.dev/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-7-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Vite](https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
 [![SQLite](https://img.shields.io/badge/SQLite-bundled-003B57?logo=sqlite&logoColor=white)](https://www.sqlite.org/)
 [![Node.js 20+](https://img.shields.io/badge/Node.js-20%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
@@ -58,17 +58,21 @@ Discord鯖はこちらです　https://discord.gg/cDhnfZ6HMa
 
 - 動画検索（スナップショット検索 API / nvapi の切り替えに対応）
 - ランキングの閲覧（ジャンル・期間別、ショートランキング対応）
-- ユーザーの投稿動画・マイリスト・シリーズ一覧、チャンネルの投稿動画一覧の取得
+- ユーザーの投稿動画・マイリスト・シリーズ一覧、チャンネルの投稿動画一覧の取得（自分の非公開マイリストも表示可能）
 - 関連動画の表示
 - 視聴履歴の記録・一覧・削除（動画ページを開いた時点で記録）
 
 **アカウント**
 
-- ログイン（メール/パスワード + 2 段階認証、`user_session` Cookie 直入力）
+- アプリ内ブラウザでのログイン（ニコニコのログインページをそのまま使うので 2 段階認証・外部アカウントにも対応）と `user_session` Cookie 直入力
+- ログイン状態（セッションが有効か・プレミアム会員か）の確認
+- メール/パスワードでのログイン（旧方式。niconico 側のログイン方式変更により現在は使えないことがあります）
 
 **再生**
 
-- オンライン動画の HLS 再生（画質切り替え対応）とコメント threads API 取得・再生連携
+- オンライン動画の HLS 再生（niconico の nvapi v4 視聴フローに対応、画質切り替え対応）とコメント threads API 取得・再生連携
+- 投稿者・シリーズ情報の表示（シリーズ内の前後の動画へ移動可能）
+- 再生開始時にニコニコの視聴履歴・再生数へ記録（設定で OFF 可）
 - ローカル保存動画の再生（内蔵 HTTP Range 配信）
 - ミニプレイヤー、キーボードショートカット、再生キューによる連続再生
 
@@ -183,9 +187,16 @@ npm run tauri:build
 
 ```bash
 cargo test --manifest-path src-tauri/Cargo.toml
-npm run check
+npm run check   # svelte-check + TypeScript 7 (ネイティブ版) による型検査
 npm run lint
 npm test
+```
+
+niconico の実サービスに対して視聴・一覧まわりを確かめるテストもあります (既定では実行されません)。
+ログイン経路を確かめるには `user_session` を環境変数で渡します:
+
+```bash
+NNDD_TEST_COOKIE='user_session=user_session_...' \n  cargo test --manifest-path src-tauri/Cargo.toml \n  --test niconico_watch_live --test niconico_lists_live -- --ignored --test-threads=1
 ```
 
 実アプリを起動する E2E スモークテストもあります。X サーバ経由で実行する仕組みのため、現状は Linux（Debian/Ubuntu 系）専用です:

@@ -15,6 +15,7 @@ export type WatchVideoMeta = {
   viewCount?: number;
   commentCount?: number;
   mylistCount?: number;
+  likeCount?: number;
   tags: VideoTag[];
   contentType?: string;
 };
@@ -53,6 +54,13 @@ export type PlayerComment = {
   score?: number;
 };
 
+/** シリーズ内の前後の動画。 */
+export type SeriesVideoRef = {
+  id: string;
+  title: string;
+  thumbnailUrl?: string;
+};
+
 export type SeriesInfo = {
   id: number;
   title: string;
@@ -60,6 +68,14 @@ export type SeriesInfo = {
   thumbnailUrl?: string;
   itemsCount?: number;
   isListed: boolean;
+  prevVideo?: SeriesVideoRef;
+  nextVideo?: SeriesVideoRef;
+  firstVideo?: SeriesVideoRef;
+};
+
+export type WatchGenre = {
+  key: string;
+  label: string;
 };
 
 export type PlaybackPayload = {
@@ -73,4 +89,11 @@ export type PlaybackPayload = {
   accessRightKey: string;
   videoId: string;
   isShort: boolean;
+  /** watch 取得時の actionTrackId。再生開始時の視聴記録に使う。 */
+  actionTrackId?: string;
+  /** ゲストとして取得したデータか。 */
+  isGuest?: boolean;
+  /** セッション Cookie はあるのにゲスト扱いだった (= 期限切れの疑い)。 */
+  sessionExpired?: boolean;
+  genre?: WatchGenre;
 };

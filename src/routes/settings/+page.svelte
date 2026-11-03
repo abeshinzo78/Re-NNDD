@@ -2,11 +2,14 @@
   import { onDestroy, onMount } from 'svelte';
   import {
     clearSessionCookie,
+    getAccountState,
     getAppInfo,
     loginMfa,
     loginPassword,
+    openLoginWindow,
     saveSessionCookie,
     sessionCookieStatus,
+    type AccountState,
     ytdlpCheckUpdate,
     ytdlpInstallUpdate,
     ytdlpRemoveManaged,
@@ -49,14 +52,81 @@
   let mfaSession = $state<string | null>(null);
   let otpCode = $state('');
 
+  // niconico に問い合わせた実際のセッション状態。Cookie を持っていても期限切れ
+  // だと多くの API がゲスト扱いで黙って通るので、ここで有効かを見せる。
+  let account = $state<AccountState | null>(null);
+  let accountChecking = $state(false);
+  let loginWindowOpen = $state(false);
+
+  let accountText = $derived.by(() => {
+    if (!loggedIn) return '未ログイン';
+    if (accountChecking || !account) return 'ログイン状態を確認中…';
+    switch (account.state) {
+      case 'valid':
+        return `ログイン中: ${account.account.nickname || account.account.id}${account.account.isPremium ? '（プレミアム会員）' : ''}`;
+      case 'expired':
+        return 'セッションの有効期限が切れています。ログインし直してください';
+      case 'unknown':
+        return `ログイン状態を確認できませんでした (${account.message})`;
+      case 'logged_out':
+        return '未ログイン';
+    }
+  });
+  let accountValid = $derived(loggedIn && account?.state === 'valid');
+
   // ========= アプリ情報 =========
   let appInfo = $state<AppInfo | null>(null);
+
+  async function refreshAccount() {
+    accountChecking = true;
+    try {
+      account = await getAccountState();
+    } catch (e) {
+      account = { state: 'unknown', message: String(e) };
+    } finally {
+      accountChecking = false;
+    }
+  }
 
   async function refresh() {
     try {
       loggedIn = await sessionCookieStatus();
     } catch (e) {
       message = { kind: 'error', text: String(e) };
+    }
+    if (loggedIn) {
+      void refreshAccount();
+    } else {
+      account = { state: 'logged_out' };
+    }
+  }
+
+  async function handleBrowserLogin() {
+    loginWindowOpen = true;
+    message = null;
+    try {
+      const result = await openLoginWindow();
+      switch (result.kind) {
+        case 'success':
+          message = {
+            kind: 'ok',
+            text: result.account
+              ? `ログインしました (${result.account.nickname || result.account.id})。`
+              : 'ログインしました。',
+          };
+          break;
+        case 'canceled':
+          message = { kind: 'warn', text: 'ログインせずにウィンドウが閉じられました。' };
+          break;
+        case 'timed_out':
+          message = { kind: 'warn', text: '時間切れのためログイン用ウィンドウを閉じました。' };
+          break;
+      }
+      await refresh();
+    } catch (e) {
+      message = { kind: 'error', text: String(e) };
+    } finally {
+      loginWindowOpen = false;
     }
   }
 
@@ -87,6 +157,8 @@
         };
       case 'invalid_credentials':
         return { kind: 'error', text: 'メールアドレスかパスワードが正しくありません。' };
+      case 'unsupported':
+        return { kind: 'warn', text: result.message };
     }
   }
 
@@ -778,72 +850,103 @@
       <p class="hint">ログインしないと公開動画のみ再生可能（プレミアム限定など不可）。</p>
     </header>
     <div class="status">
-      <span class="dot" class:on={loggedIn}></span>
-      <span class={loggedIn ? 'ok' : 'muted'}>
-        {loggedIn ? 'ログイン済み（メモリ内）' : '未ログイン'}
-      </span>
+      <span class="dot" class:on={accountValid}></span>
+      <span class={accountValid ? 'ok' : 'muted'}>{accountText}</span>
       {#if loggedIn}
+        <button
+          class="link"
+          type="button"
+          onclick={refreshAccount}
+          disabled={pending || accountChecking}
+        >
+          再確認
+        </button>
         <button class="link danger" type="button" onclick={handleLogout} disabled={pending}>
           ログアウト
         </button>
       {/if}
     </div>
 
-    <form onsubmit={handleLogin} class="login-form">
-      <label>
-        メールアドレス / 電話番号
-        <input
-          type="email"
-          bind:value={email}
-          autocomplete="username"
-          placeholder="example@example.com"
-        />
-      </label>
-      <label>
-        パスワード
-        <input type="password" bind:value={password} autocomplete="current-password" />
-      </label>
-      <div class="actions">
-        <button type="submit" class="primary" disabled={pending || !email || !password}>
-          {pending ? 'ログイン中…' : 'ログイン'}
-        </button>
-      </div>
-    </form>
-
-    {#if mfaRequired}
-      {#if mfaSession}
-        <form onsubmit={handleMfaSubmit} class="mfa-form">
-          <label>
-            二段階認証コード
-            <input
-              type="text"
-              inputmode="numeric"
-              maxlength="6"
-              bind:value={otpCode}
-              autocomplete="one-time-code"
-              placeholder="000000"
-            />
-          </label>
-          <div class="actions">
-            <button type="submit" class="primary" disabled={pending || otpCode.length < 6}>
-              {pending ? '確認中…' : '認証'}
-            </button>
-          </div>
-        </form>
-      {:else}
-        <p
-          class="hint"
-          style="padding:12px;border:1px solid var(--theme-border-strong);border-radius:8px"
-        >
-          MFA セッションを取得できませんでした。下の「Cookie 直入れ」から <code>user_session</code> を貼り付けてください。
-        </p>
-      {/if}
-    {/if}
+    <div class="actions browser-login">
+      <button
+        type="button"
+        class="primary"
+        onclick={handleBrowserLogin}
+        disabled={pending || loginWindowOpen}
+      >
+        {loginWindowOpen ? 'ログイン用ウィンドウで操作してください…' : 'ブラウザでログイン'}
+      </button>
+    </div>
+    <p class="hint">
+      ニコニコのログインページを別ウィンドウで開きます。二段階認証や外部アカウントでのログインもそのまま使えます。
+      ログインが済むとウィンドウは自動で閉じます。
+    </p>
 
     <details>
-      <summary>2FA / SSO の人は user_session Cookie 直入れ</summary>
+      <summary>メールアドレスとパスワードでログイン (旧方式)</summary>
       <p class="hint">
-        ブラウザでログイン → DevTools → Cookies → <code>user_session</code> の値をコピペ
+        niconico のログイン方式が変わったため、現在はこの方法ではログインできないことがあります。
+        その場合は「ブラウザでログイン」を使ってください。
+      </p>
+      <form onsubmit={handleLogin} class="login-form">
+        <label>
+          メールアドレス / 電話番号
+          <input
+            type="email"
+            bind:value={email}
+            autocomplete="username"
+            placeholder="example@example.com"
+          />
+        </label>
+        <label>
+          パスワード
+          <input type="password" bind:value={password} autocomplete="current-password" />
+        </label>
+        <div class="actions">
+          <button type="submit" class="primary" disabled={pending || !email || !password}>
+            {pending ? 'ログイン中…' : 'ログイン'}
+          </button>
+        </div>
+      </form>
+
+      {#if mfaRequired}
+        {#if mfaSession}
+          <form onsubmit={handleMfaSubmit} class="mfa-form">
+            <label>
+              二段階認証コード
+              <input
+                type="text"
+                inputmode="numeric"
+                maxlength="6"
+                bind:value={otpCode}
+                autocomplete="one-time-code"
+                placeholder="000000"
+              />
+            </label>
+            <div class="actions">
+              <button type="submit" class="primary" disabled={pending || otpCode.length < 6}>
+                {pending ? '確認中…' : '認証'}
+              </button>
+            </div>
+          </form>
+        {:else}
+          <p
+            class="hint"
+            style="padding:12px;border:1px solid var(--theme-border-strong);border-radius:8px"
+          >
+            MFA セッションを取得できませんでした。「ブラウザでログイン」か、下の「Cookie
+            を直接入力」から
+            <code>user_session</code> を貼り付けてください。
+          </p>
+        {/if}
+      {/if}
+    </details>
+
+    <details>
+      <summary>user_session Cookie を直接入力</summary>
+      <p class="hint">
+        ブラウザでログイン → DevTools → Cookies → <code>user_session</code> の値をコピペ。
+        <code>user_session=…</code> の形や Cookie ヘッダー丸ごとでも構いません。
       </p>
       <form onsubmit={handleCookieSubmit}>
         <input type="password" bind:value={cookie} placeholder="xxxxxx..." autocomplete="off" />
@@ -1266,6 +1369,10 @@
     font-size: 13px;
     padding: 0;
     margin-left: auto;
+  }
+  /* 右寄せは先頭のリンクだけ (再確認・ログアウトを並べて右端に置く) */
+  .status .link + .link {
+    margin-left: 0;
   }
   .link.danger {
     color: var(--theme-danger-text);

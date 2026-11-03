@@ -98,9 +98,13 @@ impl SnapshotSearchClient {
                 let key = format!("filters[{}][{}]", clause.field.as_str(), clause.op.as_key());
                 pairs.append_pair(&key, &clause.value);
             }
-            if let Some(sort) = &query.sort {
-                pairs.append_pair("_sort", &sort.to_param());
-            }
+            // `_sort` は必須 (無いと 400 "sort field is empty for _sort")。
+            // 指定が無ければ再生数の多い順にする (UI の「人気順」と同じ近似)。
+            let sort = query.sort.clone().unwrap_or(SortSpec {
+                field: SearchField::ViewCounter,
+                direction: SortDirection::Desc,
+            });
+            pairs.append_pair("_sort", &sort.to_param());
             pairs.append_pair("_offset", &query.offset.to_string());
             pairs.append_pair("_limit", &query.limit.to_string());
             pairs.append_pair("_context", &query.context);
@@ -519,6 +523,8 @@ mod tests {
         assert_eq!(qs.get("_offset").map(String::as_str), Some("0"));
         assert_eq!(qs.get("_limit").map(String::as_str), Some("10"));
         assert!(qs.contains_key("_context"));
+        // 並び順の指定が無くても `_sort` は必ず付ける (API が必須にしている)。
+        assert_eq!(qs.get("_sort").map(String::as_str), Some("-viewCounter"));
     }
 
     #[test]

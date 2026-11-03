@@ -1,7 +1,7 @@
 {
   "name": "nndd-next",
   "private": true,
-  "version": "0.2.2",
+  "version": "0.3.0",
   "type": "module",
   "description": "Re:NNDD — niconico desktop archive client (Tauri 2 + Svelte 5)",
   "license": "MIT",
@@ -12,7 +12,7 @@
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
-    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --tsgo",
     "lint": "eslint .",
     "format": "prettier --write .",
     "test": "vitest run",
@@ -21,7 +21,6 @@
   },
   "dependencies": {
     "@kongyo2/nicoran-api": "^0.1.1",
-    "@kongyo2/nicotag-api": "^0.1.0",
     "@tauri-apps/api": "^2.1.0",
     "@tauri-apps/plugin-dialog": "^2.0.0",
     "@tauri-apps/plugin-shell": "^2.0.0",
@@ -37,6 +36,7 @@
     "@tauri-apps/cli": "^2.11.2",
     "@testing-library/svelte": "^5.2.4",
     "@types/node": "^25.9.1",
+    "@typescript/native": "npm:typescript@^7.0.2",
     "esbuild": "^0.28.1",
     "eslint": "^10.4.1",
     "eslint-config-prettier": "^10.1.8",
@@ -46,7 +46,7 @@
     "prettier": "^3.3.3",
     "prettier-plugin-svelte": "^4.0.1",
     "svelte": "^5.56.0",
-    "svelte-check": "^4.0.5",
+    "svelte-check": "^4.7.7",
     "tslib": "^2.8.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.60.0",
@@ -54,6 +54,6 @@
     "vitest": "^4.1.7"
   },
   "overrides": {
-    "undici": "^7.29.0"
+    "undici": "^7.30.1"
   }
 }

@@ -7,3 +7,7 @@ target
 package-lock.json
 
 scripts/burnin-verify
+
+# niconico の実応答 (テスト用 fixture)。中身を書き換えないよう整形対象から外す
+src-tauri/tests/fixtures/niconico/*.html
+src-tauri/tests/fixtures/niconico/*.json

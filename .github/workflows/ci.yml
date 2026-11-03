@@ -90,7 +90,10 @@ jobs:
 
       # ここから下は 2 つとも内部で `svelte-kit sync` を走らせる
       # (= `.svelte-kit/` を書き換える) ので、直列を維持する。
-      - name: svelte-check (type check)
+      # 型検査は svelte-check --tsgo で TypeScript 7 (ネイティブ版、
+      # `@typescript/native` = typescript@7) に任せる。typescript@6 は
+      # svelte-check / typescript-eslint が使う JS API のために残している。
+      - name: svelte-check + TypeScript 7 (type check)
         run: npm run check
 
       - name: Vite production build

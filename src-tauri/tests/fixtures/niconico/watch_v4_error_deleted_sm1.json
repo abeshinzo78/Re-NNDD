@@ -1,0 +1,9 @@
+{
+  "meta": {
+    "status": 403,
+    "errorCode": "FORBIDDEN"
+  },
+  "data": {
+    "reasonCode": "ADMINISTRATOR_DELETE_VIDEO"
+  }
+}

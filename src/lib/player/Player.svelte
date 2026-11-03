@@ -55,6 +55,9 @@
     /** 動画が自然終了した通知。`loop` 中は発火しない (内部でループ巻き戻しのみ行う)。
      *  オートプレイキューの「次の動画へ進む」フックを親が刺すのに使う。 */
     onEnded?: () => void;
+    /** 実際に再生が始まった通知 (`<video>` の `playing`)。停止中の再生位置の
+     *  復元・シークでは発火せず、画質切り替えに伴う内部的な再開でも呼ばない。 */
+    onPlaybackStart?: () => void;
     /** `playback.autoplay=false` 設定でも自動再生を強制する。連続再生キューの
      *  ような「ユーザが明示的に再生継続を指示した」コンテキストで使う。 */
     forceAutoplay?: boolean;
@@ -78,6 +81,7 @@
     initialMuted = false,
     onReadyForAudio,
     onEnded: onEndedExternal,
+    onPlaybackStart,
     forceAutoplay = false,
     videoTitle = '',
     videoId = '',
@@ -1248,6 +1252,7 @@
       suppressPlayEventOnce = false;
       return;
     }
+    onPlaybackStart?.();
     // プラグイン: 再生開始
     if (video) {
       pluginBus.emit('player:play', { videoId, currentTime: video.currentTime });

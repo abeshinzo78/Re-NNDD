@@ -61,6 +61,19 @@ pub enum ApiError {
 
     #[error("download canceled")]
     DownloadCanceled,
+
+    /// niconico が視聴情報の提供を断った (削除・非公開・存在しない・メンテナンス等)。
+    ///
+    /// フォールバックしても結果は変わらない「確定した拒否」なので、呼び出し側は
+    /// 別経路へ落ちずにこのまま利用者へ見せる。`message` は利用者向けの日本語で、
+    /// 末尾に診断用の生コードを含む。
+    #[error("{message}")]
+    WatchRefused {
+        status: u16,
+        error_code: Option<String>,
+        reason_code: Option<String>,
+        message: String,
+    },
 }
 
 #[derive(Debug, Error)]

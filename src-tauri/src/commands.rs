@@ -16,8 +16,8 @@ use crate::api::comment::{Comment, CommentApi, ThreadsClient};
 use crate::api::search::{NvapiSearchClient, SearchApi, SnapshotSearchClient};
 use crate::api::types::{SearchQuery, SearchResponse};
 use crate::api::video::{
-    json_value_as_id_string, quality_candidates, NiconicoWatchClient, NvCommentSetup, SeriesInfo,
-    WatchApi, WatchOwner, WatchVideoMeta,
+    json_value_as_id_string, playback_unavailable_message, quality_candidates, NiconicoWatchClient,
+    NvCommentSetup, SeriesInfo, WatchGenre, WatchOwner, WatchVideoMeta,
 };
 use crate::downloader::tools;
 use crate::downloader::ytdlp as ytdlp_mod;
@@ -269,6 +269,28 @@ async fn nv_fetch_paged_list(
     Ok((items_val, total_count))
 }
 
+/// nvapi へ GET してステータスと本文をそのまま返す (ステータスで分岐したい
+/// 呼び出し側用)。通信エラーだけ `Err`。
+async fn nv_get_raw(
+    client: &reqwest::Client,
+    url: &str,
+    cookie: Option<String>,
+) -> Result<(reqwest::StatusCode, String)> {
+    let mut req = client
+        .get(url)
+        .header("X-Frontend-Id", "6")
+        .header("X-Frontend-Version", "0")
+        .header(header::REFERER, "https://www.nicovideo.jp/")
+        .header(header::ACCEPT, "application/json");
+    if let Some(c) = cookie {
+        req = req.header(header::COOKIE, c);
+    }
+    let resp = req.send().await.map_err(crate::error::ApiError::from)?;
+    let status = resp.status();
+    let body = resp.text().await.map_err(crate::error::ApiError::from)?;
+    Ok((status, body))
+}
+
 /// nvapi.nicovideo.jp 系エンドポイントへ GET し、`(parsed_json, body_text)` を返す。
 /// 失敗時は `err_label` を含む `AppError::Other` を返す。`body_text` はデバッグ用に
 /// プレビューしたい呼び出し側のために生で渡す。
@@ -278,20 +300,7 @@ async fn nv_get_json(
     cookie: Option<String>,
     err_label: &str,
 ) -> Result<(serde_json::Value, String)> {
-    let mut req = client
-        .get(url)
-        .header("X-Frontend-Id", "6")
-        .header("X-Frontend-Version", "0")
-        .header(header::REFERER, "https://www.nicovideo.jp/")
-        .header(header::ACCEPT, "application/json");
-
-    if let Some(c) = cookie {
-        req = req.header(header::COOKIE, c);
-    }
-
-    let resp = req.send().await.map_err(crate::error::ApiError::from)?;
-    let status = resp.status();
-    let body = resp.text().await.map_err(crate::error::ApiError::from)?;
+    let (status, body) = nv_get_raw(client, url, cookie).await?;
 
     if !status.is_success() {
         let preview: String = body.chars().take(200).collect();
@@ -500,6 +509,8 @@ fn parse_related_videos(json: serde_json::Value) -> Result<Vec<RelatedVideoItem>
     Ok(videos)
 }
 
+use crate::api::thumbinfo::ACCEPT as THUMBINFO_ACCEPT;
+
 /// `getthumbinfo` XML から `<thumbnail_url>…</thumbnail_url>` を抜き出す。
 /// 削除/非公開動画は `status="fail"` で本要素が無いので `None` を返す。
 fn parse_thumbnail_url_from_xml(xml: &str) -> Option<String> {
@@ -531,7 +542,7 @@ pub async fn resolve_thumbnail_url(
     let client = build_nv_client()?;
     let url = format!("https://ext.nicovideo.jp/api/getthumbinfo/{video_id}");
 
-    let mut req = client.get(&url).header(header::ACCEPT, "application/xml");
+    let mut req = client.get(&url).header(header::ACCEPT, THUMBINFO_ACCEPT);
     if let Some(c) = store.cookie_header() {
         req = req.header(header::COOKIE, c);
     }
@@ -579,8 +590,26 @@ pub fn session_cookie_status(store: State<'_, Arc<SessionStore>>) -> bool {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum LoginResult {
     Success,
-    Mfa { mfa_session: Option<String> },
+    Mfa {
+        mfa_session: Option<String>,
+    },
     InvalidCredentials,
+    /// niconico 側のログイン方式が変わり、この経路ではログインできない。
+    /// フロントはブラウザでのログイン
+    /// ([`crate::login_window::open_login_window`]) へ案内する。
+    Unsupported {
+        message: String,
+    },
+}
+
+const LOGIN_UNSUPPORTED_MESSAGE: &str =
+    "niconico のログイン方式が変わったため、メールアドレスとパスワードでは\
+     ログインできなくなりました。「ブラウザでログイン」を使ってください。";
+
+fn unsupported_login(status: u16) -> LoginResult {
+    LoginResult::Unsupported {
+        message: format!("{LOGIN_UNSUPPORTED_MESSAGE} (HTTP {status})"),
+    }
 }
 
 #[tauri::command]
@@ -601,6 +630,7 @@ pub async fn login_password(
         }
         LoginOutcome::Mfa { mfa_session } => Ok(LoginResult::Mfa { mfa_session }),
         LoginOutcome::InvalidCredentials => Ok(LoginResult::InvalidCredentials),
+        LoginOutcome::Unsupported { status } => Ok(unsupported_login(status)),
     }
 }
 
@@ -624,6 +654,7 @@ pub async fn login_mfa(
             mfa_session: Some(mfa_session),
         }),
         LoginOutcome::InvalidCredentials => Ok(LoginResult::InvalidCredentials),
+        LoginOutcome::Unsupported { status } => Ok(unsupported_login(status)),
     }
 }
 
@@ -654,11 +685,61 @@ pub struct PlaybackPayload {
     /// without re-deriving it from the route.
     pub video_id: String,
     pub is_short: bool,
+    /// watch 取得時の actionTrackId (`client.watchTrackId`)。再生開始時に
+    /// [`record_watch_view`] へ渡して視聴を記録する。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub action_track_id: Option<String>,
+    /// ゲストとして得たデータか (`viewer` が null)。
+    #[serde(default)]
+    pub is_guest: bool,
+    /// セッション Cookie は設定されているのにゲスト扱いだった
+    /// (= `user_session` が失効している疑い)。
+    #[serde(default)]
+    pub session_expired: bool,
+    /// 動画のジャンル (未設定なら無し)。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub genre: Option<WatchGenre>,
 }
 
-/// Fast path: fetch watch page → HLS URL. Returns as soon as the video
-/// can start playing. Comments are loaded separately via
+/// access-rights に出す `(video, audio)` の組。
+type HlsOutputs = Vec<(String, String)>;
+
+/// 再生できる画質候補を、access-rights に出す `outputs` と UI 用の一覧にする。
+fn playback_qualities(
+    page: &crate::api::video::WatchPageData,
+) -> Result<(HlsOutputs, Vec<PickedQuality>)> {
+    let domand = page
+        .domand
+        .as_ref()
+        .ok_or_else(|| AppError::Other(playback_unavailable_message(page)))?;
+    let candidates = quality_candidates(domand);
+    if candidates.is_empty() {
+        return Err(AppError::Other(
+            "利用可能な画質/音質トラックが見つかりません".into(),
+        ));
+    }
+    let outputs = candidates
+        .iter()
+        .map(|candidate| (candidate.video_track.clone(), candidate.audio_track.clone()))
+        .collect();
+    let qualities = candidates
+        .into_iter()
+        .map(|c| PickedQuality {
+            video_track: c.video_track,
+            audio_track: c.audio_track,
+            label: c.label,
+        })
+        .collect();
+    Ok((outputs, qualities))
+}
+
+/// Fast path: fetch watch data (nvapi v4) → HLS URL. Returns as soon as the
+/// video can start playing. Comments are loaded separately via
 /// [`fetch_video_comments`].
+///
+/// v4 は視聴できる画質の HLS を事前発行するので、多くの場合 access-rights の
+/// 往復は要らない。投稿者・シリーズは lazy API から取り、HLS の解決と並行で
+/// 走らせる (lazy が失敗しても再生は止めない)。
 #[tauri::command]
 pub async fn prepare_playback(
     video_id: String,
@@ -667,68 +748,82 @@ pub async fn prepare_playback(
     let session = Arc::clone(&store);
     let watch = NiconicoWatchClient::new(Arc::clone(&session)).map_err(AppError::from)?;
 
-    let page = watch
-        .fetch_watch_page(&video_id)
+    let mut page = watch
+        .fetch_watch_data(&video_id)
         .await
         .map_err(AppError::from)?;
-
-    let domand = page.domand.ok_or_else(|| {
-        AppError::Other(
-            "この動画は再生情報が取得できません（削除済み・プレミアム限定・要ログインなど）".into(),
-        )
-    })?;
-    let candidates = quality_candidates(&domand);
-    if candidates.is_empty() {
-        return Err(AppError::Other(
-            "利用可能な画質/音質トラックが見つかりません".into(),
-        ));
-    }
-
-    let outputs: Vec<(String, String)> = candidates
-        .iter()
-        .map(|candidate| (candidate.video_track.clone(), candidate.audio_track.clone()))
-        .collect();
-    let all_qualities: Vec<PickedQuality> = candidates
-        .iter()
-        .map(|c| PickedQuality {
-            video_track: c.video_track.clone(),
-            audio_track: c.audio_track.clone(),
-            label: c.label.clone(),
-        })
-        .collect();
-    let picked = candidates
-        .into_iter()
-        .next()
+    let (outputs, all_qualities) = playback_qualities(&page)?;
+    let picked = all_qualities
+        .first()
+        .cloned()
         .ok_or_else(|| AppError::Other("利用可能な画質/音質トラックが見つかりません".into()))?;
 
-    let hls = watch
-        .fetch_hls_outputs(
-            &video_id,
-            &domand.access_right_key,
-            page.watch_track_id.as_deref(),
-            &outputs,
-        )
-        .await
-        .map_err(AppError::from)?;
+    let (hls, lazy) = tokio::join!(watch.resolve_hls(&page, &outputs), async {
+        if page.lazy_key.is_some() {
+            Some(watch.fetch_watch_lazy(&page).await)
+        } else {
+            None
+        }
+    });
+    let hls = hls.map_err(AppError::from)?;
+    match lazy {
+        Some(Ok(lazy)) => lazy.apply_to(&mut page),
+        Some(Err(e)) => tracing::warn!(
+            video_id = %video_id,
+            error = %e,
+            "watch lazy failed; owner/series fall back to the embedded data"
+        ),
+        None => {}
+    }
 
     let is_short = page.video.content_type.as_deref() == Some("short");
+    let session_expired = page.is_guest && session.is_set();
+    let access_right_key = page
+        .domand
+        .as_ref()
+        .map(|d| d.access_right_key.clone())
+        .unwrap_or_default();
 
     Ok(PlaybackPayload {
         video: page.video,
         owner: page.owner,
         series: page.series,
         hls_url: hls.content_url,
-        picked_quality: PickedQuality {
-            video_track: picked.video_track,
-            audio_track: picked.audio_track,
-            label: picked.label,
-        },
+        picked_quality: picked,
         all_qualities,
         nv_comment: page.nv_comment,
-        access_right_key: domand.access_right_key,
+        access_right_key,
         video_id,
         is_short,
+        action_track_id: page.watch_track_id,
+        is_guest: page.is_guest,
+        session_expired,
+        genre: page.genre,
     })
+}
+
+/// 再生開始を niconico に記録する (ログイン中は視聴履歴、ゲストでも再生数)。
+///
+/// nvapi v4 の watch 取得は副作用が無く、Web プレイヤーは再生開始時に
+/// `side-effect` を別途送って記録している。これを呼ばないと視聴履歴に残らない
+/// (旧 watch ページは開いただけで記録されていた)。`action_track_id` は
+/// [`PlaybackPayload::action_track_id`]。
+#[tauri::command]
+pub async fn record_watch_view(
+    video_id: String,
+    action_track_id: String,
+    is_guest: Option<bool>,
+    store: State<'_, Arc<SessionStore>>,
+) -> Result<()> {
+    validate_video_id(&video_id)?;
+    let watch = NiconicoWatchClient::new(Arc::clone(&store)).map_err(AppError::from)?;
+    let as_guest = is_guest.unwrap_or_else(|| !store.is_set());
+    watch
+        .record_view(&video_id, &action_track_id, as_guest)
+        .await
+        .map_err(AppError::from)?;
+    tracing::debug!(%video_id, as_guest, "recorded a view on niconico");
+    Ok(())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -750,13 +845,13 @@ pub async fn fetch_video_comments(
     Ok(comments)
 }
 
-/// Issue a fresh HLS URL by re-running the watch-page → access-rights flow.
+/// Issue a fresh HLS URL by re-running the watch (v4) → HLS flow.
 ///
 /// We can't just replay the original `accessRightKey` because niconico
 /// invalidates it after the first `access-rights/hls` call (HTTP 400
 /// INVALID_PARAMETER on retry). Each issuance therefore needs a fresh
-/// watch page fetch — costs ~1 s but only fires when the prior signed
-/// URL expires (~30 s TTL).
+/// watch fetch. The signed URLs themselves stay valid for ~24 h; this only
+/// fires on playback errors (e.g. a 403 from the CDN).
 #[tauri::command]
 pub async fn issue_hls_url(
     video_id: String,
@@ -764,31 +859,12 @@ pub async fn issue_hls_url(
 ) -> Result<String> {
     let watch = NiconicoWatchClient::new(Arc::clone(&store)).map_err(AppError::from)?;
     let page = watch
-        .fetch_watch_page(&video_id)
+        .fetch_watch_data(&video_id)
         .await
         .map_err(AppError::from)?;
-    let domand = page.domand.ok_or_else(|| {
-        AppError::Other(
-            "この動画は再生情報が取得できません（削除済み・プレミアム限定・要ログインなど）".into(),
-        )
-    })?;
-    let candidates = quality_candidates(&domand);
-    if candidates.is_empty() {
-        return Err(AppError::Other(
-            "利用可能な画質/音質トラックが見つかりません".into(),
-        ));
-    }
-    let outputs: Vec<(String, String)> = candidates
-        .iter()
-        .map(|candidate| (candidate.video_track.clone(), candidate.audio_track.clone()))
-        .collect();
+    let (outputs, _) = playback_qualities(&page)?;
     let hls = watch
-        .fetch_hls_outputs(
-            &video_id,
-            &domand.access_right_key,
-            page.watch_track_id.as_deref(),
-            &outputs,
-        )
+        .resolve_hls(&page, &outputs)
         .await
         .map_err(AppError::from)?;
     Ok(hls.content_url)
@@ -1011,6 +1087,83 @@ pub struct UserVideosResponse {
     pub series_description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub series_thumbnail_url: Option<String>,
+    /// 投稿者 (チャンネル) の表示名が一覧から分かった時だけ入る。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner_name: Option<String>,
+}
+
+/// sortKey / sortOrder は URL へそのまま埋め込むので、英数字だけに限る。
+fn validate_sort_param(value: &str) -> std::result::Result<(), AppError> {
+    if value.is_empty() || value.len() > 32 || !value.chars().all(|c| c.is_ascii_alphanumeric()) {
+        return Err(AppError::Other(format!(
+            "invalid sort parameter: {value:?}"
+        )));
+    }
+    Ok(())
+}
+
+const CHANNEL_BASE: &str = "https://ch.nicovideo.jp";
+
+/// チャンネルの投稿動画。`nvapi /v1/channels/{id}/videos` は廃止 (404/403) された
+/// ので ch.nicovideo.jp の一覧ページを読む ([`crate::api::channel`])。
+/// 1 ページ 20 件固定で、`page_size` は使わない。
+async fn fetch_channel_videos(
+    client: &reqwest::Client,
+    channel_id: &str,
+    page: u32,
+    sort_key: &str,
+    sort_order: &str,
+    cookie: Option<String>,
+) -> Result<UserVideosResponse> {
+    use crate::api::channel::{channel_videos_url, parse_channel_videos_html};
+
+    let url = channel_videos_url(CHANNEL_BASE, channel_id, page, sort_key, sort_order);
+    let mut req = client
+        .get(&url)
+        .header(header::ACCEPT, "text/html,application/xhtml+xml")
+        .header(header::ACCEPT_LANGUAGE, "ja,en-US;q=0.9,en;q=0.8");
+    if let Some(c) = cookie {
+        req = req.header(header::COOKIE, c);
+    }
+    let resp = req.send().await.map_err(crate::error::ApiError::from)?;
+    let status = resp.status();
+    let body = resp.text().await.map_err(crate::error::ApiError::from)?;
+    if !status.is_success() {
+        return Err(AppError::Other(format!(
+            "チャンネル動画一覧の取得に失敗しました ({status}): {url}"
+        )));
+    }
+
+    let parsed = parse_channel_videos_html(&body);
+    if parsed.items.is_empty() && parsed.total_count > 0 && page <= 1 {
+        tracing::warn!(%url, total = parsed.total_count, "channel page listed no videos; the layout may have changed");
+    }
+    let numeric_id = channel_id.trim_start_matches("ch").parse::<i64>().ok();
+    let items = parsed
+        .items
+        .into_iter()
+        .map(|v| UserVideoItem {
+            content_id: v.content_id,
+            title: v.title,
+            thumbnail_url: v.thumbnail_url,
+            length_seconds: v.length_seconds,
+            view_counter: v.view_counter,
+            comment_counter: v.comment_counter,
+            mylist_counter: v.mylist_counter,
+            start_time: v.start_time,
+            user_id: None,
+            channel_id: numeric_id,
+        })
+        .collect();
+    Ok(UserVideosResponse {
+        total_count: parsed.total_count,
+        items,
+        debug_raw: None,
+        series_title: None,
+        series_description: None,
+        series_thumbnail_url: None,
+        owner_name: parsed.channel_name,
+    })
 }
 
 #[tauri::command]
@@ -1024,20 +1177,27 @@ pub async fn fetch_user_videos(
     store: State<'_, Arc<SessionStore>>,
 ) -> Result<UserVideosResponse> {
     validate_owner_id(&owner_id)?;
+    validate_sort_param(&sort_key)?;
+    validate_sort_param(&sort_order)?;
     let client = build_nv_client()?;
 
-    let url = if owner_kind == "channel" {
-        format!(
-            "https://nvapi.nicovideo.jp/v1/channels/{}/videos?page={}&pageSize={}&sortKey={}&sortOrder={}",
-            owner_id, page, page_size, sort_key, sort_order
+    if owner_kind == "channel" {
+        return fetch_channel_videos(
+            &client,
+            &owner_id,
+            page,
+            &sort_key,
+            &sort_order,
+            store.cookie_header(),
         )
-    } else {
-        // v3 endpoint returns items wrapped in { essential: …, series: … }
-        format!(
-            "https://nvapi.nicovideo.jp/v3/users/{}/videos?page={}&pageSize={}&sortKey={}&sortOrder={}&sensitiveContents=mask",
-            owner_id, page, page_size, sort_key, sort_order
-        )
-    };
+        .await;
+    }
+
+    // v3 endpoint returns items wrapped in { essential: …, series: … }
+    let url = format!(
+        "https://nvapi.nicovideo.jp/v3/users/{}/videos?page={}&pageSize={}&sortKey={}&sortOrder={}&sensitiveContents=mask",
+        owner_id, page, page_size, sort_key, sort_order
+    );
 
     let (json, body) = nv_get_json(
         &client,
@@ -1104,6 +1264,7 @@ pub async fn fetch_user_videos(
         series_title: None,
         series_description: None,
         series_thumbnail_url: None,
+        owner_name: None,
     })
 }
 
@@ -1172,6 +1333,7 @@ pub async fn fetch_series_videos(
                 series_title,
                 series_description,
                 series_thumbnail_url,
+                owner_name: None,
             });
         }
     }
@@ -1187,6 +1349,7 @@ pub async fn fetch_series_videos(
                 series_title,
                 series_description,
                 series_thumbnail_url,
+                owner_name: None,
             });
         }
         Ok(_) => {
@@ -1237,6 +1400,7 @@ pub async fn fetch_series_videos(
         series_title,
         series_description,
         series_thumbnail_url,
+        owner_name: None,
     })
 }
 
@@ -1523,15 +1687,52 @@ pub async fn fetch_user_mylists(
     validate_owner_id(&owner_id)?;
 
     let client = build_nv_client()?;
-    let url = format!("https://nvapi.nicovideo.jp/v1/users/{owner_id}/mylists?page=1&pageSize=50");
-    let (items_val, total_count) = nv_fetch_paged_list(
-        &client,
-        &url,
-        store.cookie_header(),
-        "マイリスト一覧 API エラー",
-        "mylists",
-    )
-    .await?;
+    // 自分のページなら自分用の経路で取る。公開側の一覧には非公開マイリストが
+    // 出ない (中身も公開側の経路では 403 になる → `fetch_mylist_videos`)。
+    let is_own_page = store.is_set()
+        && matches!(
+            crate::api::account::fetch_account_state(&store).await,
+            crate::api::account::AccountState::Valid { account } if account.id == owner_id
+        );
+    let (items_val, total_count) = if is_own_page {
+        // 自分用の経路は pageSize 50 が上限 (51 以上は 500 になる)。全部読む。
+        const MAX_PAGES: u32 = 20;
+        let mut all = Vec::new();
+        let mut total = 0;
+        for page in 1..=MAX_PAGES {
+            let url =
+                format!("https://nvapi.nicovideo.jp/v1/users/me/mylists?page={page}&pageSize=50");
+            let (json, _) = nv_get_json(
+                &client,
+                &url,
+                store.cookie_header(),
+                "マイリスト一覧 API エラー",
+            )
+            .await?;
+            total = json["data"]["totalCount"].as_i64().unwrap_or(total);
+            let batch = json["data"]["mylists"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default();
+            let done = batch.is_empty() || !json["data"]["hasNext"].as_bool().unwrap_or(false);
+            all.extend(batch);
+            if done {
+                break;
+            }
+        }
+        (all, total)
+    } else {
+        let url =
+            format!("https://nvapi.nicovideo.jp/v1/users/{owner_id}/mylists?page=1&pageSize=50");
+        nv_fetch_paged_list(
+            &client,
+            &url,
+            store.cookie_header(),
+            "マイリスト一覧 API エラー",
+            "mylists",
+        )
+        .await?
+    };
 
     let mut items = Vec::with_capacity(items_val.len());
     for node in &items_val {
@@ -1636,17 +1837,40 @@ pub async fn fetch_mylist_videos(
     page_size: u32,
     store: State<'_, Arc<SessionStore>>,
 ) -> Result<UserVideosResponse> {
+    // URL へ埋め込むので英数字だけに限る (マイリスト ID は数値)。
+    validate_owner_id(&mylist_id)?;
+    let page = page.max(1);
+    let page_size = page_size.clamp(1, 100);
     let client = build_nv_client()?;
     let url = format!(
         "https://nvapi.nicovideo.jp/v2/mylists/{mylist_id}?pageSize={page_size}&page={page}"
     );
-    let (json, body) = nv_get_json(
-        &client,
-        &url,
-        store.cookie_header(),
-        "マイリスト動画 API エラー",
-    )
-    .await?;
+    let cookie = store.cookie_header();
+    let (status, body) = nv_get_raw(&client, &url, cookie.clone()).await?;
+    // 公開マイリストの経路は、非公開マイリストには持ち主のセッションでも 403 を
+    // 返す。ログイン中なら自分用の経路 (`/v1/users/me/mylists/{id}`) で読み直す。
+    let (json, body) = if status == reqwest::StatusCode::FORBIDDEN && store.is_set() {
+        tracing::info!(%mylist_id, "public mylist route refused; trying the owner route");
+        let me_url = format!(
+            "https://nvapi.nicovideo.jp/v1/users/me/mylists/{mylist_id}?pageSize={page_size}&page={page}"
+        );
+        nv_get_json(&client, &me_url, cookie, "マイリスト動画 API エラー").await?
+    } else if !status.is_success() {
+        let preview: String = body.chars().take(200).collect();
+        tracing::warn!(%url, %status, body = %preview, "マイリスト動画 API エラー");
+        let hint = if status == reqwest::StatusCode::FORBIDDEN {
+            " (非公開のマイリストの可能性があります)"
+        } else {
+            ""
+        };
+        return Err(AppError::Other(format!(
+            "マイリスト動画 API エラー ({status}){hint}: {preview}"
+        )));
+    } else {
+        let json: serde_json::Value =
+            serde_json::from_str(&body).map_err(crate::error::ApiError::from)?;
+        (json, body)
+    };
 
     let preview: String = body.chars().take(500).collect();
     tracing::info!(%url, body = %preview, "mylist videos API response");
@@ -1659,6 +1883,13 @@ pub async fn fetch_mylist_videos(
 
     let items_val = mylist["items"].as_array().cloned().unwrap_or_default();
 
+    // owner.id は数値文字列で返る ("108373")。`as_i64` だけだと常に None に
+    // なっていたので、ユーザー動画 API と同じく両方を受ける。
+    let parse_id = |value: &serde_json::Value| {
+        value
+            .as_i64()
+            .or_else(|| value.as_str().and_then(|s| s.parse::<i64>().ok()))
+    };
     let mut items = Vec::with_capacity(items_val.len());
     for raw_item in &items_val {
         let v = &raw_item["video"];
@@ -1668,8 +1899,19 @@ pub async fn fetch_mylist_videos(
         if id.is_empty() {
             continue;
         }
-        let uid = v["owner"]["id"].as_i64().or_else(|| v["userId"].as_i64());
-        items.push(build_user_video_item(v, id, uid, None));
+        let is_channel = v["owner"]["ownerType"].as_str() == Some("channel")
+            || v["owner"]["type"].as_str() == Some("channel");
+        let owner_id = v["owner"]["id"]
+            .as_str()
+            .map(|s| crate::api::video::normalize_owner_id("channel", s))
+            .and_then(|s| s.parse::<i64>().ok())
+            .or_else(|| parse_id(&v["owner"]["id"]));
+        let (uid, cid) = if is_channel {
+            (None, owner_id)
+        } else {
+            (owner_id.or_else(|| parse_id(&v["userId"])), None)
+        };
+        items.push(build_user_video_item(v, id, uid, cid));
     }
 
     Ok(UserVideosResponse {
@@ -1679,6 +1921,7 @@ pub async fn fetch_mylist_videos(
         series_title: None,
         series_description: None,
         series_thumbnail_url: None,
+        owner_name: None,
     })
 }
 
@@ -1868,7 +2111,6 @@ async fn run_one_download(
     queue_id: i64,
     cancel: watch::Receiver<bool>,
 ) -> std::result::Result<(), crate::error::ApiError> {
-    use crate::api::comment::CommentApi;
     use crate::api::comment::ThreadsClient;
     use crate::downloader::ytdlp;
     use crate::error::ApiError;
@@ -1939,12 +2181,31 @@ async fn run_one_download(
 
     // 3) コメント取得は yt-dlp に頼らず自前 threads API。
     //    タイミング (vpos_ms) を含む正確な dump が要るため。
-    //    watch page 取得 → nv-comment setup → fetch
+    //    watch (nvapi v4、副作用なし) → lazy (投稿者) → nv-comment setup → fetch
     let watch = NiconicoWatchClient::new(Arc::clone(session))?;
-    let page = watch.fetch_watch_page(video_id).await.ok();
+    let page = match watch.fetch_watch_data(video_id).await {
+        Ok(mut p) => {
+            watch.enrich_with_lazy(&mut p).await;
+            Some(p)
+        }
+        Err(e) => {
+            tracing::warn!(
+                video_id,
+                error = %e,
+                "watch data unavailable after download; falling back to yt-dlp metadata"
+            );
+            None
+        }
+    };
     let comments_dto = if let Some(p) = page.as_ref().and_then(|p| p.nv_comment.as_ref()) {
         let cclient = ThreadsClient::new(Arc::clone(session))?;
-        cclient.fetch_comments(p).await.unwrap_or_default()
+        match cclient.fetch_comments_patiently(p).await {
+            Ok(comments) => comments,
+            Err(e) => {
+                tracing::warn!(video_id, error = %e, "comment fetch failed; saving without comments");
+                Vec::new()
+            }
+        }
     } else {
         Vec::new()
     };
@@ -1967,12 +2228,15 @@ async fn run_one_download(
             uploader_id: p.owner.as_ref().and_then(|o| o.id.clone()),
             uploader_name: p.owner.as_ref().and_then(|o| o.nickname.clone()),
             uploader_type: p.owner.as_ref().map(|o| o.kind.clone()),
-            category: p
-                .video
-                .tags
-                .iter()
-                .find(|t| t.is_category)
-                .map(|t| t.name.clone()),
+            // カテゴリタグは廃止されジャンルに置き換わった。旧形式の埋め込み
+            // (isCategory 付きタグ) しか無い時だけタグから拾う。
+            category: p.genre.as_ref().map(|g| g.label.clone()).or_else(|| {
+                p.video
+                    .tags
+                    .iter()
+                    .find(|t| t.is_category)
+                    .map(|t| t.name.clone())
+            }),
             duration_sec: p.video.duration,
             posted_at: p
                 .video
@@ -1999,10 +2263,12 @@ async fn run_one_download(
             id: video_id.to_string(),
             title: info["title"].as_str().unwrap_or(video_id).to_string(),
             description: info["description"].as_str().map(String::from),
-            uploader_id: info["uploader_id"]
-                .as_str()
-                .map(String::from)
-                .or_else(|| info["channel_id"].as_str().map(String::from)),
+            // チャンネルは `ch` を外した数値 ID に揃える (watch 経路・検索結果と同じ形)。
+            uploader_id: info["uploader_id"].as_str().map(String::from).or_else(|| {
+                info["channel_id"]
+                    .as_str()
+                    .map(|id| crate::api::video::normalize_owner_id("channel", id))
+            }),
             uploader_name: info["uploader"]
                 .as_str()
                 .map(String::from)
@@ -2826,15 +3092,22 @@ pub async fn refetch_video_comments(
 
     let session = Arc::clone(&store);
     let watch = NiconicoWatchClient::new(Arc::clone(&session)).map_err(AppError::from)?;
-    let page = watch.fetch_watch_page(&video_id).await.ok();
-    let comments_dto = if let Some(p) = page.as_ref().and_then(|p| p.nv_comment.as_ref()) {
-        let cclient = ThreadsClient::new(Arc::clone(&session)).map_err(AppError::from)?;
-        cclient.fetch_comments(p).await.unwrap_or_default()
-    } else {
+    let page = watch
+        .fetch_watch_data(&video_id)
+        .await
+        .map_err(AppError::from)?;
+    let Some(nv_comment) = page.nv_comment.as_ref() else {
         return Err(AppError::Other(
-            "watch ページからコメント情報を取得できませんでした".into(),
+            "視聴データにコメントの取得情報が含まれていませんでした".into(),
         ));
     };
+    let cclient = ThreadsClient::new(Arc::clone(&session)).map_err(AppError::from)?;
+    // 失敗を空のスナップショットとして保存すると「コメント 0 件」の履歴が
+    // 増えるだけなので、ここでは失敗をそのまま返す。
+    let comments_dto = cclient
+        .fetch_comments_patiently(nv_comment)
+        .await
+        .map_err(AppError::from)?;
 
     let comment_records: Vec<CommentRecord> = comments_dto
         .iter()
@@ -4080,6 +4353,80 @@ pub async fn fetch_video_html(
     let html = resp.text().await.map_err(crate::error::ApiError::from)?;
     tracing::debug!(%video_id, size = html.len(), "watch HTML fetched");
     Ok(html)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoTagInfo {
+    pub name: String,
+    pub is_locked: bool,
+}
+
+/// 動画のタグ (ロック状態付き) を返す。ランキング NG のタグ判定用。
+///
+/// 以前はフロントが watch ページ HTML (`fetch_video_html`) を
+/// `@kongyo2/nicotag-api` で読んでいたが、2026 年の `$watchV4` 化で埋め込みの
+/// 形が変わって読めなくなった。軽量な `getthumbinfo` を先に使い、読めない時
+/// (削除・非公開・センシティブで fail など) は watch データ (v4) から取る。
+#[tauri::command]
+pub async fn fetch_video_tags(
+    video_id: String,
+    store: State<'_, Arc<SessionStore>>,
+) -> Result<Vec<VideoTagInfo>> {
+    validate_video_id(&video_id)?;
+
+    let client = build_nv_client()?;
+    let url = format!("https://ext.nicovideo.jp/api/getthumbinfo/{video_id}");
+    let mut req = client.get(&url).header(header::ACCEPT, THUMBINFO_ACCEPT);
+    if let Some(c) = store.cookie_header() {
+        req = req.header(header::COOKIE, c);
+    }
+    match req.send().await {
+        Ok(resp) if resp.status().is_success() => {
+            let xml = resp.text().await.map_err(crate::error::ApiError::from)?;
+            if let Some(tags) = crate::api::thumbinfo::parse_thumbinfo_tags(&xml) {
+                return Ok(tags
+                    .into_iter()
+                    .map(|t| VideoTagInfo {
+                        name: t.name,
+                        is_locked: t.is_locked,
+                    })
+                    .collect());
+            }
+            tracing::debug!(%video_id, "getthumbinfo returned no tags; trying watch data");
+        }
+        Ok(resp) => {
+            tracing::debug!(%video_id, status = %resp.status(), "getthumbinfo failed; trying watch data");
+        }
+        Err(e) => {
+            tracing::debug!(%video_id, error = %e, "getthumbinfo failed; trying watch data");
+        }
+    }
+
+    let watch = NiconicoWatchClient::new(Arc::clone(&store)).map_err(AppError::from)?;
+    let page = watch
+        .fetch_watch_data(&video_id)
+        .await
+        .map_err(AppError::from)?;
+    Ok(page
+        .video
+        .tags
+        .into_iter()
+        .map(|t| VideoTagInfo {
+            name: t.name,
+            is_locked: t.is_locked,
+        })
+        .collect())
+}
+
+/// 保存中の `user_session` が有効かを niconico に問い合わせる
+/// (`nvapi /v1/users/me`)。期限切れでも多くの API はゲスト扱いで通ってしまう
+/// ので、「Cookie がある」だけでなく実際に有効かを設定画面で示すために使う。
+#[tauri::command]
+pub async fn get_account_state(
+    store: State<'_, Arc<SessionStore>>,
+) -> Result<crate::api::account::AccountState> {
+    Ok(crate::api::account::fetch_account_state(&store).await)
 }
 
 #[cfg(test)]

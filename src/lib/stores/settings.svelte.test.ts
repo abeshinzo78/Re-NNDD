@@ -5,9 +5,20 @@ import { SETTING_DEFS } from './settings.svelte';
 describe('SETTING_DEFS (regression guard for plugin system)', () => {
   // プラグイン機構追加で 1 件 (plugins.enabled) が増える。これが unexpected に
   // 増減したら気付けるよう、厳密な数で固定する。新しい設定追加時はここも更新する。
-  // (built-in 16 件 + plugins.enabled 1 件 + yt-dlp アップデート 3 件 = 20)
+  // (built-in 16 件 + plugins.enabled 1 件 + yt-dlp アップデート 3 件
+  //  + ニコニコへの視聴記録 1 件 = 21)
   it('has exactly the expected number of built-in settings', () => {
-    expect(SETTING_DEFS.length).toBe(20);
+    expect(SETTING_DEFS.length).toBe(21);
+  });
+
+  // niconico の watch は nvapi v4 で副作用が無くなり、視聴記録は再生開始時に
+  // 明示的に送る。旧 watch ページは開いただけで記録されていたので既定 ON。
+  it('records views on niconico by default', () => {
+    const def = SETTING_DEFS.find((d) => d.key === 'playback.record_niconico_view');
+    expect(def).toBeTruthy();
+    expect(def?.default).toBe(true);
+    expect(def?.kind).toBe('bool');
+    expect(def?.section).toBe('playback');
   });
 
   it('contains the plugins.enabled kill switch', () => {

@@ -1,16 +1,17 @@
 /**
  * ランキング NG 用の動画タグ取得ヘルパー。
  *
- * `@kongyo2/nicotag-api` の `extractAndParse` を使い、watch ページの
- * HTML から `(name, isLocked)` のタグ情報を抜き出す。HTML 自体は CORS
- * の都合で Rust の `fetch_video_html` コマンド経由で取得する。
+ * Rust の `fetch_video_tags` コマンドで `(name, isLocked)` のタグ情報を取る
+ * (軽量な getthumbinfo XML を使い、読めなければ watch データから取る)。
+ * 以前は watch ページ HTML を `@kongyo2/nicotag-api` で読んでいたが、2026 年に
+ * 埋め込みが `$watchV4` 形へ変わって読めなくなった (失敗は「タグ未取得」扱いに
+ * なるので、タグ系の NG ルールが黙って効かなくなっていた)。
  *
  * 結果はプロセス内 Map と localStorage に TTL 付きでキャッシュする。
  * 取得は呼び出し側が指定する並行度で並列化する (デフォルト 8)。
  */
 
-import { invoke } from '@tauri-apps/api/core';
-import { extractAndParse } from '@kongyo2/nicotag-api';
+import { fetchVideoTags } from '$lib/api';
 import type { RankingTagInfo } from '$lib/stores/ngRules';
 
 type CacheEntry = { tags: RankingTagInfo[]; fetchedAt: number };
@@ -67,10 +68,8 @@ export function getCachedTags(videoId: string): RankingTagInfo[] | undefined {
 }
 
 async function fetchOne(videoId: string): Promise<RankingTagInfo[]> {
-  const html = await invoke<string>('fetch_video_html', { videoId });
-  const { parsed } = extractAndParse(html);
-  const items = parsed.data.response.tag.items;
-  return items.map((t) => ({ name: t.name, isLocked: t.isLocked }));
+  const tags = await fetchVideoTags(videoId);
+  return tags.map((t) => ({ name: t.name, isLocked: t.isLocked }));
 }
 
 export type FetchTagsOptions = {

@@ -7,6 +7,8 @@
 //! easy fork). The `is_owner` flag is set when the thread fork is `"owner"`,
 //! matching the legacy XML semantics that NNDD users expect.
 
+use std::time::Duration;
+
 use async_trait::async_trait;
 use reqwest::header;
 use serde::{Deserialize, Serialize};
@@ -20,6 +22,31 @@ const FRONTEND_ID: &str = "6";
 const FRONTEND_VERSION: &str = "0";
 const BROWSER_UA: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 \
     (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// 再生画面向け: 429 / 5xx は短く 2 回だけ待ってやり直す。利用者が待っている
+/// ので長くは粘らない。
+const INTERACTIVE_RETRY_DELAYS: [Duration; 2] = [Duration::from_secs(2), Duration::from_secs(5)];
+
+/// ダウンロード・コメント再取得向け: 429 は数分で解ける (NNDD-RE / niconicojs の
+/// 実測) ので、空のまま保存してしまわないよう長めに待つ。
+const PATIENT_RETRY_DELAYS: [Duration; 4] = [
+    Duration::from_secs(5),
+    Duration::from_secs(20),
+    Duration::from_secs(60),
+    Duration::from_secs(90),
+];
+
+/// やり直す価値のある失敗か (混雑・一時的なサーバー障害・通信断)。
+fn is_transient(error: &ApiError) -> bool {
+    match error {
+        ApiError::RateLimited => true,
+        ApiError::ServerError { status, .. } => matches!(status, 408 | 500..=599),
+        ApiError::Transport(e) => e.is_timeout() || e.is_connect(),
+        _ => false,
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -58,14 +85,46 @@ impl ThreadsClient {
         let http = reqwest::Client::builder()
             .user_agent(BROWSER_UA)
             .gzip(true)
+            .connect_timeout(CONNECT_TIMEOUT)
+            .timeout(REQUEST_TIMEOUT)
             .build()?;
         Ok(Self { http, session })
     }
-}
 
-#[async_trait]
-impl CommentApi for ThreadsClient {
-    async fn fetch_comments(&self, setup: &NvCommentSetup) -> Result<Vec<Comment>, ApiError> {
+    /// ダウンロードやコメント再取得用。nvcomment の 429 (混雑) は数分で解ける
+    /// ので、諦めて空のコメントで保存する前に長めに待ってやり直す。
+    pub async fn fetch_comments_patiently(
+        &self,
+        setup: &NvCommentSetup,
+    ) -> Result<Vec<Comment>, ApiError> {
+        self.fetch_with_retries(setup, &PATIENT_RETRY_DELAYS).await
+    }
+
+    async fn fetch_with_retries(
+        &self,
+        setup: &NvCommentSetup,
+        delays: &[Duration],
+    ) -> Result<Vec<Comment>, ApiError> {
+        let mut attempt = 0usize;
+        loop {
+            match self.fetch_once(setup).await {
+                Err(e) if is_transient(&e) && attempt < delays.len() => {
+                    let wait = delays[attempt];
+                    attempt += 1;
+                    tracing::warn!(
+                        error = %e,
+                        attempt,
+                        wait_secs = wait.as_secs(),
+                        "nvcomment threads failed transiently; retrying"
+                    );
+                    tokio::time::sleep(wait).await;
+                }
+                other => return other,
+            }
+        }
+    }
+
+    async fn fetch_once(&self, setup: &NvCommentSetup) -> Result<Vec<Comment>, ApiError> {
         let url = format!("{}/v1/threads", setup.server.trim_end_matches('/'));
 
         let body = serde_json::json!({
@@ -91,6 +150,10 @@ impl CommentApi for ThreadsClient {
         let status = response.status();
         let bytes = response.bytes().await?;
 
+        // 混雑時は HTTP 429 + `meta.errorCode: TOO_MANY_REQUESTS`。少し待てば解ける。
+        if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            return Err(ApiError::RateLimited);
+        }
         if !status.is_success() {
             let detail = String::from_utf8_lossy(&bytes).into_owned();
             return Err(ApiError::ServerError {
@@ -105,12 +168,23 @@ impl CommentApi for ThreadsClient {
             .pointer("/meta/status")
             .and_then(Value::as_u64)
             .unwrap_or(0);
+        if meta_status == 429 {
+            return Err(ApiError::RateLimited);
+        }
         if meta_status != 200 {
             return Err(ApiError::ResponseShape(format!(
                 "unexpected meta.status from threads API: {meta_status}"
             )));
         }
         Ok(parse_threads(&envelope))
+    }
+}
+
+#[async_trait]
+impl CommentApi for ThreadsClient {
+    async fn fetch_comments(&self, setup: &NvCommentSetup) -> Result<Vec<Comment>, ApiError> {
+        self.fetch_with_retries(setup, &INTERACTIVE_RETRY_DELAYS)
+            .await
     }
 }
 
@@ -246,5 +320,82 @@ mod tests {
     fn missing_data_yields_empty_vec() {
         let envelope = json!({"meta": {"status": 200}});
         assert_eq!(parse_threads(&envelope).len(), 0);
+    }
+
+    fn setup_for(server: &mockito::Server) -> NvCommentSetup {
+        NvCommentSetup {
+            server: server.url(),
+            thread_key: "tk".into(),
+            params: json!({"targets": [{"id": "1", "fork": "main"}], "language": "ja-jp"}),
+        }
+    }
+
+    const ONE_COMMENT: &str = r#"{"meta":{"status":200},"data":{"threads":[{"id":"1","fork":"main","comments":[{"id":"c1","no":1,"vposMs":0,"body":"x","commands":[],"userId":"u"}]}]}}"#;
+
+    #[tokio::test]
+    async fn waits_out_a_rate_limit_and_retries() {
+        let mut server = mockito::Server::new_async().await;
+        let limited = server
+            .mock("POST", "/v1/threads")
+            .with_status(429)
+            .with_body(r#"{"meta":{"status":429,"errorCode":"TOO_MANY_REQUESTS"}}"#)
+            .expect(1)
+            .create_async()
+            .await;
+        let ok = server
+            .mock("POST", "/v1/threads")
+            .with_status(200)
+            .with_body(ONE_COMMENT)
+            .expect(1)
+            .create_async()
+            .await;
+        let client = ThreadsClient::new(std::sync::Arc::new(SessionStore::empty())).unwrap();
+        let comments = client
+            .fetch_with_retries(&setup_for(&server), &[Duration::from_millis(10)])
+            .await
+            .expect("second attempt succeeds");
+        limited.assert_async().await;
+        ok.assert_async().await;
+        assert_eq!(comments.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn gives_up_after_the_retry_budget() {
+        let mut server = mockito::Server::new_async().await;
+        let limited = server
+            .mock("POST", "/v1/threads")
+            .with_status(429)
+            .expect(2)
+            .create_async()
+            .await;
+        let client = ThreadsClient::new(std::sync::Arc::new(SessionStore::empty())).unwrap();
+        let err = client
+            .fetch_with_retries(&setup_for(&server), &[Duration::from_millis(10)])
+            .await
+            .unwrap_err();
+        limited.assert_async().await;
+        assert!(matches!(err, ApiError::RateLimited), "{err:?}");
+    }
+
+    #[tokio::test]
+    async fn does_not_retry_client_errors() {
+        let mut server = mockito::Server::new_async().await;
+        let bad = server
+            .mock("POST", "/v1/threads")
+            .with_status(400)
+            .with_body(r#"{"meta":{"status":400,"errorCode":"INVALID_TOKEN"}}"#)
+            .expect(1)
+            .create_async()
+            .await;
+        let client = ThreadsClient::new(std::sync::Arc::new(SessionStore::empty())).unwrap();
+        let err = client
+            .fetch_with_retries(&setup_for(&server), &[Duration::from_millis(10)])
+            .await
+            .unwrap_err();
+        bad.assert_async().await;
+        assert!(
+            matches!(err, ApiError::ServerError { status: 400, .. }),
+            "{err:?}"
+        );
     }
 }

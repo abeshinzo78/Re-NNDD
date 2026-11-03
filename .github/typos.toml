@@ -10,6 +10,9 @@ extend-exclude = [
   "src-tauri/target/",
   "src-tauri/gen/",
   "src-tauri/binaries/",
+  # niconico の実応答 (ID・署名などのランダム文字列を含むテスト用 fixture)。
+  "src-tauri/tests/fixtures/niconico/*.html",
+  "src-tauri/tests/fixtures/niconico/*.json",
   "*.lock",
   "*.lockb",
   "*.min.js",
