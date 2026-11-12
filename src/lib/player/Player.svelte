@@ -8,7 +8,7 @@
   import { disableSubtleCryptoOnce } from './disableSubtleCrypto';
   import { TauriHlsLoader } from './tauriHlsLoader';
   import type { PlayerComment } from './types';
-  import { extractOnlineFrame, extractVideoFrame } from '$lib/api';
+  import { extractOnlineFrame, extractVideoFrame, type Storyboard } from '$lib/api';
   import { getBool, getNum } from '$lib/stores/settings.svelte';
   import { readSavedMuted, readSavedVolume, saveMuted, saveVolume } from './volumePersistence';
   import * as pluginBus from '$lib/plugins/eventBus';
@@ -61,6 +61,11 @@
     /** `playback.autoplay=false` 設定でも自動再生を強制する。連続再生キューの
      *  ような「ユーザが明示的に再生継続を指示した」コンテキストで使う。 */
     forceAutoplay?: boolean;
+    /** 利用者による一時停止の通知 (現在位置の秒)。自然終了・画質切り替えに伴う
+     *  内部的な停止では呼ばない (プラグインの `player:pause` と同じ条件)。 */
+    onPause?: (time: number) => void;
+    /** シーンサムネイル (ストーリーボード)。あればシークバーのホバーで出す。 */
+    storyboard?: Storyboard | null;
   };
 
   let {
@@ -85,6 +90,8 @@
     forceAutoplay = false,
     videoTitle = '',
     videoId = '',
+    onPause,
+    storyboard = null,
   }: Props = $props();
 
   let stage = $state<HTMLDivElement | null>(null);
@@ -1280,6 +1287,7 @@
       // (Codex #15: docs/plugins.md は ended と排他と明記)。
       if (!video.ended) {
         pluginBus.emit('player:pause', { videoId, currentTime: video.currentTime });
+        onPause?.(video.currentTime);
       }
     }
     syncAudioPlayState();
@@ -1664,6 +1672,7 @@
         onQuality={setQuality}
         onTogglePip={() => onTogglePip?.()}
         pluginActions={pluginPlayerActions()}
+        {storyboard}
       />
     </div>
   {/if}

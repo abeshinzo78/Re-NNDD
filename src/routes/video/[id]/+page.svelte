@@ -6,11 +6,16 @@
   import CommentList from '$lib/player/CommentList.svelte';
   import QueueBanner from '$lib/QueueBanner.svelte';
   import {
+    fetchContentsTree,
+    fetchStoryboard,
     fetchVideoComments,
     issueHlsUrl,
     preparePlayback,
     recordWatchView,
+    type ContentsTree,
+    type ContentsTreeVideo,
     type SearchHit,
+    type Storyboard,
   } from '$lib/api';
   import { quickDownload } from '$lib/quickDownload';
   import { formatDate, formatDuration, formatNumber, videoUrl } from '$lib/format';
@@ -25,6 +30,8 @@
   import { getBool, getStr, loadSettings } from '$lib/stores/settings.svelte';
   import { sanitizeDescriptionHtml } from '$lib/sanitize';
   import { miniPlayer } from '$lib/player/miniPlayerStore.svelte';
+  import { PositionSync, positionSyncInfoOf } from '$lib/player/positionSync';
+  import { storyboardRefreshDelay } from '$lib/player/storyboard';
   import {
     advanceQueue,
     getQueue,
@@ -48,6 +55,15 @@
   let relatedLoading = $state(false);
   let relatedVisibleCount = $state(0);
   let relatedError = $state<string | null>(null);
+
+  // シークバーのシーンサムネイル (ログイン中のみ)。
+  let storyboard = $state<Storyboard | null>(null);
+
+  // コンテンツツリー (オプション機能)。
+  let contentsTreeEnabled = $derived(getBool('video.contents_tree_enabled'));
+  let contentsTree = $state<ContentsTree | null>(null);
+  let contentsTreeLoading = $state(false);
+  let contentsTreeError = $state<string | null>(null);
 
   let ngRules = $state<NgRule[]>(listNgRules());
   const ngUnsub = subscribeNgRules(() => (ngRules = listNgRules()));
@@ -210,10 +226,58 @@
     });
   }
 
+  // ---- 再生位置のニコニコへの保存 (オプション機能) ----
+  // 規則は `positionSync.ts` (ミニプレイヤーと共通)。PiP に引き継いだ後はミニ
+  // プレイヤー側が送る。
+  const positionSync = new PositionSync();
+
+  function onPlaybackStarted(p: PlaybackPayload) {
+    positionSync.started();
+    maybeRecordView(p);
+  }
+
+  beforeNavigate(() => {
+    positionSync.saveAt(currentTime);
+  });
+  onDestroy(() => {
+    positionSync.saveAt(currentTime);
+    clearStoryboardRefresh();
+  });
+
+  // ---- シーンサムネイル ----
+  // 画像の署名は 3 時間で切れるので、切れる少し前に取り直す (鍵が失効していれば
+  // Rust 側が視聴データを取り直す)。
+  let storyboardRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function clearStoryboardRefresh() {
+    if (storyboardRefreshTimer) clearTimeout(storyboardRefreshTimer);
+    storyboardRefreshTimer = null;
+  }
+
+  function loadStoryboard(id: string, p: PlaybackPayload) {
+    fetchStoryboard(p.videoId, p.accessRightKey, p.actionTrackId)
+      .then((sb) => {
+        if (loadingFor !== id) return;
+        storyboard = sb;
+        clearStoryboardRefresh();
+        const delay = storyboardRefreshDelay(sb?.expireTime, Date.now());
+        if (delay != null) {
+          storyboardRefreshTimer = setTimeout(() => {
+            if (loadingFor === id) loadStoryboard(id, p);
+          }, delay);
+        }
+      })
+      .catch((e) => {
+        console.warn('storyboard fetch failed', e);
+      });
+  }
+
   async function load(id: string) {
     if (!id) return;
     loadingFor = id;
     viewRecordedFor = null;
+    positionSync.reset(null);
+    clearStoryboardRefresh();
     pending = true;
     error = null;
     payload = null;
@@ -221,6 +285,10 @@
     commentsLoading = false;
     related = [];
     relatedError = null;
+    storyboard = null;
+    contentsTree = null;
+    contentsTreeError = null;
+    contentsTreeLoading = false;
     try {
       // 設定と再生情報を並列取得
       const [, result] = await Promise.all([loadSettings(), preparePlayback(id)]);
@@ -254,6 +322,33 @@
           .finally(() => {
             if (loadingFor === id) commentsLoading = false;
           });
+      }
+
+      positionSync.reset(result.videoId, positionSyncInfoOf(result));
+
+      // シーンサムネイル: 初期のバッファリングと競合しないよう少し遅らせて取る。
+      if (result.storyboardAvailable && getBool('player.storyboard_preview')) {
+        setTimeout(() => {
+          if (loadingFor === id) loadStoryboard(id, result);
+        }, 1500);
+      }
+
+      // コンテンツツリー (オプション機能): 関連動画と同じく後回しにする。
+      if (getBool('video.contents_tree_enabled')) {
+        contentsTreeLoading = true;
+        setTimeout(() => {
+          if (loadingFor !== id) return;
+          fetchContentsTree(id)
+            .then((tree) => {
+              if (loadingFor === id) contentsTree = tree;
+            })
+            .catch((e) => {
+              if (loadingFor === id) contentsTreeError = String(e);
+            })
+            .finally(() => {
+              if (loadingFor === id) contentsTreeLoading = false;
+            });
+        }, 3000);
       }
 
       // Defer related-video fetch so it doesn't compete with the
@@ -310,6 +405,8 @@
   }
 
   function handleEnded() {
+    // 見終わった動画は 0 秒で保存する (Web プレイヤーと同じ)。
+    positionSync.finished();
     if (!getBool('playback.autoplay_queue')) return;
     const q = getQueue();
     if (!q) return;
@@ -321,15 +418,26 @@
     void goto(itemHref(nxt));
   }
 
-  function getResumePosition(id: string): number {
-    const pipPos = miniPlayer.consumeReturnPosition(id);
-    if (pipPos > 0) return pipPos;
-    if (!getBool('playback.resume_enabled')) return 0;
+  function readLocalResume(id: string): number {
     try {
       return Number(localStorage.getItem(`resume:${id}`)) || 0;
     } catch {
       return 0;
     }
+  }
+
+  function getResumePosition(id: string, p?: PlaybackPayload): number {
+    const pipPos = miniPlayer.consumeReturnPosition(id);
+    if (pipPos > 0) return pipPos;
+    if (!getBool('playback.resume_enabled')) return 0;
+    const local = readLocalResume(id);
+    if (local > 0) return local;
+    // この端末に位置が無い時だけ、ニコニコ側に保存された続きの位置を使う
+    // (位置が返るのはプレミアム会員だけ)。
+    if (p?.initialPlaybackSec && getBool('playback.sync_niconico_position')) {
+      return p.initialPlaybackSec;
+    }
+    return 0;
   }
   function saveResumePosition(id: string, t: number) {
     try {
@@ -341,6 +449,7 @@
 
   function handleTimeUpdate(time: number) {
     currentTime = time;
+    positionSync.timeUpdate(time);
     if (payload && time > 0) {
       saveResumePosition(payload.video.id, time);
     }
@@ -423,12 +532,17 @@
         /* ignore */
       }
     }
+    // 再生位置の保存はミニプレイヤーへ引き継ぐ。このページの Player が再び再生を
+    // 始めるまで、ここからは送らない (引き継ぎ時点の古い位置で上書きしないため)。
+    positionSync.saveAt(t);
+    positionSync.handOff();
     miniPlayer.open({
       source: {
         kind: 'online',
         videoId: snapVideoId,
         hlsUrl: snapHlsUrl,
         refreshHlsUrl: () => issueHlsUrl(snapVideoId),
+        niconicoPosition: positionSyncInfoOf(payload),
       },
       title: snapTitle,
       comments: visibleComments,
@@ -517,6 +631,34 @@
 </script>
 
 <svelte:window onmousemove={onMove} onmouseup={stopDrag} />
+
+{#snippet treeItem(v: ContentsTreeVideo)}
+  <li class="tree-item">
+    <a href="/video/{v.id}" class="tree-link" title={v.title}>
+      {#if v.thumbnailUrl}
+        <img
+          class="tree-thumb"
+          class:masked={v.requireSensitiveMasking}
+          src={v.thumbnailUrl}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          use:thumbFallback={{ videoId: v.id }}
+        />
+      {:else}
+        <div class="tree-thumb placeholder"></div>
+      {/if}
+      <span class="tree-info">
+        <span class="tree-title">{v.title}</span>
+        <span class="muted small">
+          {v.id}{#if v.duration != null}&nbsp;· {formatDuration(
+              v.duration,
+            )}{/if}{#if v.viewCount != null}&nbsp;· 再生 {formatNumber(v.viewCount)}{/if}
+        </span>
+      </span>
+    </a>
+  </li>
+{/snippet}
 
 <section class="page" class:classic={isClassicTheme}>
   <div class="head">
@@ -686,8 +828,10 @@
               refreshHlsUrl={() => issueHlsUrl(p.videoId)}
               onTime={handleTimeUpdate}
               onEnded={handleEnded}
-              onPlaybackStart={() => maybeRecordView(p)}
-              resumePosition={getResumePosition(p.videoId)}
+              onPlaybackStart={() => onPlaybackStarted(p)}
+              onPause={(t) => positionSync.saveAt(t)}
+              {storyboard}
+              resumePosition={getResumePosition(p.videoId, p)}
               {loop}
               onLoopChange={(v) => {
                 loop = v;
@@ -886,6 +1030,37 @@
       </div>
 
       <aside class="related">
+        {#if contentsTreeEnabled}
+          <section class="contents-tree" aria-label="コンテンツツリー">
+            <h3>コンテンツツリー</h3>
+            {#if contentsTreeLoading}
+              <div class="muted small">コンテンツツリーを取得中…</div>
+            {:else if contentsTreeError}
+              <div class="muted small">取得失敗: {contentsTreeError}</div>
+            {:else if contentsTree && (contentsTree.parents.length > 0 || contentsTree.children.length > 0)}
+              {#if contentsTree.parents.length > 0}
+                <div class="tree-label muted small">親作品 ({contentsTree.parents.length})</div>
+                <ul class="tree-list">
+                  {#each contentsTree.parents as v (v.id)}
+                    {@render treeItem(v)}
+                  {/each}
+                </ul>
+              {/if}
+              {#if contentsTree.children.length > 0}
+                <div class="tree-label muted small">
+                  子作品 (新しい順・最大 15 件: {contentsTree.children.length})
+                </div>
+                <ul class="tree-list">
+                  {#each contentsTree.children as v (v.id)}
+                    {@render treeItem(v)}
+                  {/each}
+                </ul>
+              {/if}
+            {:else}
+              <div class="muted small">登録された親作品・子作品はありません。</div>
+            {/if}
+          </section>
+        {/if}
         <h3>関連動画</h3>
         {#if relatedLoading}
           <div class="muted small">関連動画を取得中…</div>
@@ -1498,6 +1673,58 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
+  }
+  .contents-tree {
+    margin-bottom: 16px;
+  }
+  .tree-label {
+    margin: 6px 0 4px;
+  }
+  .tree-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .tree-link {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    color: inherit;
+    text-decoration: none;
+    border-radius: 6px;
+    padding: 2px;
+  }
+  .tree-link:hover {
+    background: var(--theme-surface-2);
+  }
+  .tree-thumb {
+    width: 96px;
+    aspect-ratio: 16 / 9;
+    flex-shrink: 0;
+    object-fit: cover;
+    border-radius: 4px;
+    background: var(--theme-surface-2);
+  }
+  .tree-thumb.masked {
+    filter: blur(8px);
+  }
+  .tree-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    gap: 2px;
+  }
+  .tree-title {
+    font-size: 13px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
   }
 
   /* 

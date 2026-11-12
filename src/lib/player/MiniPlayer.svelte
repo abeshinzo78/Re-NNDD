@@ -25,6 +25,7 @@
   } from './miniPlayerStore.svelte';
   import { getBool, getNum } from '$lib/stores/settings.svelte';
   import { readSavedMuted, readSavedVolume } from './volumePersistence';
+  import { PositionSync, positionSyncInfoOf } from './positionSync';
   import {
     dtoToPlayerComment,
     fetchVideoComments,
@@ -77,8 +78,21 @@
   );
   let hideForHandoff = $derived(onSourcePage && !miniPlayer.audioOwned);
 
+  // 再生位置のニコニコへの保存 (オプション機能)。動画ページから引き継いだ動画・
+  // キューで進んだ動画のどちらも、ページ側と同じ規則 (`positionSync.ts`) で送る。
+  const positionSync = new PositionSync();
+  $effect(() => {
+    const src = miniPlayer.source;
+    if (src?.kind === 'online' && src.niconicoPosition) {
+      positionSync.reset(src.videoId, src.niconicoPosition);
+    } else {
+      positionSync.reset(null);
+    }
+  });
+
   function saveResume() {
     const t = playerRef?.getCurrentTime() ?? currentTime;
+    positionSync.saveAt(t);
     const id = miniPlayer.source?.videoId;
     if (id && Number.isFinite(t) && t > 0) {
       try {
@@ -161,6 +175,8 @@
   }
 
   async function handleEnded() {
+    // 見終わった動画は 0 秒で保存する (ページ側と同じ)。
+    positionSync.finished();
     if (!getBool('playback.autoplay_queue')) return;
     const q = getQueue();
     if (!q) return;
@@ -198,6 +214,7 @@
             videoId: nxt.videoId,
             hlsUrl: result.hlsUrl,
             refreshHlsUrl: () => issueHlsUrl(nxt.videoId),
+            niconicoPosition: positionSyncInfoOf(result),
           },
           title,
           expandHref,
@@ -293,6 +310,7 @@
   function onTimeFromPlayer(t: number) {
     currentTime = t;
     miniPlayer.setCurrentTime(t);
+    positionSync.timeUpdate(t);
     // PiP 中もページ側と同じく resume を更新しておく
     const id = miniPlayer.source?.videoId;
     if (id && t > 0) {
@@ -640,6 +658,8 @@
             refreshHlsUrl={onlineSrc.refreshHlsUrl}
             onTime={onTimeFromPlayer}
             onEnded={handleEnded}
+            onPlaybackStart={() => positionSync.started()}
+            onPause={(t) => positionSync.saveAt(t)}
             resumePosition={miniPlayer.resumePosition}
             loop={miniPlayer.loop}
             compact={true}

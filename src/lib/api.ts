@@ -210,6 +210,90 @@ export async function recordWatchView(
   await invoke('record_watch_view', { videoId, actionTrackId, isGuest: isGuest ?? null });
 }
 
+/**
+ * 再生位置をニコニコの視聴履歴へ保存する (オプション機能)。
+ * ログイン中かつ `okReason === 'PURELY'` の時だけ呼ぶ (Web プレイヤーと同じ)。
+ */
+export async function saveNiconicoPlaybackPosition(
+  videoId: string,
+  seconds: number,
+): Promise<void> {
+  await invoke('save_niconico_playback_position', { videoId, seconds });
+}
+
+/** シークバーのシーンサムネイル (ストーリーボード)。画像は 1 枚に `columns × rows` コマ。 */
+export type Storyboard = {
+  thumbnailWidth: number;
+  thumbnailHeight: number;
+  columns: number;
+  rows: number;
+  /** コマの間隔 (ミリ秒) */
+  intervalMs: number;
+  /** 開始時刻の昇順。`url` は署名付きの絶対 URL (Cookie 不要) */
+  images: { timestampMs: number; url: string }[];
+  expireTime?: string;
+};
+
+/**
+ * ストーリーボードを取る。ログインしていない・その動画で出せない時は `null`。
+ * 鍵は `PlaybackPayload` のものを渡す (失効していれば Rust 側で取り直す)。
+ */
+export async function fetchStoryboard(
+  videoId: string,
+  accessRightKey?: string,
+  actionTrackId?: string,
+): Promise<Storyboard | null> {
+  return invoke<Storyboard | null>('fetch_storyboard', {
+    videoId,
+    accessRightKey: accessRightKey || null,
+    actionTrackId: actionTrackId || null,
+  });
+}
+
+/** ニコニコ側の視聴者 NG 設定の 1 件。`type` は `word` / `id` / `command`。 */
+export type NiconicoNgItem = {
+  type: string;
+  source: string;
+  registeredAt?: string;
+};
+
+export type NiconicoNgList = {
+  revision?: number;
+  items: NiconicoNgItem[];
+};
+
+/** ニコニコ側の視聴者 NG 設定を取る (取り込み用、ログイン必須)。 */
+export async function fetchNiconicoNgSettings(): Promise<NiconicoNgList> {
+  return invoke<NiconicoNgList>('fetch_niconico_ng_settings');
+}
+
+/** 検索キーワードのサジェスト候補。空・長すぎる入力は空配列。 */
+export async function fetchSearchSuggestions(query: string): Promise<string[]> {
+  return invoke<string[]>('fetch_search_suggestions', { query });
+}
+
+export type ContentsTreeVideo = {
+  id: string;
+  title: string;
+  thumbnailUrl?: string;
+  duration?: number;
+  registeredAt?: string;
+  viewCount?: number;
+  commentCount?: number;
+  ownerName?: string;
+  requireSensitiveMasking: boolean;
+};
+
+/** コンテンツツリー (親作品・子作品)。子作品は新しい順に最大 15 件。 */
+export type ContentsTree = {
+  parents: ContentsTreeVideo[];
+  children: ContentsTreeVideo[];
+};
+
+export async function fetchContentsTree(videoId: string): Promise<ContentsTree> {
+  return invoke<ContentsTree>('fetch_contents_tree', { videoId });
+}
+
 export type VideoTagInfo = {
   name: string;
   isLocked: boolean;

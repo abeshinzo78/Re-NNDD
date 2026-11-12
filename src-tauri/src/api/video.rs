@@ -38,6 +38,7 @@ use serde_json::Value;
 use std::{collections::HashSet, sync::OnceLock, time::Duration};
 
 use crate::api::auth::SessionStore;
+use crate::api::storyboard::{Storyboard, StoryboardAccess};
 use crate::error::ApiError;
 
 const WATCH_URL_BASE: &str = "https://www.nicovideo.jp/watch/";
@@ -170,6 +171,35 @@ pub struct WatchPageData {
     /// 視聴制限の手掛かり。再生できない時の説明文を組み立てるのに使う。
     #[serde(default)]
     pub access: WatchAccess,
+    /// シークバーのシーンサムネイル (ストーリーボード) を出せるか
+    /// (v4 `media.isStoryboardAvailable`)。ログイン中の視聴データでだけ true になる
+    /// (ゲストの鍵では `access-rights/storyboard` が 400 — 実測)。
+    #[serde(default)]
+    pub is_storyboard_available: bool,
+    /// ニコニコ側の「続きから再生」(`player.initialPlayback`)。プレミアム会員以外は
+    /// `positionSec` が null で返る (実測)。
+    #[serde(default)]
+    pub initial_playback: Option<InitialPlayback>,
+}
+
+/// `player.initialPlayback`。`kind` は `resume` (続きから) / `from` (開始位置の指定) など。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InitialPlayback {
+    #[serde(rename = "type")]
+    pub kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub position_sec: Option<f64>,
+}
+
+impl InitialPlayback {
+    /// 「続きから再生」の位置 (秒)。位置が無い・0 以下なら `None`。
+    pub fn resume_position(&self) -> Option<f64> {
+        if self.kind != "resume" {
+            return None;
+        }
+        self.position_sec.filter(|s| *s > 0.0)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -489,6 +519,17 @@ impl NiconicoWatchClient {
     /// Cookie は `user_session` だけを付け、`domand_bid` は送らない。送ると
     /// 応答で発行し直されず、ゲスト / ログインの切り替え後に古い bid が残る。
     pub async fn fetch_watch_v4(&self, video_id: &str) -> Result<WatchPageData, ApiError> {
+        self.fetch_watch_v4_with(video_id, true).await
+    }
+
+    /// `capture_bid` が false なら応答の `domand_bid` を控えない。再生中の HLS は
+    /// 発行時の bid でしか通らないので、再生とは別の用事 (ストーリーボードの鍵を
+    /// 取り直すなど) で視聴データを取る時に bid を差し替えてはいけない。
+    async fn fetch_watch_v4_with(
+        &self,
+        video_id: &str,
+        capture_bid: bool,
+    ) -> Result<WatchPageData, ApiError> {
         ensure_valid_video_id(video_id)?;
         let action_track_id = random_action_track_id();
         let session_cookie = self.session.session_cookie();
@@ -514,7 +555,7 @@ impl NiconicoWatchClient {
         if data.watch_track_id.is_none() {
             data.watch_track_id = Some(action_track_id);
         }
-        if let Some(bid) = bid {
+        if let Some(bid) = bid.filter(|_| capture_bid) {
             tracing::debug!(bid_len = bid.len(), "captured domand_bid from watch v4");
             self.session.set_domand_bid(bid);
         }
@@ -789,6 +830,130 @@ impl NiconicoWatchClient {
         }
         Ok(parsed.data)
     }
+
+    /// `POST /v1/watch/{id}/access-rights/storyboard` — シーンサムネイル
+    /// (ストーリーボード) の署名付き URL を発行させる。公式 Android アプリの
+    /// ネイティブ実装・Web プレイヤーと同じく本文は送らず、鍵は視聴データの
+    /// `media.accessRightKey` (HLS と同じ鍵。HLS を発行した後でも通る — 実測)。
+    /// ログイン中の鍵でしか通らない。
+    pub async fn request_storyboard(
+        &self,
+        video_id: &str,
+        access_right_key: &str,
+        action_track_id: Option<&str>,
+    ) -> Result<StoryboardAccess, ApiError> {
+        ensure_valid_video_id(video_id)?;
+        if access_right_key.trim().is_empty() {
+            return Err(ApiError::InvalidQuery("accessRightKey is empty".into()));
+        }
+        let action_track_id = action_track_id
+            .filter(|id| !id.trim().is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(random_action_track_id);
+        let url = format!(
+            "{}{video_id}/access-rights/storyboard?actionTrackId={}",
+            self.hls_base,
+            urlencoding_simple(&action_track_id)
+        );
+        let mut request = self
+            .http
+            .post(&url)
+            .header(header::ACCEPT, "application/json;charset=utf-8")
+            .header("X-Access-Right-Key", access_right_key)
+            .header("X-Frontend-Id", FRONTEND_ID)
+            .header("X-Frontend-Version", FRONTEND_VERSION)
+            .header("X-Request-With", "nicovideo")
+            .header("X-Niconico-Language", "ja-jp");
+        // `domand_bid` は付けない (ストーリーボードの配信には要らない — 実測)。
+        if let Some(cookie) = self.session.session_cookie() {
+            request = request.header(header::COOKIE, cookie);
+        }
+        let response = request.send().await?;
+        let status = response.status();
+        let bytes = response.bytes().await?;
+        if !status.is_success() {
+            let detail = nvapi_error_code(&bytes)
+                .unwrap_or_else(|| String::from_utf8_lossy(&bytes).chars().take(200).collect());
+            return Err(ApiError::ServerError {
+                status: status.as_u16(),
+                message: format!("storyboard access-rights {status}: {detail}"),
+            });
+        }
+        crate::api::storyboard::parse_access_response(&bytes)
+    }
+
+    /// 発行された `storyboard.json` を取って読む。
+    pub async fn fetch_storyboard_manifest(
+        &self,
+        access: &StoryboardAccess,
+    ) -> Result<Storyboard, ApiError> {
+        let url = crate::api::storyboard::validate_asset_url(&access.content_url)?;
+        let response = self
+            .http
+            .get(url)
+            .header(header::ACCEPT, "application/json")
+            .header(header::REFERER, format!("{NICOVIDEO_ORIGIN}/"))
+            .send()
+            .await?;
+        let status = response.status();
+        let bytes = response.bytes().await?;
+        if !status.is_success() {
+            return Err(ApiError::ServerError {
+                status: status.as_u16(),
+                message: format!("storyboard.json returned {status}"),
+            });
+        }
+        crate::api::storyboard::parse_manifest(
+            &bytes,
+            &access.content_url,
+            access.expire_time.clone(),
+        )
+    }
+
+    /// シーンサムネイルを取る。ログインしていない・その動画で出せない時は `Ok(None)`。
+    ///
+    /// 再生時の鍵 (`access_right_key`) があればまずそれを使う。鍵は 10 分ほどで
+    /// 失効するので、通らなければ視聴データを取り直して出し直す (その時は
+    /// `domand_bid` を差し替えない — 再生中の HLS が 403 になるため)。
+    pub async fn fetch_storyboard(
+        &self,
+        video_id: &str,
+        access_right_key: Option<&str>,
+        action_track_id: Option<&str>,
+    ) -> Result<Option<Storyboard>, ApiError> {
+        ensure_valid_video_id(video_id)?;
+        if !self.session.is_set() {
+            return Ok(None);
+        }
+        if let Some(key) = access_right_key.filter(|k| !k.trim().is_empty()) {
+            match self
+                .request_storyboard(video_id, key, action_track_id)
+                .await
+            {
+                Ok(access) => return self.fetch_storyboard_manifest(&access).await.map(Some),
+                Err(e) => tracing::debug!(
+                    video_id,
+                    error = %e,
+                    "storyboard with the playback key failed; refetching watch data"
+                ),
+            }
+        }
+        let page = self.fetch_watch_v4_with(video_id, false).await?;
+        if page.is_guest || !page.is_storyboard_available {
+            return Ok(None);
+        }
+        let Some(domand) = page.domand.as_ref() else {
+            return Ok(None);
+        };
+        let access = self
+            .request_storyboard(
+                video_id,
+                &domand.access_right_key,
+                page.watch_track_id.as_deref(),
+            )
+            .await?;
+        self.fetch_storyboard_manifest(&access).await.map(Some)
+    }
 }
 
 #[async_trait]
@@ -1010,7 +1175,8 @@ fn is_valid_video_id(id: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
-fn ensure_valid_video_id(video_id: &str) -> Result<(), ApiError> {
+/// 動画 ID を URL のパスへ埋め込んでよい形か確かめる (英数字・`-`・`_` だけ)。
+pub(crate) fn ensure_valid_video_id(video_id: &str) -> Result<(), ApiError> {
     if is_valid_video_id(video_id) {
         Ok(())
     } else {
@@ -1187,6 +1353,20 @@ fn project_watch_v4(data: &Value) -> Result<WatchPageData, ApiError> {
             is_admission: bool_at(data, "/payment/admission/isEnabled"),
             is_premium_only: bool_at(data, "/payment/premium/isEnabled"),
         },
+        is_storyboard_available: media.is_some_and(|m| bool_at(m, "/isStoryboardAvailable")),
+        initial_playback: parse_initial_playback(data.pointer("/player/initialPlayback")),
+    })
+}
+
+/// `player.initialPlayback` (`{ type, positionSec }`)。null や `type` の無いものは `None`。
+fn parse_initial_playback(node: Option<&Value>) -> Option<InitialPlayback> {
+    let node = node.filter(|n| n.is_object())?;
+    Some(InitialPlayback {
+        kind: non_empty_str(node.get("type"))?,
+        position_sec: node
+            .get("positionSec")
+            .and_then(Value::as_f64)
+            .filter(|s| s.is_finite() && *s >= 0.0),
     })
 }
 
@@ -1314,6 +1494,8 @@ fn project_watch_data(root: &Value) -> Result<WatchPageData, ApiError> {
             is_admission: bool_at(response, "/payment/video/isAdmission"),
             is_premium_only: bool_at(response, "/payment/video/isPremium"),
         },
+        is_storyboard_available: bool_at(response, "/media/domand/isStoryboardAvailable"),
+        initial_playback: parse_initial_playback(response.pointer("/player/initialPlayback")),
     })
 }
 
@@ -2245,5 +2427,128 @@ mod tests {
             .await
             .expect("side-effect");
         mock.assert_async().await;
+    }
+
+    // ---- ストーリーボード / 続きから再生 ----
+
+    /// ログイン中の v4 応答の形 (2026-11 実測) を V4 のゲスト実応答に重ねる。
+    fn v4_logged_in_body(initial_playback: Value) -> String {
+        let mut v: Value = serde_json::from_str(V4_API_SERIES).unwrap();
+        v["data"]["media"]["isStoryboardAvailable"] = Value::Bool(true);
+        v["data"]["viewer"] = serde_json::json!({
+            "id": 1, "nickname": "テスト", "isPremium": false, "allowSensitiveContents": false
+        });
+        v["data"]["player"]["initialPlayback"] = initial_playback;
+        v.to_string()
+    }
+
+    #[test]
+    fn reads_storyboard_availability_and_initial_playback() {
+        let body = v4_logged_in_body(serde_json::json!({ "type": "resume", "positionSec": 42.5 }));
+        let data = parse_watch_v4_response(body.as_bytes()).unwrap();
+        assert!(data.is_storyboard_available);
+        assert!(!data.is_guest);
+        let ip = data.initial_playback.expect("initialPlayback");
+        assert_eq!(ip.kind, "resume");
+        assert_eq!(ip.resume_position(), Some(42.5));
+
+        // 非プレミアムは positionSec が null で返る (実測) → 続きからの位置は無い。
+        let body = v4_logged_in_body(serde_json::json!({ "type": "resume", "positionSec": null }));
+        let data = parse_watch_v4_response(body.as_bytes()).unwrap();
+        assert_eq!(
+            data.initial_playback
+                .as_ref()
+                .and_then(InitialPlayback::resume_position),
+            None
+        );
+        // `from` は開始位置の指定で、続きから再生ではない。
+        let from = InitialPlayback {
+            kind: "from".into(),
+            position_sec: Some(10.0),
+        };
+        assert_eq!(from.resume_position(), None);
+
+        // ゲストの実応答には無い。
+        let guest = parse_watch_v4_response(V4_API_SERIES.as_bytes()).unwrap();
+        assert!(!guest.is_storyboard_available);
+        assert_eq!(guest.initial_playback, None);
+    }
+
+    #[tokio::test]
+    async fn requests_storyboard_with_the_playback_key_and_session() {
+        let mut server = mockito::Server::new_async().await;
+        let content_url = "https://asset.domand.nicovideo.jp/abc/storyboard/1/storyboard/storyboard.json?session=s&Policy=p&Signature=g&Key-Pair-Id=K";
+        let mock = server
+            .mock("POST", "/v1/watch/sm9/access-rights/storyboard")
+            .match_query(mockito::Matcher::UrlEncoded(
+                "actionTrackId".into(),
+                "Track00000_1".into(),
+            ))
+            .match_header("x-access-right-key", "key-1")
+            .match_header("x-request-with", "nicovideo")
+            .match_header("x-frontend-id", "6")
+            .match_header("cookie", "user_session=user_session_1_abc")
+            .match_body(mockito::Matcher::Exact(String::new()))
+            .with_status(201)
+            .with_body(format!(
+                r#"{{"meta":{{"status":201}},"data":{{"contentUrl":"{content_url}","createTime":"2026-11-12T20:25:36+09:00","expireTime":"2026-11-12T23:25:36+09:00"}}}}"#
+            ))
+            .create_async()
+            .await;
+        let session = Arc::new(SessionStore::empty());
+        session.set("user_session_1_abc".into());
+        session.set_domand_bid("playing-bid".into());
+        let client = client_for(&server, session);
+        let access = client
+            .request_storyboard("sm9", "key-1", Some("Track00000_1"))
+            .await
+            .expect("storyboard access");
+        mock.assert_async().await;
+        assert_eq!(access.content_url, content_url);
+    }
+
+    #[tokio::test]
+    async fn storyboard_needs_a_login_and_keeps_the_playing_bid() {
+        // ゲストでは問い合わせもしない。
+        let server = mockito::Server::new_async().await;
+        let guest = client_for(&server, Arc::new(SessionStore::empty()));
+        assert_eq!(
+            guest
+                .fetch_storyboard("sm9", Some("k"), None)
+                .await
+                .unwrap(),
+            None
+        );
+
+        // 再生時の鍵が失効していたら視聴データを取り直す。取り直しで発行される
+        // domand_bid で再生中の bid を上書きしてはいけない。
+        let mut server = mockito::Server::new_async().await;
+        let expired = server
+            .mock("POST", "/v1/watch/sm41984256/access-rights/storyboard")
+            .match_query(mockito::Matcher::Any)
+            .with_status(400)
+            .with_body(r#"{"meta":{"status":400,"errorCode":"INVALID_PARAMETER"}}"#)
+            .create_async()
+            .await;
+        let refetch = server
+            .mock("POST", "/v4/watch/sm41984256")
+            .with_status(200)
+            .with_header("set-cookie", "domand_bid=other-bid; Path=/")
+            // ログインが切れていてゲスト扱いの応答 → 出せないので None。
+            .with_body(V4_API_SERIES)
+            .create_async()
+            .await;
+        let session = Arc::new(SessionStore::empty());
+        session.set("user_session_1_abc".into());
+        session.set_domand_bid("playing-bid".into());
+        let client = client_for(&server, Arc::clone(&session));
+        let sb = client
+            .fetch_storyboard("sm41984256", Some("old-key"), Some("Track00000_1"))
+            .await
+            .expect("fallback");
+        expired.assert_async().await;
+        refetch.assert_async().await;
+        assert_eq!(sb, None);
+        assert_eq!(session.domand_bid().as_deref(), Some("playing-bid"));
     }
 }
