@@ -4,6 +4,8 @@
   import { formatDuration } from '$lib/format';
   import type { Level } from 'hls.js';
   import type { PluginPlayerAction } from '$lib/plugins/types';
+  import type { Storyboard } from '$lib/api';
+  import { cssUrl, storyboardFrameAt } from './storyboard';
 
   type Props = {
     video: HTMLVideoElement | null;
@@ -42,6 +44,8 @@
     /** プラグインが寄与したコントロールボタン (右端に追加表示)。
      *  デフォルト [] なので、寄与 0 件のとき DOM は導入前と完全同一。 */
     pluginActions?: PluginPlayerAction[];
+    /** シーンサムネイル (ストーリーボード)。あればシークバーのホバーで出す。 */
+    storyboard?: Storyboard | null;
   };
 
   let {
@@ -77,7 +81,45 @@
     showPip = false,
     pipActive = false,
     pluginActions = [],
+    storyboard = null,
   }: Props = $props();
+
+  // ---- シーンサムネイル (シークバーのホバー) ----
+  // 表示幅。コマは 120×90 なので少しだけ拡大して見せる。
+  const PREVIEW_WIDTH = 160;
+  let hoverTime = $state<number | null>(null);
+  let hoverX = $state(0);
+  let trackWidth = $state(0);
+
+  function onSeekHover(event: PointerEvent) {
+    if (!storyboard || !duration) return;
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    if (rect.width <= 0) return;
+    const x = Math.min(Math.max(event.clientX - rect.left, 0), rect.width);
+    hoverX = x;
+    trackWidth = rect.width;
+    hoverTime = (x / rect.width) * duration;
+  }
+  function onSeekLeave() {
+    hoverTime = null;
+  }
+
+  let previewFrame = $derived(
+    storyboard && hoverTime != null ? storyboardFrameAt(storyboard, hoverTime, duration) : null,
+  );
+  let previewScale = $derived(previewFrame ? PREVIEW_WIDTH / previewFrame.width : 1);
+  let previewLeft = $derived(
+    Math.min(Math.max(hoverX - PREVIEW_WIDTH / 2, 0), Math.max(trackWidth - PREVIEW_WIDTH, 0)),
+  );
+
+  // 最初の 1 枚だけ先に読んでおく (初回ホバーで空白にならないように)。
+  $effect(() => {
+    const first = storyboard?.images[0]?.url;
+    if (!first) return;
+    const img = new Image();
+    img.decoding = 'async';
+    img.src = first;
+  });
 
   async function runPluginAction(action: PluginPlayerAction) {
     try {
@@ -184,7 +226,27 @@
 <div class="bar">
   <div class="seek">
     <span class="time" style:min-width="{timeMinCh}ch">{formatDuration(currentTime)}</span>
-    <div class="seek-track">
+    <div
+      class="seek-track"
+      role="presentation"
+      onpointermove={onSeekHover}
+      onpointerleave={onSeekLeave}
+    >
+      {#if previewFrame && hoverTime != null}
+        <div class="seek-preview" style:left="{previewLeft}px" aria-hidden="true">
+          <div
+            class="seek-preview-image"
+            style:width="{PREVIEW_WIDTH}px"
+            style:height="{previewFrame.height * previewScale}px"
+            style:background-image={cssUrl(previewFrame.url)}
+            style:background-size="{previewFrame.sheetWidth * previewScale}px {previewFrame.sheetHeight *
+              previewScale}px"
+            style:background-position="-{previewFrame.x * previewScale}px -{previewFrame.y *
+              previewScale}px"
+          ></div>
+          <span class="seek-preview-time">{formatDuration(hoverTime)}</span>
+        </div>
+      {/if}
       <input
         type="range"
         min="0"
@@ -398,6 +460,30 @@
   }
   .seek-track input[type='range'] {
     width: 100%;
+  }
+  .seek-preview {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    pointer-events: none;
+    z-index: 5;
+  }
+  .seek-preview-image {
+    background-color: #000;
+    background-repeat: no-repeat;
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    border-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  }
+  .seek-preview-time {
+    padding: 0 6px;
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.75);
+    color: #fff;
+    font-size: 12px;
   }
   .ab-marker {
     position: absolute;

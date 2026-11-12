@@ -354,6 +354,13 @@ pub async fn search_videos_online(
     Ok(response)
 }
 
+/// 検索キーワードのサジェスト (`sug.search.nicovideo.jp`)。空・長すぎる入力は空を返す。
+#[tauri::command]
+pub async fn fetch_search_suggestions(query: String) -> Result<Vec<String>> {
+    let client = crate::api::suggest::SuggestClient::new().map_err(AppError::from)?;
+    client.suggest(&query).await.map_err(AppError::from)
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct RelatedVideoItem {
     #[serde(rename = "contentId")]
@@ -699,6 +706,18 @@ pub struct PlaybackPayload {
     /// 動画のジャンル (未設定なら無し)。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub genre: Option<WatchGenre>,
+    /// シークバーのシーンサムネイル (ストーリーボード) を出せるか。ログイン中だけ
+    /// true になる。中身は [`fetch_storyboard`] で取る。
+    #[serde(default)]
+    pub storyboard_available: bool,
+    /// ニコニコ側の「続きから再生」の位置 (秒)。プレミアム会員以外は niconico が
+    /// 位置を返さないので入らない。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub initial_playback_sec: Option<f64>,
+    /// 視聴データの `okReason` (`PURELY` = 通常の視聴)。Web プレイヤーと同じく、
+    /// 再生位置の保存 ([`save_niconico_playback_position`]) はこれが `PURELY` の時だけ行う。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ok_reason: Option<String>,
 }
 
 /// access-rights に出す `(video, audio)` の組。
@@ -783,6 +802,11 @@ pub async fn prepare_playback(
         .as_ref()
         .map(|d| d.access_right_key.clone())
         .unwrap_or_default();
+    let storyboard_available = page.is_storyboard_available && !page.is_guest;
+    let initial_playback_sec = page
+        .initial_playback
+        .as_ref()
+        .and_then(crate::api::video::InitialPlayback::resume_position);
 
     Ok(PlaybackPayload {
         video: page.video,
@@ -799,6 +823,9 @@ pub async fn prepare_playback(
         is_guest: page.is_guest,
         session_expired,
         genre: page.genre,
+        storyboard_available,
+        initial_playback_sec,
+        ok_reason: page.ok_reason,
     })
 }
 
@@ -824,6 +851,83 @@ pub async fn record_watch_view(
         .map_err(AppError::from)?;
     tracing::debug!(%video_id, as_guest, "recorded a view on niconico");
     Ok(())
+}
+
+/// 再生位置をニコニコの視聴履歴へ保存する (`PUT /v2/users/me/watch/history/playback-position`)。
+///
+/// Web プレイヤーが一時停止・ページ離脱時に送るのと同じもの。オプション機能で、
+/// 送るかどうか (設定・ログイン状態・`okReason`) はフロントが決める。
+#[tauri::command]
+pub async fn save_niconico_playback_position(
+    video_id: String,
+    seconds: f64,
+    store: State<'_, Arc<SessionStore>>,
+) -> Result<()> {
+    validate_video_id(&video_id)?;
+    if !store.is_set() {
+        return Err(AppError::Other(
+            "ログインしていないため再生位置をニコニコに保存できません".into(),
+        ));
+    }
+    let client = crate::api::watch_history::WatchHistoryClient::new(Arc::clone(&store))
+        .map_err(AppError::from)?;
+    client
+        .save_playback_position(&video_id, seconds)
+        .await
+        .map_err(AppError::from)?;
+    tracing::debug!(%video_id, seconds, "saved the playback position on niconico");
+    Ok(())
+}
+
+/// シークバーのシーンサムネイル (ストーリーボード) を取る。ログインしていない・
+/// その動画で出せない時は `None`。
+///
+/// `access_right_key` / `action_track_id` は [`PlaybackPayload`] のものを渡す。
+/// 鍵が失効していれば視聴データを取り直す (再生中の HLS の `domand_bid` は触らない)。
+#[tauri::command]
+pub async fn fetch_storyboard(
+    video_id: String,
+    access_right_key: Option<String>,
+    action_track_id: Option<String>,
+    store: State<'_, Arc<SessionStore>>,
+) -> Result<Option<crate::api::storyboard::Storyboard>> {
+    validate_video_id(&video_id)?;
+    let watch = NiconicoWatchClient::new(Arc::clone(&store)).map_err(AppError::from)?;
+    watch
+        .fetch_storyboard(
+            &video_id,
+            access_right_key.as_deref(),
+            action_track_id.as_deref(),
+        )
+        .await
+        .map_err(AppError::from)
+}
+
+/// ニコニコ側の視聴者 NG 設定を取る (取り込み用。ニコニコへは書き込まない)。
+#[tauri::command]
+pub async fn fetch_niconico_ng_settings(
+    store: State<'_, Arc<SessionStore>>,
+) -> Result<crate::api::ng::ViewerNgList> {
+    // 画面にそのまま出すので、内部のエラー種別の前置きを付けない文にする。
+    if !store.is_set() {
+        return Err(AppError::Other(
+            "ニコニコにログインしていないため NG 設定を取得できません".into(),
+        ));
+    }
+    let client = crate::api::ng::ViewerNgClient::new(Arc::clone(&store)).map_err(AppError::from)?;
+    client.fetch().await.map_err(AppError::from)
+}
+
+/// 動画のコンテンツツリー (親作品・子作品)。ログイン中は Cookie を付ける。
+#[tauri::command]
+pub async fn fetch_contents_tree(
+    video_id: String,
+    store: State<'_, Arc<SessionStore>>,
+) -> Result<crate::api::contents_tree::ContentsTree> {
+    validate_video_id(&video_id)?;
+    let client = crate::api::contents_tree::ContentsTreeClient::new(store.session_cookie())
+        .map_err(AppError::from)?;
+    client.fetch(&video_id).await.map_err(AppError::from)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
