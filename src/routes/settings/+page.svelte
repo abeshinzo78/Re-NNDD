@@ -277,6 +277,11 @@
   const SECTIONS: { id: string; label: string; description?: string }[] = [
     { id: 'playback', label: '再生', description: '動画プレイヤーの動作' },
     { id: 'comment', label: 'コメント', description: 'コメ表示の初期値' },
+    {
+      id: 'niconico',
+      label: 'ニコニコ連携 (オプション)',
+      description: 'ニコニコの API を使う追加機能。どれも既定は OFF',
+    },
     { id: 'download', label: 'ダウンロード', description: 'yt-dlp 経由 DL の挙動' },
     { id: 'library', label: 'ライブラリ', description: 'DL 済み一覧の表示' },
     { id: 'appearance', label: '外観' },

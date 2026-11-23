@@ -96,4 +96,10 @@ export type PlaybackPayload = {
   /** セッション Cookie はあるのにゲスト扱いだった (= 期限切れの疑い)。 */
   sessionExpired?: boolean;
   genre?: WatchGenre;
+  /** シーンサムネイル (ストーリーボード) を出せるか。ログイン中だけ true。 */
+  storyboardAvailable?: boolean;
+  /** ニコニコ側の「続きから再生」の位置 (秒)。プレミアム会員以外は入らない。 */
+  initialPlaybackSec?: number;
+  /** 視聴データの okReason (`PURELY` = 通常視聴)。 */
+  okReason?: string;
 };

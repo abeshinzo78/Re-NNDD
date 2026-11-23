@@ -12,6 +12,7 @@
 //   - 位置/サイズは localStorage に保存する。
 
 import type { PlayerComment } from './types';
+import type { PositionSyncInfo } from './positionSync';
 
 export type MiniSource =
   | {
@@ -19,6 +20,8 @@ export type MiniSource =
       videoId: string;
       hlsUrl: string;
       refreshHlsUrl?: () => Promise<string>;
+      /** 再生位置をニコニコへ保存してよいかの判定材料 (オプション機能)。 */
+      niconicoPosition?: PositionSyncInfo;
     }
   | {
       kind: 'local';

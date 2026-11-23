@@ -178,6 +178,11 @@ pub fn run() {
             commands::fetch_video_tags,
             commands::fetch_related_videos,
             commands::resolve_thumbnail_url,
+            commands::fetch_storyboard,
+            commands::save_niconico_playback_position,
+            commands::fetch_niconico_ng_settings,
+            commands::fetch_search_suggestions,
+            commands::fetch_contents_tree,
             // ----- yt-dlp アップデート追従 -----
             downloader::ytdlp_update::ytdlp_check_update,
             downloader::ytdlp_update::ytdlp_install_update,

@@ -5,6 +5,7 @@
     clearAllNgRules,
     deleteNgRule,
     importNgRules,
+    importNiconicoNg,
     isValidRegex,
     listNgRules,
     subscribeNgRules,
@@ -14,6 +15,8 @@
     type NgTargetType,
   } from '$lib/stores/ngRules';
   import { formatDate, formatNumber } from '$lib/format';
+  import { fetchNiconicoNgSettings } from '$lib/api';
+  import { getBool } from '$lib/stores/settings.svelte';
 
   const TARGET_LABELS: Record<NgTargetType, string> = {
     video_title: '動画タイトル',
@@ -122,6 +125,29 @@
 
   // ---- Import / Export ----
   let importMessage = $state<string | null>(null);
+
+  // ---- ニコニコの NG 設定の取り込み (オプション機能) ----
+  let niconicoImportEnabled = $derived(getBool('ng.niconico_import_enabled'));
+  let niconicoImporting = $state(false);
+
+  async function onImportNiconico() {
+    if (niconicoImporting) return;
+    niconicoImporting = true;
+    importMessage = null;
+    try {
+      const list = await fetchNiconicoNgSettings();
+      const r = importNiconicoNg(list.items);
+      const parts = [`${r.added} 件を追加しました`];
+      if (r.duplicates > 0) parts.push(`${r.duplicates} 件は登録済み`);
+      if (r.unsupported > 0)
+        parts.push(`${r.unsupported} 件 (コマンド NG など) は未対応のため取り込めません`);
+      importMessage = `ニコニコの NG 設定 ${list.items.length} 件: ${parts.join(' / ')}`;
+    } catch (err) {
+      importMessage = `ニコニコの NG 設定の取り込みに失敗しました: ${err}`;
+    } finally {
+      niconicoImporting = false;
+    }
+  }
 
   async function onImport(e: Event) {
     const input = e.target as HTMLInputElement;
@@ -298,6 +324,16 @@
         インポート
         <input type="file" accept=".json,.csv" onchange={onImport} />
       </label>
+      {#if niconicoImportEnabled}
+        <button
+          type="button"
+          onclick={onImportNiconico}
+          disabled={niconicoImporting}
+          title="ニコニコ側の NG (コメント・ユーザー ID) をローカルの NG ルールへ追加します。ニコニコ側は変更しません"
+        >
+          {niconicoImporting ? '取り込み中…' : 'ニコニコの NG 設定を取り込む'}
+        </button>
+      {/if}
       <button type="button" onclick={onExport} disabled={rules.length === 0}>
         JSON 書き出し
       </button>
@@ -342,7 +378,19 @@
               />
             </td>
             <td>{TARGET_LABELS[r.targetType]}</td>
-            <td>{MODE_LABELS[r.matchMode]}</td>
+            <td>
+              {MODE_LABELS[r.matchMode]}
+              {#if r.ignoreCase || r.ignoreNewlines}
+                <div class="muted small">
+                  {[
+                    r.ignoreCase ? '大文字小文字を区別しない' : '',
+                    r.ignoreNewlines ? '改行を無視' : '',
+                  ]
+                    .filter(Boolean)
+                    .join('・')}
+                </div>
+              {/if}
+            </td>
             <td class="pattern">
               <code>{r.pattern}</code>
               {#if r.note}<div class="note muted small">{r.note}</div>{/if}

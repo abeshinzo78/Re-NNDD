@@ -6,9 +6,34 @@ describe('SETTING_DEFS (regression guard for plugin system)', () => {
   // プラグイン機構追加で 1 件 (plugins.enabled) が増える。これが unexpected に
   // 増減したら気付けるよう、厳密な数で固定する。新しい設定追加時はここも更新する。
   // (built-in 16 件 + plugins.enabled 1 件 + yt-dlp アップデート 3 件
-  //  + ニコニコへの視聴記録 1 件 = 21)
+  //  + ニコニコへの視聴記録 1 件 + シーンサムネイル 1 件
+  //  + ニコニコ連携のオプション 4 件 = 26)
   it('has exactly the expected number of built-in settings', () => {
-    expect(SETTING_DEFS.length).toBe(21);
+    expect(SETTING_DEFS.length).toBe(26);
+  });
+
+  // ストーリーボード (シーンサムネイル) は標準機能なので既定 ON。
+  it('shows storyboard previews by default', () => {
+    const def = SETTING_DEFS.find((d) => d.key === 'player.storyboard_preview');
+    expect(def?.default).toBe(true);
+    expect(def?.kind).toBe('bool');
+    expect(def?.section).toBe('playback');
+  });
+
+  // ニコニコ連携の追加機能はオプション。既定 OFF で、OFF なら従来どおりの挙動。
+  it('keeps the optional niconico integrations off by default', () => {
+    for (const key of [
+      'ng.niconico_import_enabled',
+      'playback.sync_niconico_position',
+      'search.suggest_enabled',
+      'video.contents_tree_enabled',
+    ]) {
+      const def = SETTING_DEFS.find((d) => d.key === key);
+      expect(def, key).toBeTruthy();
+      expect(def?.default, key).toBe(false);
+      expect(def?.kind, key).toBe('bool');
+      expect(def?.section, key).toBe('niconico');
+    }
   });
 
   // niconico の watch は nvapi v4 で副作用が無くなり、視聴記録は再生開始時に

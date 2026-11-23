@@ -2,8 +2,9 @@
   import { onMount, onDestroy, tick } from 'svelte';
   import { SvelteSet } from 'svelte/reactivity';
   import { page } from '$app/state';
-  import { searchVideosOnline } from '$lib/api';
+  import { fetchSearchSuggestions, searchVideosOnline } from '$lib/api';
   import type { SearchEngine, SearchField, SearchResponse, SearchTarget } from '$lib/api';
+  import { getBool } from '$lib/stores/settings.svelte';
   import { formatNumber } from '$lib/format';
   import SearchHitCard from '$lib/SearchHitCard.svelte';
   import {
@@ -85,6 +86,44 @@
   });
 
   onDestroy(() => ngUnsub?.());
+
+  // ---- 検索キーワードのサジェスト (オプション機能) ----
+  // 入力が止まってから問い合わせ、古い応答は捨てる。候補は <datalist> で出す。
+  const SUGGEST_DELAY_MS = 250;
+  let suggestEnabled = $derived(getBool('search.suggest_enabled'));
+  let suggestions = $state<string[]>([]);
+  let suggestTimer: ReturnType<typeof setTimeout> | null = null;
+  let suggestSeq = 0;
+  let lastSuggestQuery = '';
+  onDestroy(() => {
+    if (suggestTimer) clearTimeout(suggestTimer);
+  });
+
+  function onQueryInput(event: Event) {
+    if (!suggestEnabled) return;
+    if (suggestTimer) clearTimeout(suggestTimer);
+    const q = (event.currentTarget as HTMLInputElement).value.trim();
+    if (!q) {
+      suggestSeq += 1;
+      suggestions = [];
+      lastSuggestQuery = '';
+      return;
+    }
+    suggestTimer = setTimeout(() => {
+      suggestTimer = null;
+      if (q === lastSuggestQuery) return;
+      lastSuggestQuery = q;
+      const seq = ++suggestSeq;
+      fetchSearchSuggestions(q)
+        .then((candidates) => {
+          if (seq === suggestSeq) suggestions = candidates;
+        })
+        .catch((e) => {
+          console.warn('search suggestion failed', e);
+          if (seq === suggestSeq) suggestions = [];
+        });
+    }, SUGGEST_DELAY_MS);
+  }
 
   function persist() {
     const main = document.querySelector('main.content') as HTMLElement | null;
@@ -195,7 +234,16 @@
       bind:value={query}
       autocomplete="off"
       aria-label="検索キーワード"
+      list={suggestEnabled ? 'nndd-search-suggestions' : undefined}
+      oninput={onQueryInput}
     />
+    {#if suggestEnabled}
+      <datalist id="nndd-search-suggestions">
+        {#each suggestions as candidate (candidate)}
+          <option value={candidate}></option>
+        {/each}
+      </datalist>
+    {/if}
     <div class="engine-row">
       <span class="engine-label">検索エンジン</span>
       <div class="engine-seg" role="group" aria-label="検索エンジン">

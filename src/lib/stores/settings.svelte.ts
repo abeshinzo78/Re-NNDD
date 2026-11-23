@@ -19,7 +19,7 @@ export type SettingDef<T> = {
   /** 説明文 (optional) */
   description?: string;
   /** UI セクション */
-  section: 'playback' | 'comment' | 'download' | 'library' | 'appearance' | 'advanced';
+  section: 'playback' | 'comment' | 'niconico' | 'download' | 'library' | 'appearance' | 'advanced';
   /** 既定値 */
   default: T;
   /** UI コントロールの型 */
@@ -93,6 +93,16 @@ export const SETTING_DEFS = [
     order: 38,
   },
   {
+    key: 'player.storyboard_preview',
+    label: 'シークバーのシーンサムネイル',
+    description:
+      'シークバーにマウスを乗せた位置の場面を小さく表示する (ニコニコのストーリーボードを使う。ログイン中のオンライン再生のみ)',
+    section: 'playback',
+    default: true,
+    kind: 'bool',
+    order: 39,
+  },
+  {
     key: 'playback.default_rate',
     label: 'デフォルト再生速度',
     description: '動画を開いた直後の再生倍率',
@@ -143,6 +153,48 @@ export const SETTING_DEFS = [
     max: 1.0,
     step: 0.05,
     order: 20,
+  },
+
+  // === ニコニコ連携 (オプション) ===
+  // ニコニコの API を使う追加機能。どれも既定は OFF (OFF なら従来どおりの挙動)。
+  {
+    key: 'ng.niconico_import_enabled',
+    label: 'ニコニコの NG 設定を取り込む',
+    description:
+      'NG ルール画面に「ニコニコの NG 設定を取り込む」ボタンを出す。ニコニコ側の NG (コメント・ユーザー ID) をローカルの NG ルールへ追加するだけで、ニコニコ側は変更しない',
+    section: 'niconico',
+    default: false,
+    kind: 'bool',
+    order: 10,
+  },
+  {
+    key: 'playback.sync_niconico_position',
+    label: 'ニコニコに再生位置を保存する',
+    description:
+      'オンライン再生の一時停止・終了・ページ移動の時に、再生位置をニコニコの視聴履歴へ送る (「ニコニコに視聴を記録する」が ON の時だけ)。プレミアム会員はニコニコ側に保存された続きの位置からも再生できる',
+    section: 'niconico',
+    default: false,
+    kind: 'bool',
+    order: 20,
+  },
+  {
+    key: 'search.suggest_enabled',
+    label: '検索キーワードのサジェスト',
+    description:
+      'オンライン検索の入力中にニコニコの検索候補を出す (入力中の文字がニコニコへ送られる)',
+    section: 'niconico',
+    default: false,
+    kind: 'bool',
+    order: 30,
+  },
+  {
+    key: 'video.contents_tree_enabled',
+    label: 'コンテンツツリーを表示する',
+    description: '動画ページに親作品・子作品 (コンテンツツリー) を表示する',
+    section: 'niconico',
+    default: false,
+    kind: 'bool',
+    order: 40,
   },
 
   // === ダウンロード ===
